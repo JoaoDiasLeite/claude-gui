@@ -12,6 +12,7 @@ interface Props {
   onSetUi: (patch: Partial<UiPrefs>) => void
   onClose: () => void
   onChanged: () => Promise<AuthStatus> | void
+  onManageAccounts: () => void
 }
 
 export default function SettingsModal({
@@ -22,7 +23,8 @@ export default function SettingsModal({
   ui,
   onSetUi,
   onClose,
-  onChanged
+  onChanged,
+  onManageAccounts
 }: Props) {
   const [mode, setMode] = useState<AuthMode>(auth?.mode ?? 'claude-code')
   const [key, setKey] = useState('')
@@ -118,6 +120,18 @@ export default function SettingsModal({
                 </div>
               </div>
             </button>
+          </div>
+
+          <div className="form-group">
+            <label>Claude accounts</label>
+            <div className="model-setting-row">
+              <button className="btn-primary small" onClick={onManageAccounts}>
+                Manage accounts…
+              </button>
+              <span className="field-hint inline">
+                Add more Claude logins and switch which one a chat runs under.
+              </span>
+            </div>
           </div>
 
           {mode === 'api-key' && (

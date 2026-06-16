@@ -12,6 +12,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearApiKey: () => ipcRenderer.invoke('auth:clear-api-key'),
   hasApiKey: () => ipcRenderer.invoke('auth:has-api-key'),
 
+  // Accounts (multiple Claude Code logins)
+  accountsList: () => ipcRenderer.invoke('accounts:list'),
+  accountsAdd: (name: string) => ipcRenderer.invoke('accounts:add', name),
+  accountsRename: (id: string, name: string) => ipcRenderer.invoke('accounts:rename', id, name),
+  accountsRemove: (id: string) => ipcRenderer.invoke('accounts:remove', id),
+  accountsSetDefault: (id: string) => ipcRenderer.invoke('accounts:set-default', id),
+  accountsLogin: (id: string) => ipcRenderer.invoke('accounts:login', id),
+
   // Agent
   sendAgent: (payload: unknown) => ipcRenderer.send('agent:send', payload),
   stopAgent: (appSessionId: string) => ipcRenderer.invoke('agent:stop', appSessionId),

@@ -42,6 +42,16 @@ import {
 } from './ssh'
 import { listDistros, testDistro, runWsl, stopWsl } from './wsl'
 import { getHiddenDistros, setDistroHidden } from './store'
+import {
+  loadAccounts,
+  listAccountStatus,
+  accountConfigDir,
+  addAccount,
+  renameAccount,
+  removeAccount,
+  setDefaultAccount,
+  loginAccount
+} from './accounts'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -108,6 +118,7 @@ app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.claude-gui')
   ensureDirs()
   loadAuthState()
+  loadAccounts()
   loadConfig()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   createWindow()
@@ -158,6 +169,18 @@ ipcMain.handle('auth:clear-api-key', () => {
 })
 ipcMain.handle('auth:has-api-key', () => getApiKey() !== null)
 
+// ─── Accounts (multiple Claude Code logins) ──────────────────────────────────
+
+ipcMain.handle('accounts:list', () => listAccountStatus())
+ipcMain.handle('accounts:add', (_, name: string) => addAccount(name))
+ipcMain.handle('accounts:rename', (_, id: string, name: string) => {
+  renameAccount(id, name)
+  return listAccountStatus()
+})
+ipcMain.handle('accounts:remove', (_, id: string) => removeAccount(id))
+ipcMain.handle('accounts:set-default', (_, id: string) => setDefaultAccount(id))
+ipcMain.handle('accounts:login', (_, id: string) => loginAccount(id))
+
 // ─── Agent run ─────────────────────────────────────────────────────────────
 
 interface SendPayload {
@@ -178,6 +201,8 @@ interface SendPayload {
   remoteHostId?: string
   /** If set, run inside this WSL distro instead of locally. */
   wslDistro?: string
+  /** Which Claude Code account (config dir) to run under. Undefined = machine default. */
+  accountId?: string
 }
 
 /**
@@ -266,6 +291,15 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
   const cwd = projectPath && fs.existsSync(projectPath) ? projectPath : os.homedir()
   const model = payload.model || getConfig().defaultModel
+
+  // Account: a non-default account points the engine at its own CLAUDE_CONFIG_DIR (its own
+  // subscription login). Strip any API key so the account's OAuth login is what's used.
+  const env = buildSubprocessEnv()
+  const configDir = accountConfigDir(payload.accountId)
+  if (configDir) {
+    env.CLAUDE_CONFIG_DIR = configDir
+    delete env.ANTHROPIC_API_KEY
+  }
   const mcpServers = payload.useMcp ? mcpServersForProject(projectPath) : undefined
   const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
 
@@ -296,7 +330,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       options: {
         model,
         cwd,
-        env: buildSubprocessEnv(),
+        env,
         abortController: abort,
         includePartialMessages: true,
         permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',

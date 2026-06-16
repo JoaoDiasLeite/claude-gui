@@ -32,6 +32,12 @@ A Claudia-style toolkit for Claude Code, navigated from the left icon rail:
   (document icon in the chat header).
 - **Connect with your Anthropic account** — reuses the Claude Code CLI login on this
   machine, with a secure API-key fallback (stored encrypted via the OS keychain).
+- **Multiple Claude accounts** — keep several Claude Code logins side by side (e.g. Work and
+  Personal) and choose which one a chat runs under from the **account picker** in the chat
+  header (or the command palette). Each account is an isolated Claude Code config dir
+  (`CLAUDE_CONFIG_DIR`) with its own login and identity (email/org/plan shown in **Manage
+  accounts**); adding one launches a guided `claude` login in its own terminal. The default
+  account is your existing machine login.
 - **Model selection** — set the default in Settings or override per chat
   (Opus 4.8/4.7/4.6, Sonnet 4.6, Haiku 4.5, Fable 5).
 - **Tool approval + diff viewer** — before any mutating tool (`Edit`, `Write`, `MultiEdit`,
@@ -93,6 +99,8 @@ The agent runs in the main process and streams events (`text`, `thinking`, `tool
 
 ## Note on permissions
 
-Tool calls currently run with `permissionMode: 'acceptEdits'` (file edits auto-approved).
-For an interactive approval prompt per tool call, wire a `canUseTool` callback in
-`src/main/index.ts` back to the renderer.
+By default, mutating tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`) pause for
+an Allow/Deny prompt with a diff, via a `canUseTool` callback in `src/main/index.ts` that
+calls back into the renderer; read-only tools auto-approve. Flip the per-chat **Approve /
+Auto** toggle to skip the prompts (`permissionMode: 'acceptEdits'`), and custom agents run
+under their own permission mode.

@@ -38,6 +38,9 @@ export interface Session {
   remoteHostName?: string
   /** If set, this chat runs inside this WSL distro. */
   wslDistro?: string
+  /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
+  accountId?: string
+  accountName?: string
   createdAt: number
   updatedAt: number
 }
@@ -281,6 +284,22 @@ export interface AuthStatus {
   hasApiKey: boolean
 }
 
+export interface CCAccountStatus {
+  id: string
+  name: string
+  configDir: string | null
+  isDefault: boolean
+  loggedIn: boolean
+  email?: string
+  org?: string
+  plan?: string
+}
+
+export interface AccountList {
+  accounts: CCAccountStatus[]
+  defaultAccountId: string
+}
+
 export type AgentEvent =
   | { appSessionId: string; kind: 'system'; claudeSessionId?: string; tools: string[] }
   | { appSessionId: string; kind: 'text'; content: string }
@@ -322,6 +341,14 @@ declare global {
       clearApiKey: () => Promise<AuthStatus>
       hasApiKey: () => Promise<boolean>
 
+      // Accounts (multiple Claude Code logins)
+      accountsList: () => Promise<AccountList>
+      accountsAdd: (name: string) => Promise<CCAccountStatus>
+      accountsRename: (id: string, name: string) => Promise<AccountList>
+      accountsRemove: (id: string) => Promise<AccountList>
+      accountsSetDefault: (id: string) => Promise<AccountList>
+      accountsLogin: (id: string) => Promise<{ launched: boolean; command: string }>
+
       // Agent
       sendAgent: (payload: {
         appSessionId: string
@@ -337,6 +364,7 @@ declare global {
         images?: { mediaType: string; data: string }[]
         remoteHostId?: string
         wslDistro?: string
+        accountId?: string
       }) => void
       stopAgent: (appSessionId: string) => Promise<{ stopped: boolean }>
       onAgentEvent: (cb: (data: AgentEvent) => void) => () => void

@@ -11,7 +11,8 @@ import {
   ModelInfo,
   CCSessionMeta,
   AgentDef,
-  ApprovalRequest
+  ApprovalRequest,
+  CCAccountStatus
 } from './types'
 import Sidebar from './components/Sidebar'
 import Chat from './components/Chat'
@@ -24,6 +25,7 @@ import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
 import OnboardingModal from './components/OnboardingModal'
+import AccountsModal from './components/AccountsModal'
 import { UiPrefs } from './types'
 import ProjectsView from './views/ProjectsView'
 import AgentsView from './views/AgentsView'
@@ -45,7 +47,7 @@ function applyUi(ui: UiPrefs) {
   window.electronAPI.setZoom(zoom)
 }
 
-function newSession(projectPath?: string, model?: string): Session {
+function newSession(projectPath?: string, model?: string, accountId?: string): Session {
   const now = Date.now()
   return {
     id: generateId(),
@@ -53,6 +55,7 @@ function newSession(projectPath?: string, model?: string): Session {
     messages: [],
     projectPath,
     model,
+    accountId,
     useMcp: true,
     createdAt: now,
     updatedAt: now
@@ -77,6 +80,9 @@ export default function App() {
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
   const [ui, setUi] = useState<UiPrefs | null>(null)
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
+  const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
+  const [defaultAccountId, setDefaultAccountId] = useState('default')
+  const [accountsOpen, setAccountsOpen] = useState(false)
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -109,6 +115,13 @@ export default function App() {
     return status
   }, [])
 
+  const refreshAccounts = useCallback(async () => {
+    const list = await window.electronAPI.accountsList()
+    setAccounts(list.accounts)
+    setDefaultAccountId(list.defaultAccountId)
+    return list
+  }, [])
+
   // Mount: load sessions, auth, models, config
   useEffect(() => {
     const init = async () => {
@@ -118,6 +131,7 @@ export default function App() {
         window.electronAPI.getConfig()
       ])
       await refreshAuth()
+      const accountList = await refreshAccounts()
       setModels(models)
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
@@ -126,13 +140,13 @@ export default function App() {
         setSessions(saved)
         setActiveId(saved[0].id)
       } else {
-        const s = newSession(undefined, config.defaultModel)
+        const s = newSession(undefined, config.defaultModel, accountList.defaultAccountId)
         setSessions([s])
         setActiveId(s.id)
       }
     }
     init()
-  }, [refreshAuth])
+  }, [refreshAuth, refreshAccounts])
 
   const appendToLastAssistant = (sid: string, update: (m: Message) => Message) => {
     setSessions((prev) =>
@@ -291,10 +305,11 @@ export default function App() {
         useMcp: session.useMcp ?? true,
         approvalMode: session.autoApprove ? 'auto' : 'ask',
         images,
-        remoteHostId: session.remoteHostId
+        remoteHostId: session.remoteHostId,
+        accountId: session.accountId ?? defaultAccountId
       })
     },
-    [sessions, streaming, addTerm, defaultModel]
+    [sessions, streaming, addTerm, defaultModel, defaultAccountId]
   )
 
   const stopMessage = useCallback(async () => {
@@ -304,7 +319,7 @@ export default function App() {
   }, [addTerm])
 
   const createSession = () => {
-    const s = newSession(activeSession?.projectPath, defaultModel)
+    const s = newSession(activeSession?.projectPath, defaultModel, activeSession?.accountId ?? defaultAccountId)
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
@@ -316,7 +331,7 @@ export default function App() {
       const next = prev.filter((s) => s.id !== id)
       if (activeId === id && next.length > 0) setActiveId(next[0].id)
       else if (next.length === 0) {
-        const s = newSession(undefined, defaultModel)
+        const s = newSession(undefined, defaultModel, defaultAccountId)
         setActiveId(s.id)
         return [s]
       }
@@ -330,6 +345,13 @@ export default function App() {
 
   const setSessionModel = (modelId: string) => {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, model: modelId } : s)))
+  }
+
+  const setSessionAccount = (accountId: string) => {
+    const name = accounts.find((a) => a.id === accountId)?.name
+    setSessions((prev) =>
+      prev.map((s) => (s.id === activeId ? { ...s, accountId, accountName: name } : s))
+    )
   }
 
   const toggleAutoApprove = () => {
@@ -369,6 +391,7 @@ export default function App() {
       projectPath,
       claudeSessionId: cc.sessionId,
       model: cc.model || defaultModel,
+      accountId: defaultAccountId,
       useMcp: true,
       wslDistro: isWsl ? cc.distro : undefined,
       remoteHostName: isWsl ? `WSL · ${cc.distro}` : undefined,
@@ -393,6 +416,7 @@ export default function App() {
       model: agent.model,
       agentId: agent.id,
       agentName: agent.name,
+      accountId: defaultAccountId,
       systemPrompt: agent.systemPrompt,
       permissionMode: agent.permissionMode,
       allowedTools: agent.allowedTools,
@@ -406,7 +430,7 @@ export default function App() {
   }
 
   const connectRemote = (host: SshHostPublic) => {
-    const s = newSession(host.remotePath, defaultModel)
+    const s = newSession(host.remotePath, defaultModel, defaultAccountId)
     s.name = `${host.name} (remote)`
     s.remoteHostId = host.id
     s.remoteHostName = host.name
@@ -418,7 +442,7 @@ export default function App() {
   }
 
   const connectWsl = (distro: string, cwd?: string) => {
-    const s = newSession(cwd, defaultModel)
+    const s = newSession(cwd, defaultModel, defaultAccountId)
     s.name = `${distro} (WSL)`
     s.wslDistro = distro
     s.remoteHostName = `WSL · ${distro}`
@@ -465,6 +489,7 @@ export default function App() {
     ]
     for (const { v, label } of views) items.push({ id: `view:${v}`, title: `Go to ${label}`, group: 'Views', run: () => setView(v) })
     items.push({ id: 'settings', title: 'Open Settings', group: 'Views', run: () => setSettingsOpen(true) })
+    items.push({ id: 'accounts', title: 'Manage Claude accounts', group: 'Views', run: () => setAccountsOpen(true) })
     for (const s of sessions) {
       items.push({
         id: `sess:${s.id}`,
@@ -486,9 +511,18 @@ export default function App() {
         run: () => setSessionModel(m.id)
       })
     }
+    for (const a of accounts) {
+      items.push({
+        id: `account:${a.id}`,
+        title: `Run as ${a.name}`,
+        subtitle: a.loggedIn ? a.email ?? 'this chat' : 'not logged in',
+        group: 'Switch account',
+        run: () => setSessionAccount(a.id)
+      })
+    }
     return items
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, models])
+  }, [sessions, models, accounts])
 
   return (
     <div className="app">
@@ -520,6 +554,10 @@ export default function App() {
               models={models}
               currentModel={activeSession?.model || defaultModel}
               onModelChange={setSessionModel}
+              accounts={accounts}
+              currentAccount={activeSession?.accountId ?? defaultAccountId}
+              onAccountChange={setSessionAccount}
+              onManageAccounts={() => setAccountsOpen(true)}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
               onToggleAutoApprove={toggleAutoApprove}
@@ -552,6 +590,10 @@ export default function App() {
           onSetUi={updateUi}
           onClose={() => setSettingsOpen(false)}
           onChanged={refreshAuth}
+          onManageAccounts={() => {
+            setSettingsOpen(false)
+            setAccountsOpen(true)
+          }}
         />
       )}
       {ui && !ui.onboarded && (
@@ -581,6 +623,9 @@ export default function App() {
         <GitModal cwd={activeSession?.projectPath ?? ''} onClose={() => setGitOpen(false)} />
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
+      {accountsOpen && (
+        <AccountsModal onClose={() => setAccountsOpen(false)} onChanged={refreshAccounts} />
+      )}
     </div>
   )
 }

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { Session, ModelInfo, ImageAttachment } from '../types'
+import { Session, ModelInfo, ImageAttachment, CCAccountStatus } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
+import AccountPicker from './AccountPicker'
 import './Chat.css'
 
 interface Props {
@@ -14,6 +15,10 @@ interface Props {
   models: ModelInfo[]
   currentModel: string
   onModelChange: (modelId: string) => void
+  accounts: CCAccountStatus[]
+  currentAccount?: string
+  onAccountChange: (accountId: string) => void
+  onManageAccounts: () => void
   onOpenClaudeMd: () => void
   autoApprove: boolean
   onToggleAutoApprove: () => void
@@ -31,6 +36,10 @@ export default function Chat({
   models,
   currentModel,
   onModelChange,
+  accounts,
+  currentAccount,
+  onAccountChange,
+  onManageAccounts,
   onOpenClaudeMd,
   autoApprove,
   onToggleAutoApprove,
@@ -155,6 +164,15 @@ export default function Chat({
               <polyline points="14 2 14 8 20 8" />
             </svg>
           </button>
+          {accounts.length > 1 && (
+            <AccountPicker
+              accounts={accounts}
+              value={currentAccount}
+              onChange={onAccountChange}
+              onManage={onManageAccounts}
+              compact
+            />
+          )}
           {models.length > 0 && (
             <ModelPicker models={models} value={currentModel} onChange={onModelChange} compact />
           )}
