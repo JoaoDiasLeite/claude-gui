@@ -1,0 +1,104 @@
+.terminal-panel {
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  max-height: 36px;
+  transition: max-height 0.2s ease;
+  overflow: hidden;
+}
+
+.terminal-panel.open {
+  max-height: var(--terminal-height);
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  cursor: pointer;
+  user-select: none;
+  height: 36px;
+}
+
+.terminal-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+.terminal-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--thinking);
+}
+
+.terminal-count {
+  background: var(--bg-3);
+  border-radius: 10px;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.terminal-body {
+  height: calc(var(--terminal-height) - 36px);
+  overflow-y: auto;
+  padding: 6px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.terminal-empty {
+  color: var(--text-2);
+  padding: 8px 14px;
+  font-size: 12px;
+}
+
+.terminal-line {
+  display: flex;
+  gap: 8px;
+  padding: 2px 14px;
+  line-height: 1.5;
+}
+
+.terminal-prefix {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.terminal-text {
+  flex: 1;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.terminal-line.error .terminal-prefix,
+.terminal-line.error .terminal-text { color: var(--error); }
+
+.terminal-line.user .terminal-prefix { color: var(--accent); }
+.terminal-line.user .terminal-text { color: var(--text-1); }
+
+.terminal-line.thinking .terminal-prefix { color: var(--thinking); }
+.terminal-line.thinking .terminal-text { color: var(--text-2); font-style: italic; }
+
+.terminal-line.tool .terminal-prefix { color: #4fc3f7; }
+.terminal-line.tool .terminal-text { color: var(--text-0); }
+
+.terminal-line.result .terminal-prefix { color: var(--success); }
+.terminal-line.result .terminal-text { color: var(--text-1); }
+
+.terminal-line.info .terminal-prefix { color: var(--text-2); }
+.terminal-line.info .terminal-text { color: var(--text-2); }

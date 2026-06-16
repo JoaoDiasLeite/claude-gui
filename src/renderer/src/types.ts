@@ -1,0 +1,417 @@
+export interface ToolCall {
+  id: string
+  tool: string
+  input: unknown
+  result?: string
+  isError?: boolean
+}
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking?: string
+  toolCalls?: ToolCall[]
+  timestamp: number
+}
+
+export interface Session {
+  id: string
+  name: string
+  messages: Message[]
+  projectPath?: string
+  /** Claude Code engine session id, used to resume the conversation. */
+  claudeSessionId?: string
+  /** Model override for this session (falls back to the global default). */
+  model?: string
+  /** If launched from a CC Agent, the agent's run options. */
+  agentId?: string
+  agentName?: string
+  systemPrompt?: string
+  permissionMode?: PermissionMode
+  allowedTools?: string[]
+  useMcp?: boolean
+  /** When true, skip per-tool approval prompts (auto-accept). */
+  autoApprove?: boolean
+  /** If set, this chat runs on a remote SSH host instead of locally. */
+  remoteHostId?: string
+  remoteHostName?: string
+  /** If set, this chat runs inside this WSL distro. */
+  wslDistro?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface FileNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+}
+
+export interface TermLine {
+  kind: 'user' | 'thinking' | 'tool' | 'result' | 'error' | 'info'
+  text: string
+}
+
+export interface ModelInfo {
+  id: string
+  label: string
+  inputPrice: number
+  outputPrice: number
+  context: string
+}
+
+export interface UsageLimits {
+  hourUsd: number
+  sessionUsd: number
+  weekUsd: number
+}
+
+export interface AppConfig {
+  defaultModel: string
+  limits: UsageLimits
+  claudeSettings: Record<string, unknown>
+}
+
+export interface SourceAccount {
+  email?: string
+  org?: string
+  plan?: string
+}
+
+export interface SourceInfo {
+  id: string
+  label: string
+  kind: 'local' | 'wsl'
+  distro?: string
+  account?: SourceAccount
+}
+
+export interface CCProject {
+  encodedDir: string
+  realPath: string
+  name: string
+  sessionCount: number
+  lastActive: number
+  sourceId: string
+  sourceLabel: string
+  kind: 'local' | 'wsl'
+  distro?: string
+  account?: SourceAccount
+}
+
+export interface CCSessionMeta {
+  sessionId: string
+  encodedDir: string
+  realPath: string
+  title: string
+  preview: string
+  messageCount: number
+  model?: string
+  createdAt: number
+  updatedAt: number
+  sourceId: string
+  kind: 'local' | 'wsl'
+  distro?: string
+}
+
+export interface SearchHit {
+  sessionId: string
+  encodedDir: string
+  realPath: string
+  projectName: string
+  title: string
+  snippet: string
+  updatedAt: number
+  model?: string
+  sourceId: string
+  kind: 'local' | 'wsl'
+  distro?: string
+  account?: SourceAccount
+}
+
+export interface CCTranscriptMessage {
+  role: 'user' | 'assistant'
+  text: string
+  thinking?: string
+  toolCalls: { id: string; tool: string; input: unknown; result?: string; isError?: boolean }[]
+  timestamp: number
+}
+
+export interface UsageEntry {
+  day: string
+  model: string
+  project: string
+  source: string
+  inputTokens: number
+  outputTokens: number
+  cacheTokens: number
+  costUsd: number
+}
+
+export interface UsageWindows {
+  hour: { costUsd: number; tokens: number }
+  session: { costUsd: number; tokens: number }
+  week: { costUsd: number; tokens: number }
+}
+
+export interface UsageReport {
+  entries: UsageEntry[]
+  windows: UsageWindows
+  generatedAt: number
+}
+
+export interface McpServer {
+  name: string
+  scope: 'global' | 'project'
+  projectPath?: string
+  transport: 'stdio' | 'sse' | 'http' | 'unknown'
+  command?: string
+  args?: string[]
+  url?: string
+  needsAuth: boolean
+  config: Record<string, unknown>
+}
+
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
+
+export interface AgentDef {
+  id: string
+  name: string
+  icon: string
+  systemPrompt: string
+  model: string
+  permissionMode: PermissionMode
+  allowedTools: string[]
+  defaultProjectPath?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface ClaudeMdFile {
+  scope: string
+  path: string
+  exists: boolean
+  content: string
+}
+
+export interface CheckpointMeta {
+  id: string
+  sessionId: string
+  label: string
+  createdAt: number
+  messageCount: number
+  fileCount: number
+}
+
+export interface RestoreResult {
+  restored: number
+  safetyCheckpointId: string | null
+}
+
+export interface GitFile {
+  path: string
+  index: string
+  worktree: string
+  staged: boolean
+  untracked: boolean
+}
+
+export interface GitStatus {
+  isRepo: boolean
+  branch: string
+  files: GitFile[]
+  ahead: number
+  behind: number
+}
+
+export interface ImageAttachment {
+  mediaType: string
+  data: string
+  preview: string
+}
+
+export type SshAuthType = 'password' | 'key' | 'agent'
+
+export interface SshHostPublic {
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  authType: SshAuthType
+  privateKeyPath?: string
+  remotePath?: string
+  claudePath?: string
+  hasSecret: boolean
+}
+
+export interface SshHostInput {
+  id?: string
+  name: string
+  host: string
+  port: number
+  username: string
+  authType: SshAuthType
+  password?: string
+  privateKeyPath?: string
+  passphrase?: string
+  remotePath?: string
+  claudePath?: string
+}
+
+export interface WslDistro {
+  name: string
+  isDefault: boolean
+}
+
+export type AuthMode = 'claude-code' | 'api-key'
+
+export interface AuthStatus {
+  mode: AuthMode
+  claudeCodeDetected: boolean
+  hasApiKey: boolean
+}
+
+export type AgentEvent =
+  | { appSessionId: string; kind: 'system'; claudeSessionId?: string; tools: string[] }
+  | { appSessionId: string; kind: 'text'; content: string }
+  | { appSessionId: string; kind: 'thinking'; content: string }
+  | { appSessionId: string; kind: 'tool-use'; tool: string; input: unknown; toolId: string }
+  | { appSessionId: string; kind: 'tool-result'; toolId: string; content: string; isError: boolean }
+
+export interface AgentDone {
+  appSessionId: string
+  claudeSessionId?: string
+  costUsd: number
+  isError: boolean
+  errorText?: string
+}
+
+export interface AgentError {
+  appSessionId: string
+  error: string
+}
+
+export interface ApprovalRequest {
+  appSessionId: string
+  approvalId: string
+  tool: string
+  input: Record<string, unknown>
+}
+
+declare global {
+  interface Window {
+    electronAPI: {
+      // Notifications
+      notify: (title: string, body: string) => Promise<{ shown: boolean }>
+
+      // Auth
+      authStatus: () => Promise<AuthStatus>
+      setAuthMode: (mode: AuthMode) => Promise<AuthStatus>
+      setApiKey: (key: string) => Promise<AuthStatus>
+      clearApiKey: () => Promise<AuthStatus>
+      hasApiKey: () => Promise<boolean>
+
+      // Agent
+      sendAgent: (payload: {
+        appSessionId: string
+        claudeSessionId?: string
+        prompt: string
+        projectPath?: string
+        model?: string
+        systemPrompt?: string
+        permissionMode?: PermissionMode
+        allowedTools?: string[]
+        useMcp?: boolean
+        approvalMode?: 'ask' | 'auto'
+        images?: { mediaType: string; data: string }[]
+        remoteHostId?: string
+        wslDistro?: string
+      }) => void
+      stopAgent: (appSessionId: string) => Promise<{ stopped: boolean }>
+      onAgentEvent: (cb: (data: AgentEvent) => void) => () => void
+      onAgentDone: (cb: (data: AgentDone) => void) => () => void
+      onAgentError: (cb: (data: AgentError) => void) => () => void
+      onApprovalRequest: (cb: (data: ApprovalRequest) => void) => () => void
+      respondApproval: (payload: {
+        approvalId: string
+        allow: boolean
+        updatedInput?: Record<string, unknown>
+      }) => Promise<{ ok: boolean }>
+
+      // Config / models
+      getConfig: () => Promise<AppConfig>
+      getModels: () => Promise<ModelInfo[]>
+      setDefaultModel: (modelId: string) => Promise<{ defaultModel: string }>
+      setLimits: (limits: Partial<UsageLimits>) => Promise<UsageLimits>
+
+      // Claude Code data
+      ccSources: () => Promise<SourceInfo[]>
+      ccListProjects: () => Promise<CCProject[]>
+      ccListSessions: (sourceId: string, encodedDir: string) => Promise<CCSessionMeta[]>
+      ccReadSession: (
+        sourceId: string,
+        encodedDir: string,
+        sessionId: string
+      ) => Promise<CCTranscriptMessage[]>
+      ccUsage: (force?: boolean) => Promise<UsageReport>
+      ccSearch: (query: string) => Promise<SearchHit[]>
+
+      // MCP
+      mcpList: () => Promise<McpServer[]>
+      mcpUpsert: (name: string, cfg: Record<string, unknown>) => Promise<McpServer[]>
+      mcpRemove: (name: string) => Promise<McpServer[]>
+
+      // Agents
+      agentsList: () => Promise<AgentDef[]>
+      agentsSave: (agent: AgentDef) => Promise<AgentDef>
+      agentsDelete: (id: string) => Promise<AgentDef[]>
+
+      // CLAUDE.md
+      claudeMdRead: (projectPath?: string) => Promise<ClaudeMdFile[]>
+      claudeMdWrite: (filePath: string, content: string) => Promise<{ success: boolean }>
+
+      // Checkpoints
+      checkpointCreate: (
+        sessionId: string,
+        label: string,
+        files: string[],
+        messageCount: number
+      ) => Promise<CheckpointMeta>
+      checkpointList: (sessionId: string) => Promise<CheckpointMeta[]>
+      checkpointRestore: (sessionId: string, id: string) => Promise<RestoreResult>
+      checkpointDelete: (sessionId: string, id: string) => Promise<CheckpointMeta[]>
+
+      // SSH
+      sshList: () => Promise<SshHostPublic[]>
+      sshSave: (host: SshHostInput) => Promise<SshHostPublic[]>
+      sshDelete: (id: string) => Promise<SshHostPublic[]>
+      sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
+
+      // WSL
+      wslList: () => Promise<WslDistro[]>
+      wslTest: (distro: string) => Promise<{ ok: boolean; message: string }>
+      wslHidden: () => Promise<string[]>
+      wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
+
+      // Git
+      gitStatus: (cwd: string) => Promise<GitStatus>
+      gitDiff: (cwd: string, filePath: string, staged: boolean) => Promise<string>
+      gitStage: (cwd: string, filePath: string) => Promise<GitStatus>
+      gitUnstage: (cwd: string, filePath: string) => Promise<GitStatus>
+      gitStageAll: (cwd: string) => Promise<GitStatus>
+      gitCommit: (cwd: string, message: string) => Promise<{ ok: boolean; message: string }>
+
+      // File system
+      readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
+      readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
+      openFolder: () => Promise<string | null>
+
+      // Sessions
+      listSessions: () => Promise<Session[]>
+      saveSession: (session: Session) => Promise<{ success: boolean }>
+      deleteSession: (id: string) => Promise<{ success: boolean }>
+    }
+  }
+}

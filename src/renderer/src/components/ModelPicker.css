@@ -1,0 +1,62 @@
+.model-picker {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.model-picker-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+  font-size: 12.5px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.model-picker-btn:hover { background: var(--bg-hover); }
+.model-picker.compact .model-picker-btn { padding: 4px 8px; font-size: 12px; }
+
+.model-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 240px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  z-index: 50;
+}
+
+.model-picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  transition: background 0.1s;
+}
+.model-picker-item:hover { background: var(--bg-hover); }
+.model-picker-item.selected { background: var(--accent-dim); }
+
+.model-picker-item-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-0);
+}
+.model-picker-item.selected .model-picker-item-main { color: var(--accent); }
+
+.model-picker-item-name { font-size: 13px; font-weight: 500; }
+
+.model-picker-item-meta {
+  font-size: 11px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
