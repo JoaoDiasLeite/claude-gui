@@ -1,0 +1,201 @@
+import { execFile, spawn, ChildProcess } from 'child_process'
+import * as fs from 'fs'
+import {
+  handleStreamLine,
+  makeLineBuffer,
+  StreamState,
+  StreamEmit
+} from './claude-stream'
+import { getHiddenDistros } from './store'
+
+export interface WslDistro {
+  name: string
+  isDefault: boolean
+}
+
+const isWindows = process.platform === 'win32'
+
+/** Enumerate installed WSL distros. `wsl --list --verbose` output is UTF-16LE on Windows. */
+export function listDistros(): Promise<WslDistro[]> {
+  if (!isWindows) return Promise.resolve([])
+  return new Promise((resolve) => {
+    execFile(
+      'wsl.exe',
+      ['--list', '--verbose'],
+      { encoding: 'buffer', windowsHide: true },
+      (err, stdoutBuf) => {
+        if (err && !stdoutBuf?.length) return resolve([])
+        // Output is UTF-16LE. Decode it (keeping real spaces, which separate the
+        // NAME / STATE / VERSION columns) and parse the name from each data row.
+        const text = Buffer.from(stdoutBuf).toString('utf16le')
+        const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+        const distros: WslDistro[] = []
+        // First line is the header (NAME STATE VERSION). Default distro is marked with '*'.
+        for (let i = 1; i < lines.length; i++) {
+          const raw = lines[i]
+          const isDefault = raw.startsWith('*')
+          const withoutStar = isDefault ? raw.slice(1).trim() : raw
+          const name = withoutStar.split(/\s+/)[0]
+          if (name) distros.push({ name, isDefault })
+        }
+        resolve(distros)
+      }
+    )
+  })
+}
+
+function shQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * The Windows user-profile mounted into WSL (/mnt/c/Users/…, /c/Users/…). A WSL chat
+ * defaulting here is almost always the cwd-inheritance artifact, never an intentional
+ * working dir — redirect those to the distro's $HOME. (Other /mnt paths are left alone.)
+ */
+function isWindowsHomeMount(p: string): boolean {
+  return /^\/mnt\/[a-z]\/Users\//i.test(p) || /^\/[a-z]\/Users\//i.test(p)
+}
+
+const SKIP_DISTROS = new Set(['docker-desktop', 'docker-desktop-data'])
+
+/** Resolve a distro's $HOME (starts the distro; times out fast if unreachable). */
+function wslHome(distro: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      'wsl.exe',
+      ['-d', distro, '--', 'bash', '-lc', 'echo $HOME'],
+      { encoding: 'utf8', windowsHide: true, timeout: 8000 },
+      (err, stdout) => {
+        if (err) return resolve(null)
+        const home = (stdout || '').trim().split('\n').pop()?.trim()
+        resolve(home && home.startsWith('/') ? home : null)
+      }
+    )
+  })
+}
+
+export interface WslClaudeRoot {
+  distro: string
+  projectsDir: string
+  claudeJsonPath: string
+}
+
+/**
+ * For every reachable WSL distro that has Claude Code data, return Windows-side UNC paths
+ * to its ~/.claude so the existing fs-based parsing can read it directly.
+ */
+export async function getWslClaudeRoots(): Promise<WslClaudeRoot[]> {
+  if (!isWindows) return []
+  const distros = await listDistros()
+  const hidden = new Set(getHiddenDistros())
+  const roots: WslClaudeRoot[] = []
+  for (const d of distros) {
+    if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
+    const home = await wslHome(d.name)
+    if (!home) continue
+    const unc = `\\\\wsl.localhost\\${d.name}${home.replace(/\//g, '\\')}`
+    const projectsDir = `${unc}\\.claude\\projects`
+    try {
+      if (fs.existsSync(projectsDir)) {
+        roots.push({ distro: d.name, projectsDir, claudeJsonPath: `${unc}\\.claude.json` })
+      }
+    } catch {
+      // not reachable — skip
+    }
+  }
+  return roots
+}
+
+function buildCommand(
+  claudePath: string,
+  model: string | undefined,
+  resume: string | undefined,
+  cwd: string | undefined
+): string {
+  const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits']
+  if (model) flags.push('--model', model)
+  if (resume) flags.push('--resume', resume)
+  // wsl.exe inherits the caller's Windows cwd (e.g. /mnt/c/Users/…). Default to the
+  // distro's own $HOME so chats run inside the Linux filesystem, not the Windows mount —
+  // and redirect any inherited Windows-home path to $HOME too.
+  const useHome = !cwd || isWindowsHomeMount(cwd)
+  const cd = useHome ? 'cd "$HOME" && ' : `cd ${shQuote(cwd)} && `
+  return `${cd}${claudePath || 'claude'} ${flags.join(' ')}`
+}
+
+export function testDistro(distro: string): Promise<{ ok: boolean; message: string }> {
+  if (!isWindows) return Promise.resolve({ ok: false, message: 'WSL is only available on Windows' })
+  return new Promise((resolve) => {
+    execFile(
+      'wsl.exe',
+      ['-d', distro, '--', 'bash', '-lc', 'claude --version'],
+      { encoding: 'utf8', windowsHide: true, timeout: 20000 },
+      (err, stdout, stderr) => {
+        const out = (stdout || '').trim()
+        if (out && /\d/.test(out)) return resolve({ ok: true, message: out })
+        resolve({
+          ok: false,
+          message: (stderr || '').trim() || (err ? err.message : 'claude not found in this distro')
+        })
+      }
+    )
+  })
+}
+
+const activeProcs = new Map<string, ChildProcess>()
+
+export interface WslRunHandlers extends StreamEmit {
+  onError: (msg: string) => void
+}
+
+export function runWsl(
+  appSessionId: string,
+  distro: string,
+  prompt: string,
+  model: string | undefined,
+  claudeSessionId: string | undefined,
+  cwd: string | undefined,
+  claudePath: string | undefined,
+  h: WslRunHandlers
+): void {
+  if (!isWindows) {
+    h.onError('WSL is only available on Windows')
+    return
+  }
+  const cmd = buildCommand(claudePath || 'claude', model, claudeSessionId, cwd)
+  const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', '-lc', cmd], {
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+  activeProcs.set(appSessionId, child)
+
+  const state: StreamState = { sessionId: claudeSessionId }
+  const lines = makeLineBuffer((line) => handleStreamLine(line, appSessionId, state, h))
+  let stderr = ''
+
+  child.stdout?.on('data', (d: Buffer) => lines.push(d.toString('utf8')))
+  child.stderr?.on('data', (d: Buffer) => (stderr += d.toString('utf8')))
+  child.on('error', (e) => {
+    h.onError(e.message)
+    activeProcs.delete(appSessionId)
+  })
+  child.on('close', (code) => {
+    lines.flush()
+    if (code && code !== 0 && stderr.trim()) h.onError(stderr.trim().slice(0, 500))
+    activeProcs.delete(appSessionId)
+  })
+
+  // Send the prompt over stdin and close it so `claude -p` runs once and exits.
+  child.stdin?.end(prompt)
+}
+
+export function stopWsl(appSessionId: string): boolean {
+  const child = activeProcs.get(appSessionId)
+  if (child) {
+    child.kill()
+    activeProcs.delete(appSessionId)
+    return true
+  }
+  return false
+}
