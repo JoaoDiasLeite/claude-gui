@@ -17,13 +17,18 @@
       "buildResources": "build",
       "output": "release"
     },
-    "files": ["out/**/*", "package.json"],
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
     "asarUnpack": [
       "node_modules/@anthropic-ai/claude-agent-sdk/**",
       "node_modules/@anthropic-ai/claude-agent-sdk-*/**"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.png"
     },
     "nsis": {
@@ -31,11 +36,15 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icon.png"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "build/icon.png"
     }
   },
@@ -43,6 +52,10 @@
     "@anthropic-ai/claude-agent-sdk": "^0.3.178",
     "@anthropic-ai/sdk": "^0.93.0",
     "@electron-toolkit/utils": "^3.0.0",
+    "highlight.js": "^11.11.1",
+    "react-markdown": "^9.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {

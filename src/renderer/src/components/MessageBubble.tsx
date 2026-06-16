@@ -1,4 +1,5 @@
 import { Message, ToolCall } from '../types'
+import Markdown from './Markdown'
 import './MessageBubble.css'
 
 interface Props {
@@ -44,26 +45,6 @@ function ToolCallView({ call }: { call: ToolCall }) {
   )
 }
 
-function formatContent(text: string): string {
-  // Minimal markdown-like formatting
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    // code blocks
-    .replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) =>
-      `<pre><code class="lang-${lang || 'text'}">${code.trimEnd()}</code></pre>`
-    )
-    // inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    // bold
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    // italic
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    // newlines -> br (outside pre)
-    .replace(/\n/g, '<br/>')
-}
-
 export default function MessageBubble({ message, streaming }: Props) {
   const isUser = message.role === 'user'
 
@@ -91,10 +72,13 @@ export default function MessageBubble({ message, streaming }: Props) {
           </div>
         )}
         {message.content ? (
-          <div
-            className="message-content"
-            dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
-          />
+          <div className="message-content">
+            {isUser ? (
+              <div className="user-text">{message.content}</div>
+            ) : (
+              <Markdown content={message.content} />
+            )}
+          </div>
         ) : (
           streaming && (!message.toolCalls || message.toolCalls.length === 0) && (
             <div className="typing-indicator"><span /><span /><span /></div>

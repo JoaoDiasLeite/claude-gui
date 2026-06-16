@@ -1,0 +1,157 @@
+/* ── Markdown content ───────────────────────────────────────────────────────── */
+
+.md {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-0);
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+
+.md p { margin: 0 0 10px; }
+
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.md h1 { font-size: 1.5em; }
+.md h2 { font-size: 1.3em; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 1.15em; }
+.md h4 { font-size: 1em; }
+.md h5, .md h6 { font-size: 0.9em; color: var(--text-1); }
+
+.md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+.md li { margin: 3px 0; }
+.md li > ul, .md li > ol { margin: 3px 0; }
+
+/* GFM task lists */
+.md li input[type='checkbox'] { margin-right: 6px; vertical-align: middle; }
+
+.md blockquote {
+  margin: 0 0 10px;
+  padding: 2px 12px;
+  border-left: 3px solid var(--border-light);
+  color: var(--text-1);
+}
+
+.md a { color: var(--accent); text-decoration: none; cursor: pointer; }
+.md a:hover { text-decoration: underline; }
+
+.md hr { margin: 16px 0; border: none; border-top: 1px solid var(--border); }
+
+.md img { max-width: 100%; border-radius: var(--radius-sm); }
+
+/* Tables (GFM) */
+.md table {
+  margin: 0 0 12px;
+  border-collapse: collapse;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md th, .md td {
+  padding: 6px 11px;
+  border: 1px solid var(--border-light);
+  text-align: left;
+}
+.md th { background: var(--bg-2); font-weight: 600; }
+.md tr:nth-child(2n) td { background: var(--bg-1); }
+
+/* Inline code */
+.md :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 1.5px 5px;
+  background: var(--bg-3);
+  border-radius: var(--radius-sm);
+  color: var(--text-0);
+}
+
+/* ── Fenced code blocks ─────────────────────────────────────────────────────── */
+
+.md-code-block {
+  position: relative;
+  margin: 0 0 12px;
+}
+
+.md-code-block pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+.md-code-block pre code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: none;
+  padding: 0;
+  color: var(--text-0);
+}
+
+.md-code-copy {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.md-code-block:hover .md-code-copy { opacity: 1; }
+.md-code-copy:hover { color: var(--text-0); background: var(--bg-hover); }
+
+/* ── highlight.js token theme (dark default, light override) ─────────────────── */
+
+.hljs-comment, .hljs-quote { color: #8b949e; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-deletion { color: #ff7b72; }
+.hljs-string, .hljs-regexp, .hljs-addition { color: #a5d6ff; }
+.hljs-number, .hljs-literal, .hljs-variable, .hljs-template-variable, .hljs-attr, .hljs-attribute { color: #79c0ff; }
+.hljs-title, .hljs-title.function_, .hljs-section { color: #d2a8ff; }
+.hljs-built_in, .hljs-class .hljs-title, .hljs-title.class_, .hljs-type { color: #ffa657; }
+.hljs-tag, .hljs-name, .hljs-symbol, .hljs-bullet { color: #7ee787; }
+.hljs-meta, .hljs-comment.doctag { color: #8b949e; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
+
+:root[data-theme='light'] .hljs-comment,
+:root[data-theme='light'] .hljs-quote { color: #6e7781; }
+:root[data-theme='light'] .hljs-keyword,
+:root[data-theme='light'] .hljs-selector-tag,
+:root[data-theme='light'] .hljs-deletion { color: #cf222e; }
+:root[data-theme='light'] .hljs-string,
+:root[data-theme='light'] .hljs-regexp,
+:root[data-theme='light'] .hljs-addition { color: #0a3069; }
+:root[data-theme='light'] .hljs-number,
+:root[data-theme='light'] .hljs-literal,
+:root[data-theme='light'] .hljs-variable,
+:root[data-theme='light'] .hljs-template-variable,
+:root[data-theme='light'] .hljs-attr,
+:root[data-theme='light'] .hljs-attribute { color: #0550ae; }
+:root[data-theme='light'] .hljs-title,
+:root[data-theme='light'] .hljs-title.function_,
+:root[data-theme='light'] .hljs-section { color: #8250df; }
+:root[data-theme='light'] .hljs-built_in,
+:root[data-theme='light'] .hljs-class .hljs-title,
+:root[data-theme='light'] .hljs-title.class_,
+:root[data-theme='light'] .hljs-type { color: #953800; }
+:root[data-theme='light'] .hljs-tag,
+:root[data-theme='light'] .hljs-name,
+:root[data-theme='light'] .hljs-symbol,
+:root[data-theme='light'] .hljs-bullet { color: #116329; }
+:root[data-theme='light'] .hljs-meta { color: #6e7781; }

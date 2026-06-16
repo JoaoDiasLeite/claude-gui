@@ -68,8 +68,9 @@
   max-width: 600px;
 }
 
-.message-content pre {
-  margin: 10px 0;
+.user-text {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .tool-calls {
