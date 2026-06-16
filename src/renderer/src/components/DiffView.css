@@ -1,0 +1,33 @@
+.diff-view {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-height: 360px;
+}
+
+.diff-row {
+  display: flex;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0 8px;
+}
+.diff-row.add { background: rgba(76, 175, 110, 0.12); }
+.diff-row.del { background: rgba(224, 82, 82, 0.12); }
+
+.diff-sign {
+  flex-shrink: 0;
+  width: 14px;
+  user-select: none;
+  color: var(--text-2);
+}
+.diff-row.add .diff-sign { color: var(--success); }
+.diff-row.del .diff-sign { color: var(--error); }
+
+.diff-text { flex: 1; }
+.diff-row.add .diff-text { color: #b6e6c6; }
+.diff-row.del .diff-text { color: #f0b9b9; }
+.diff-row.context .diff-text { color: var(--text-1); }
