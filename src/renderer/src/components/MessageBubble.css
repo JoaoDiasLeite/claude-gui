@@ -44,6 +44,13 @@
   flex: 1;
 }
 
+.message-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message-row.user .message-head { flex-direction: row-reverse; }
+
 .message-role {
   font-size: 11px;
   font-weight: 600;
@@ -51,6 +58,22 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+.message-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.message-row:hover .message-copy { opacity: 1; }
+.message-copy:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
 .message-content {
   color: var(--text-0);

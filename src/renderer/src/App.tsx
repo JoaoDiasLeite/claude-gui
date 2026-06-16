@@ -88,6 +88,8 @@ export default function App() {
   activeIdRef.current = activeId
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
+  // Latest createSession, so the global ⌘N handler never calls a stale closure.
+  const createSessionRef = useRef<() => void>(() => {})
 
   // Files Claude has edited/written per session — used for checkpoint snapshots.
   const modifiedFilesRef = useRef<Map<string, Set<string>>>(new Map())
@@ -324,6 +326,7 @@ export default function App() {
     setActiveId(s.id)
     setView('chat')
   }
+  createSessionRef.current = createSession
 
   const deleteSession = async (id: string) => {
     await window.electronAPI.deleteSession(id)
@@ -470,6 +473,9 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        createSessionRef.current()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -542,6 +548,8 @@ export default function App() {
             onSetProject={setSessionProject}
             onOpenSettings={() => setSettingsOpen(true)}
             auth={auth}
+            accounts={accounts}
+            activeAccountId={activeSession?.accountId ?? defaultAccountId}
           />
           <div className="main-area">
             <Chat

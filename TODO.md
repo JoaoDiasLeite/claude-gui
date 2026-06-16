@@ -17,21 +17,20 @@ current implementation each item would change.
 - [ ] **Retry / regenerate on failure.** On `agent:error` the assistant bubble
   just gets `Error: …` text (`App.tsx` ~line 222). Add a "Retry" affordance on a
   failed turn.
-- [ ] **Reconcile the sidebar status chip with multi-account.** `Sidebar.tsx`
-  (~line 46) still derives its label from the old `auth.mode`
-  (`claude-code`/`api-key`) and ignores account state — it won't show which
-  account the active chat runs as. Surface the active chat's account.
+- [x] **Reconcile the sidebar status chip with multi-account.** Done: the chip
+  now shows the active chat's account name + email/plan (or "not logged in"),
+  with the dot/ready state derived per-account (the default account also counts
+  as ready when the global connection is, e.g. an API key).
 
 ## Medium impact
 
 - [ ] **Session list badges.** Sidebar session rows (`Sidebar.tsx` ~line 123)
   show name + project + date but no **model or account** badge — hard to tell
   chats apart with multiple accounts/models in play.
-- [ ] **Wire `⌘N` (New chat).** The palette advertises `⌘N` (`App.tsx` ~line 457)
-  but only `Ctrl/Cmd-K` is handled (`App.tsx` ~line 445). Wire the shortcut or
-  drop the hint.
-- [ ] **Copy buttons.** Code-block copy is done (markdown item above). Still
-  missing: copy a whole message.
+- [x] **Wire `⌘N` (New chat).** Done: `Ctrl/Cmd-N` now creates a new chat via the
+  global keydown handler (`App.tsx`), matching the palette hint.
+- [x] **Copy buttons.** Done: code-block copy (markdown item above) and a
+  per-message copy button (hover-revealed) in `MessageBubble.tsx`.
 - [ ] **Edit & resend a prompt.** No way to edit a previous user message and
   re-run the conversation from that point.
 

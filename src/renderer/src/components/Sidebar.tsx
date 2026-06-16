@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Session, AuthStatus } from '../types'
+import { Session, AuthStatus, CCAccountStatus } from '../types'
 import FileTree from './FileTree'
 import './Sidebar.css'
 
@@ -15,6 +15,8 @@ interface Props {
   onSetProject: (path: string) => void
   onOpenSettings: () => void
   auth: AuthStatus | null
+  accounts: CCAccountStatus[]
+  activeAccountId?: string
 }
 
 export default function Sidebar({
@@ -28,7 +30,9 @@ export default function Sidebar({
   projectPath,
   onSetProject,
   onOpenSettings,
-  auth
+  auth,
+  accounts,
+  activeAccountId
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
 
@@ -37,7 +41,7 @@ export default function Sidebar({
     if (path) onSetProject(path)
   }
 
-  const ready = auth
+  const authReady = auth
     ? auth.mode === 'api-key'
       ? auth.hasApiKey
       : auth.claudeCodeDetected || auth.hasApiKey
@@ -54,6 +58,23 @@ export default function Sidebar({
       : auth.hasApiKey
         ? 'API key'
         : 'No API key'
+
+  // Surface the account the active chat runs under. The default account also counts as
+  // ready when the global connection is (e.g. an API key), even if its own OAuth file
+  // isn't present; other accounts are ready only once logged in.
+  const activeAccount = accounts.find((a) => a.id === activeAccountId)
+  const accountReady = activeAccount
+    ? activeAccount.isDefault
+      ? activeAccount.loggedIn || authReady
+      : activeAccount.loggedIn
+    : authReady
+  const ready = accountReady
+  const accountDetail = activeAccount?.loggedIn
+    ? [activeAccount.email, activeAccount.plan].filter(Boolean).join(' · ')
+    : ''
+  const statusLabel = activeAccount
+    ? activeAccount.name + (accountDetail ? ` · ${accountDetail}` : ready ? '' : ' · not logged in')
+    : authLabel
 
   const formatDate = (ts: number) => {
     const d = new Date(ts)
@@ -88,7 +109,7 @@ export default function Sidebar({
         title="Open connection settings"
       >
         <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
-        <span className="auth-label">{authLabel}</span>
+        <span className="auth-label">{statusLabel}</span>
         {!ready && <span className="auth-cta">Connect</span>}
       </button>
 
