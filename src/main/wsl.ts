@@ -48,6 +48,13 @@ function shQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`
 }
 
+// Run `claude`/`node` through an INTERACTIVE login shell. Per-user version managers (nvm,
+// asdf, fnm) typically only initialize in interactive shells — Ubuntu's ~/.bashrc returns
+// early for non-interactive ones — so a plain `bash -lc` would miss an nvm-provided node and
+// fall back to a stale system node. Stdout shell-init noise is ignored by the stream parser
+// (non-JSON lines are skipped); job-control warnings on stderr only surface on non-zero exit.
+const CLAUDE_SHELL_FLAG = '-lic'
+
 /**
  * The Windows user-profile mounted into WSL (/mnt/c/Users/…, /c/Users/…). A WSL chat
  * defaulting here is almost always the cwd-inheritance artifact, never an intentional
@@ -124,19 +131,68 @@ function buildCommand(
   return `${cd}${claudePath || 'claude'} ${flags.join(' ')}`
 }
 
+/** Claude Code requires a modern Node; older majors can't even parse the CLI bundle. */
+const MIN_NODE_MAJOR = 18
+
 export function testDistro(distro: string): Promise<{ ok: boolean; message: string }> {
   if (!isWindows) return Promise.resolve({ ok: false, message: 'WSL is only available on Windows' })
   return new Promise((resolve) => {
+    // Probe Node and Claude together so we can blame an old/missing Node for a CLI that
+    // won't start, rather than surfacing a raw SyntaxError stack trace.
+    const probe = 'node -v 2>/dev/null || echo __NONODE__; echo __CLAUDE__; claude --version 2>&1 | head -5'
     execFile(
       'wsl.exe',
-      ['-d', distro, '--', 'bash', '-lc', 'claude --version'],
+      ['-d', distro, '--', 'bash', CLAUDE_SHELL_FLAG, probe],
       { encoding: 'utf8', windowsHide: true, timeout: 20000 },
       (err, stdout, stderr) => {
-        const out = (stdout || '').trim()
-        if (out && /\d/.test(out)) return resolve({ ok: true, message: out })
+        const [nodePartRaw, claudePartRaw = ''] = (stdout || '').split('__CLAUDE__')
+        const nodeOut = (nodePartRaw || '').trim()
+        const claudeOut = claudePartRaw.trim()
+        const nodeMissing = !nodeOut || nodeOut.includes('__NONODE__')
+        const nodeMajorMatch = nodeOut.match(/v(\d+)\./)
+        const nodeMajor = nodeMajorMatch ? parseInt(nodeMajorMatch[1], 10) : null
+
+        const firstLine = claudeOut.split('\n')[0] ?? ''
+        const looksLikeVersion = /\d+\.\d+\.\d+/.test(firstLine)
+        // The signature of a too-old Node failing to parse the modern CLI bundle.
+        const looksBroken = /SyntaxError|Unexpected token|cli\.js|node:module|ERR_[A-Z_]+/.test(claudeOut)
+
+        if (looksLikeVersion && !looksBroken) {
+          // `claude` works. Only note the Node version when the probe's `node` is itself
+          // modern — under a version manager that node may be the stale system one while
+          // claude actually runs on a newer node, so a "Node v12" note would mislead.
+          const suffix = nodeMajor !== null && nodeMajor >= MIN_NODE_MAJOR ? ` · Node ${nodeOut}` : ''
+          return resolve({ ok: true, message: `${firstLine}${suffix}` })
+        }
+
+        if (nodeMissing) {
+          return resolve({
+            ok: false,
+            message: 'Node.js not found in this distro. Install Node 18+ and Claude Code (npm i -g @anthropic-ai/claude-code).'
+          })
+        }
+        if (nodeMajor !== null && nodeMajor < MIN_NODE_MAJOR) {
+          return resolve({
+            ok: false,
+            message: `Node ${nodeOut} is too old — Claude Code needs Node ${MIN_NODE_MAJOR}+. Upgrade Node in this distro, then reinstall: npm i -g @anthropic-ai/claude-code`
+          })
+        }
+        if (looksBroken) {
+          return resolve({
+            ok: false,
+            message: `Claude Code failed to start${!nodeMissing ? ` (Node ${nodeOut})` : ''}. This usually means Node is too old — Claude Code needs Node ${MIN_NODE_MAJOR}+.`
+          })
+        }
+        const notFound = !claudeOut || /not found|no such file|command not found/i.test(claudeOut)
+        if (notFound) {
+          return resolve({
+            ok: false,
+            message: 'claude not found in this distro. Install it: npm i -g @anthropic-ai/claude-code'
+          })
+        }
         resolve({
           ok: false,
-          message: (stderr || '').trim() || (err ? err.message : 'claude not found in this distro')
+          message: claudeOut.slice(0, 300) || (stderr || '').trim() || (err ? err.message : 'claude not found in this distro')
         })
       }
     )
@@ -164,7 +220,7 @@ export function runWsl(
     return
   }
   const cmd = buildCommand(claudePath || 'claude', model, claudeSessionId, cwd)
-  const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', '-lc', cmd], {
+  const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', CLAUDE_SHELL_FLAG, cmd], {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe']
   })
