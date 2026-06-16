@@ -1,0 +1,109 @@
+import { contextBridge, ipcRenderer } from 'electron'
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  // Notifications
+  notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
+
+  // Auth
+  authStatus: () => ipcRenderer.invoke('auth:status'),
+  setAuthMode: (mode: string) => ipcRenderer.invoke('auth:set-mode', mode),
+  setApiKey: (key: string) => ipcRenderer.invoke('auth:set-api-key', key),
+  clearApiKey: () => ipcRenderer.invoke('auth:clear-api-key'),
+  hasApiKey: () => ipcRenderer.invoke('auth:has-api-key'),
+
+  // Agent
+  sendAgent: (payload: unknown) => ipcRenderer.send('agent:send', payload),
+  stopAgent: (appSessionId: string) => ipcRenderer.invoke('agent:stop', appSessionId),
+  onAgentEvent: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('agent:event', fn)
+    return () => ipcRenderer.removeListener('agent:event', fn)
+  },
+  onAgentDone: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('agent:done', fn)
+    return () => ipcRenderer.removeListener('agent:done', fn)
+  },
+  onAgentError: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('agent:error', fn)
+    return () => ipcRenderer.removeListener('agent:error', fn)
+  },
+  onApprovalRequest: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('agent:approval-request', fn)
+    return () => ipcRenderer.removeListener('agent:approval-request', fn)
+  },
+  respondApproval: (payload: unknown) => ipcRenderer.invoke('agent:approval-response', payload),
+
+  // Config / models
+  getConfig: () => ipcRenderer.invoke('config:get'),
+  getModels: () => ipcRenderer.invoke('config:models'),
+  setDefaultModel: (modelId: string) => ipcRenderer.invoke('config:set-default-model', modelId),
+  setLimits: (limits: unknown) => ipcRenderer.invoke('config:set-limits', limits),
+
+  // Claude Code data
+  ccSources: () => ipcRenderer.invoke('cc:sources'),
+  ccListProjects: () => ipcRenderer.invoke('cc:list-projects'),
+  ccListSessions: (sourceId: string, encodedDir: string) =>
+    ipcRenderer.invoke('cc:list-sessions', sourceId, encodedDir),
+  ccReadSession: (sourceId: string, encodedDir: string, sessionId: string) =>
+    ipcRenderer.invoke('cc:read-session', sourceId, encodedDir, sessionId),
+  ccUsage: (force?: boolean) => ipcRenderer.invoke('cc:usage', force),
+  ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
+
+  // MCP
+  mcpList: () => ipcRenderer.invoke('mcp:list'),
+  mcpUpsert: (name: string, cfg: unknown) => ipcRenderer.invoke('mcp:upsert', name, cfg),
+  mcpRemove: (name: string) => ipcRenderer.invoke('mcp:remove', name),
+
+  // Agents
+  agentsList: () => ipcRenderer.invoke('agents:list'),
+  agentsSave: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
+  agentsDelete: (id: string) => ipcRenderer.invoke('agents:delete', id),
+
+  // CLAUDE.md
+  claudeMdRead: (projectPath?: string) => ipcRenderer.invoke('claudemd:read', projectPath),
+  claudeMdWrite: (filePath: string, content: string) =>
+    ipcRenderer.invoke('claudemd:write', filePath, content),
+
+  // Checkpoints
+  checkpointCreate: (sessionId: string, label: string, files: string[], messageCount: number) =>
+    ipcRenderer.invoke('checkpoint:create', sessionId, label, files, messageCount),
+  checkpointList: (sessionId: string) => ipcRenderer.invoke('checkpoint:list', sessionId),
+  checkpointRestore: (sessionId: string, id: string) =>
+    ipcRenderer.invoke('checkpoint:restore', sessionId, id),
+  checkpointDelete: (sessionId: string, id: string) =>
+    ipcRenderer.invoke('checkpoint:delete', sessionId, id),
+
+  // SSH
+  sshList: () => ipcRenderer.invoke('ssh:list'),
+  sshSave: (host: unknown) => ipcRenderer.invoke('ssh:save', host),
+  sshDelete: (id: string) => ipcRenderer.invoke('ssh:delete', id),
+  sshTest: (id: string) => ipcRenderer.invoke('ssh:test', id),
+
+  // WSL
+  wslList: () => ipcRenderer.invoke('wsl:list'),
+  wslTest: (distro: string) => ipcRenderer.invoke('wsl:test', distro),
+  wslHidden: () => ipcRenderer.invoke('wsl:hidden'),
+  wslSetHidden: (distro: string, hidden: boolean) => ipcRenderer.invoke('wsl:set-hidden', distro, hidden),
+
+  // Git
+  gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
+  gitDiff: (cwd: string, filePath: string, staged: boolean) =>
+    ipcRenderer.invoke('git:diff', cwd, filePath, staged),
+  gitStage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:stage', cwd, filePath),
+  gitUnstage: (cwd: string, filePath: string) => ipcRenderer.invoke('git:unstage', cwd, filePath),
+  gitStageAll: (cwd: string) => ipcRenderer.invoke('git:stage-all', cwd),
+  gitCommit: (cwd: string, message: string) => ipcRenderer.invoke('git:commit', cwd, message),
+
+  // File system
+  readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
+  readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
+  openFolder: () => ipcRenderer.invoke('fs:open-folder'),
+
+  // Sessions
+  listSessions: () => ipcRenderer.invoke('session:list'),
+  saveSession: (session: unknown) => ipcRenderer.invoke('session:save', session),
+  deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id)
+})
