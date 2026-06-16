@@ -30,6 +30,35 @@
   --terminal-height: 220px;
 }
 
+/* ── Light theme ── */
+:root[data-theme='light'] {
+  --bg-0: #ffffff;
+  --bg-1: #f6f6f7;
+  --bg-2: #eeeef1;
+  --bg-3: #e4e4e9;
+  --bg-hover: #e8e8ee;
+  --border: #e3e3e8;
+  --border-light: #d2d2d8;
+  --text-0: #1c1c1e;
+  --text-1: #55555c;
+  --text-2: #8a8a92;
+  --accent: #c2603f;
+  --accent-dim: rgba(194, 96, 63, 0.12);
+  --accent-hover: #b1573a;
+  --success: #2f9e5e;
+  --error: #cf3b3b;
+  --thinking: #6a5fc0;
+  --thinking-bg: rgba(106, 95, 192, 0.1);
+}
+
+/* ── Density ── */
+:root[data-density='compact'] .message-row { padding-top: 8px; padding-bottom: 8px; }
+:root[data-density='compact'] .session-item { padding: 5px 8px; }
+:root[data-density='compact'] .view-scroll { padding-top: 14px; padding-bottom: 24px; }
+:root[data-density='compact'] .usage-card { padding: 11px; }
+:root[data-density='compact'] .cmd-item { padding: 5px 10px; }
+:root[data-density='compact'] .file-node { padding-top: 2px; padding-bottom: 2px; }
+
 html, body, #root {
   height: 100%;
   width: 100%;

@@ -67,9 +67,17 @@ export interface UsageLimits {
   weekUsd: number
 }
 
+export interface UiPrefs {
+  theme: 'dark' | 'light'
+  density: 'comfortable' | 'compact'
+  fontSize: 'sm' | 'md' | 'lg'
+  onboarded: boolean
+}
+
 export interface AppConfig {
   defaultModel: string
   limits: UsageLimits
+  ui: UiPrefs
   claudeSettings: Record<string, unknown>
 }
 
@@ -305,6 +313,7 @@ declare global {
     electronAPI: {
       // Notifications
       notify: (title: string, body: string) => Promise<{ shown: boolean }>
+      setZoom: (factor: number) => Promise<number>
 
       // Auth
       authStatus: () => Promise<AuthStatus>
@@ -345,6 +354,7 @@ declare global {
       getModels: () => Promise<ModelInfo[]>
       setDefaultModel: (modelId: string) => Promise<{ defaultModel: string }>
       setLimits: (limits: Partial<UsageLimits>) => Promise<UsageLimits>
+      setUiPrefs: (prefs: Partial<UiPrefs>) => Promise<UiPrefs>
 
       // Claude Code data
       ccSources: () => Promise<SourceInfo[]>

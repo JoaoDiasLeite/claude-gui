@@ -184,6 +184,10 @@
 }
 .field-hint.inline { margin: 0; flex: 1; }
 
+.appearance-grid { display: flex; flex-direction: column; gap: 10px; }
+.seg-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.seg-field > span { font-size: 13px; color: var(--text-1); }
+
 .modal-footer {
   display: flex;
   justify-content: flex-end;

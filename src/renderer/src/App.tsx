@@ -23,6 +23,8 @@ import ApprovalModal from './components/ApprovalModal'
 import CheckpointsModal from './components/CheckpointsModal'
 import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
+import OnboardingModal from './components/OnboardingModal'
+import { UiPrefs } from './types'
 import ProjectsView from './views/ProjectsView'
 import AgentsView from './views/AgentsView'
 import UsageView from './views/UsageView'
@@ -33,6 +35,14 @@ import './styles/App.css'
 
 function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+function applyUi(ui: UiPrefs) {
+  const root = document.documentElement
+  root.dataset.theme = ui.theme
+  root.dataset.density = ui.density
+  const zoom = ui.fontSize === 'sm' ? 0.9 : ui.fontSize === 'lg' ? 1.12 : 1
+  window.electronAPI.setZoom(zoom)
 }
 
 function newSession(projectPath?: string, model?: string): Session {
@@ -65,6 +75,7 @@ export default function App() {
   const [view, setView] = useState<View>('chat')
   const [models, setModels] = useState<ModelInfo[]>([])
   const [defaultModel, setDefaultModel] = useState('claude-opus-4-8')
+  const [ui, setUi] = useState<UiPrefs | null>(null)
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
 
   const activeIdRef = useRef(activeId)
@@ -109,6 +120,8 @@ export default function App() {
       await refreshAuth()
       setModels(models)
       setDefaultModel(config.defaultModel)
+      setUi(config.ui)
+      applyUi(config.ui)
       if (saved.length > 0) {
         setSessions(saved)
         setActiveId(saved[0].id)
@@ -421,6 +434,12 @@ export default function App() {
     await window.electronAPI.setDefaultModel(modelId)
   }
 
+  const updateUi = async (patch: Partial<UiPrefs>) => {
+    const next = await window.electronAPI.setUiPrefs(patch)
+    setUi(next)
+    applyUi(next)
+  }
+
   // Global Ctrl/Cmd-K toggles the command palette.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -529,8 +548,18 @@ export default function App() {
           models={models}
           defaultModel={defaultModel}
           onSetDefaultModel={handleSetDefaultModel}
+          ui={ui}
+          onSetUi={updateUi}
           onClose={() => setSettingsOpen(false)}
           onChanged={refreshAuth}
+        />
+      )}
+      {ui && !ui.onboarded && (
+        <OnboardingModal
+          onFinish={async () => {
+            await updateUi({ onboarded: true })
+            await refreshAuth()
+          }}
         />
       )}
       {claudeMdOpen && (

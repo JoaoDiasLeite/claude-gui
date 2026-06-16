@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('electronAPI', {
   // Notifications
   notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
+  setZoom: (factor: number) => ipcRenderer.invoke('app:set-zoom', factor),
 
   // Auth
   authStatus: () => ipcRenderer.invoke('auth:status'),
@@ -41,6 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getModels: () => ipcRenderer.invoke('config:models'),
   setDefaultModel: (modelId: string) => ipcRenderer.invoke('config:set-default-model', modelId),
   setLimits: (limits: unknown) => ipcRenderer.invoke('config:set-limits', limits),
+  setUiPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-ui', prefs),
 
   // Claude Code data
   ccSources: () => ipcRenderer.invoke('cc:sources'),

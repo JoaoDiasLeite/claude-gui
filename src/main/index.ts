@@ -15,7 +15,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, getClaudeSettings, MODELS, UsageLimits } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, getClaudeSettings, MODELS, UsageLimits, UiPrefs } from './config'
 import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
 import {
   listMcpServers,
@@ -81,6 +81,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0f0f0f',
+    icon: join(__dirname, '../../build/icon.png'),
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -120,6 +121,12 @@ app.on('window-all-closed', () => {
 })
 
 // ─── Notifications ────────────────────────────────────────────────────────────
+
+ipcMain.handle('app:set-zoom', (_, factor: number) => {
+  const f = Math.max(0.6, Math.min(1.4, factor || 1))
+  mainWindow?.webContents.setZoomFactor(f)
+  return f
+})
 
 ipcMain.handle('app:notify', (_, payload: { title: string; body: string }) => {
   if (!Notification.isSupported()) return { shown: false }
@@ -435,6 +442,7 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
   return getConfig()
 })
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
+ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
 
 // ─── Claude Code data (real projects / sessions / usage, local + WSL) ──────────
 

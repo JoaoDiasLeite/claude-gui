@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AuthStatus, AuthMode, ModelInfo } from '../types'
+import { AuthStatus, AuthMode, ModelInfo, UiPrefs } from '../types'
 import ModelPicker from './ModelPicker'
 import './SettingsModal.css'
 
@@ -8,6 +8,8 @@ interface Props {
   models: ModelInfo[]
   defaultModel: string
   onSetDefaultModel: (modelId: string) => void
+  ui: UiPrefs | null
+  onSetUi: (patch: Partial<UiPrefs>) => void
   onClose: () => void
   onChanged: () => Promise<AuthStatus> | void
 }
@@ -17,6 +19,8 @@ export default function SettingsModal({
   models,
   defaultModel,
   onSetDefaultModel,
+  ui,
+  onSetUi,
   onClose,
   onChanged
 }: Props) {
@@ -158,6 +162,36 @@ export default function SettingsModal({
                     Remove saved key
                   </button>
                 )}
+              </div>
+            </div>
+          )}
+
+          {ui && (
+            <div className="form-group">
+              <label>Appearance</label>
+              <div className="appearance-grid">
+                <div className="seg-field">
+                  <span>Theme</span>
+                  <div className="seg-control">
+                    <button className={ui.theme === 'dark' ? 'on' : ''} onClick={() => onSetUi({ theme: 'dark' })}>Dark</button>
+                    <button className={ui.theme === 'light' ? 'on' : ''} onClick={() => onSetUi({ theme: 'light' })}>Light</button>
+                  </div>
+                </div>
+                <div className="seg-field">
+                  <span>Density</span>
+                  <div className="seg-control">
+                    <button className={ui.density === 'comfortable' ? 'on' : ''} onClick={() => onSetUi({ density: 'comfortable' })}>Comfortable</button>
+                    <button className={ui.density === 'compact' ? 'on' : ''} onClick={() => onSetUi({ density: 'compact' })}>Compact</button>
+                  </div>
+                </div>
+                <div className="seg-field">
+                  <span>Text size</span>
+                  <div className="seg-control">
+                    <button className={ui.fontSize === 'sm' ? 'on' : ''} onClick={() => onSetUi({ fontSize: 'sm' })}>S</button>
+                    <button className={ui.fontSize === 'md' ? 'on' : ''} onClick={() => onSetUi({ fontSize: 'md' })}>M</button>
+                    <button className={ui.fontSize === 'lg' ? 'on' : ''} onClick={() => onSetUi({ fontSize: 'lg' })}>L</button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

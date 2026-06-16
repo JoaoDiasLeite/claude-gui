@@ -31,9 +31,17 @@ export interface UsageLimits {
   weekUsd: number
 }
 
+export interface UiPrefs {
+  theme: 'dark' | 'light'
+  density: 'comfortable' | 'compact'
+  fontSize: 'sm' | 'md' | 'lg'
+  onboarded: boolean
+}
+
 interface AppConfig {
   defaultModel: string
   limits: UsageLimits
+  ui: UiPrefs
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -41,14 +49,20 @@ let config: AppConfig = {
   defaultModel: 'claude-opus-4-8',
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
-  limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 }
+  limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
+  ui: { theme: 'dark', density: 'comfortable', fontSize: 'md', onboarded: false }
 }
 
 export function loadConfig(): void {
   try {
     if (fs.existsSync(configPath)) {
       const loaded = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-      config = { ...config, ...loaded, limits: { ...config.limits, ...(loaded.limits ?? {}) } }
+      config = {
+        ...config,
+        ...loaded,
+        limits: { ...config.limits, ...(loaded.limits ?? {}) },
+        ui: { ...config.ui, ...(loaded.ui ?? {}) }
+      }
     }
   } catch {
     // keep defaults
@@ -72,6 +86,12 @@ export function setLimits(limits: Partial<UsageLimits>): UsageLimits {
   config.limits = { ...config.limits, ...limits }
   saveConfig()
   return config.limits
+}
+
+export function setUiPrefs(prefs: Partial<UiPrefs>): UiPrefs {
+  config.ui = { ...config.ui, ...prefs }
+  saveConfig()
+  return config.ui
 }
 
 // ─── Claude Code's own settings.json (effort, model) ──────────────────────────
