@@ -1,0 +1,30 @@
+.modal.onboarding {
+  width: 520px;
+  max-width: calc(100vw - 40px);
+}
+
+.ob-step { padding: 26px 28px 22px; display: flex; flex-direction: column; gap: 14px; }
+.ob-step h3 { font-size: 17px; font-weight: 600; }
+
+.ob-welcome { align-items: center; text-align: center; gap: 16px; padding: 40px 32px 32px; }
+.ob-logo {
+  width: 84px; height: 84px; border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent-dim);
+}
+.ob-welcome h2 { font-size: 22px; font-weight: 700; }
+.ob-welcome p { color: var(--text-1); line-height: 1.6; max-width: 380px; }
+.ob-welcome .btn-primary { margin-top: 8px; padding: 10px 22px; font-size: 14px; }
+
+.ob-detect {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; border-radius: var(--radius-sm); font-size: 13px;
+}
+.ob-detect.ok { background: rgba(76,175,110,0.12); color: var(--success); }
+.ob-detect.warn { background: var(--accent-dim); color: var(--accent); }
+
+.ob-key { display: flex; gap: 8px; }
+.ob-key .text-input { flex: 1; }
+
+.ob-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.ob-spacer { flex: 1; }
