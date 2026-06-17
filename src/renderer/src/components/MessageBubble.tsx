@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Message, ToolCall } from '../types'
 import Markdown from './Markdown'
 import './MessageBubble.css'
@@ -32,6 +32,9 @@ function CopyMessage({ text }: { text: string }) {
 interface Props {
   message: Message
   streaming: boolean
+  /** Defined only on the last assistant message when it ended in an error. */
+  onRetry?: () => void
+  onEditResend: (messageId: string, newText: string) => void
 }
 
 function summarizeInput(input: unknown): string {
@@ -100,8 +103,34 @@ function ToolCallView({ call }: { call: ToolCall }) {
   )
 }
 
-export default function MessageBubble({ message, streaming }: Props) {
+export default function MessageBubble({ message, streaming, onRetry, onEditResend }: Props) {
   const isUser = message.role === 'user'
+  const [editing, setEditing] = useState(false)
+  const [editText, setEditText] = useState(message.content)
+  const editRef = useRef<HTMLTextAreaElement>(null)
+
+  const startEdit = () => {
+    setEditText(message.content)
+    setEditing(true)
+    // Focus textarea after render
+    setTimeout(() => editRef.current?.focus(), 0)
+  }
+
+  const cancelEdit = () => {
+    setEditing(false)
+    setEditText(message.content)
+  }
+
+  const saveEdit = () => {
+    if (!editText.trim() || streaming) return
+    setEditing(false)
+    onEditResend(message.id, editText)
+  }
+
+  const handleEditKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Escape') { cancelEdit(); return }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { saveEdit() }
+  }
 
   return (
     <div className={`message-row ${isUser ? 'user' : 'assistant'}`}>
@@ -121,6 +150,20 @@ export default function MessageBubble({ message, streaming }: Props) {
         <div className="message-head">
           <span className="message-role">{isUser ? 'You' : 'Claude'}</span>
           <CopyMessage text={message.content} />
+          {isUser && !editing && (
+            <button
+              className="message-edit"
+              onClick={startEdit}
+              title="Edit and resend"
+              aria-label="Edit and resend"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Edit
+            </button>
+          )}
         </div>
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="tool-calls">
@@ -129,7 +172,36 @@ export default function MessageBubble({ message, streaming }: Props) {
             ))}
           </div>
         )}
-        {message.content ? (
+        {isUser && editing ? (
+          <div className="message-edit-area">
+            <textarea
+              ref={editRef}
+              className="message-edit-textarea"
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              onKeyDown={handleEditKeyDown}
+              rows={Math.max(2, editText.split('\n').length)}
+              aria-label="Edit message"
+            />
+            <div className="message-edit-actions">
+              <button
+                className="message-edit-save"
+                onClick={saveEdit}
+                disabled={streaming || !editText.trim()}
+                aria-label="Save and rerun"
+              >
+                Save &amp; rerun
+              </button>
+              <button
+                className="message-edit-cancel"
+                onClick={cancelEdit}
+                aria-label="Cancel edit"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : message.content ? (
           <div className="message-content">
             {isUser ? (
               <div className="user-text">{message.content}</div>
@@ -143,6 +215,20 @@ export default function MessageBubble({ message, streaming }: Props) {
           )
         )}
         {streaming && message.content && <span className="cursor-blink" />}
+        {onRetry && (
+          <button
+            className="message-retry"
+            onClick={onRetry}
+            disabled={streaming}
+            aria-label="Retry this turn"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="1 4 1 10 7 10" />
+              <path d="M3.51 15a9 9 0 1 0 .49-3.71" />
+            </svg>
+            Retry
+          </button>
+        )}
       </div>
     </div>
   )

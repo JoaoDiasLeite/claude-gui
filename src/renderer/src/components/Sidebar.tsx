@@ -3,6 +3,25 @@ import { Session, AuthStatus, CCAccountStatus } from '../types'
 import FileTree from './FileTree'
 import './Sidebar.css'
 
+const MODEL_LABELS: Record<string, string> = {
+  'claude-opus-4-8': 'Opus 4.8',
+  'claude-opus-4-7': 'Opus 4.7',
+  'claude-opus-4-6': 'Opus 4.6',
+  'claude-sonnet-4-6': 'Sonnet 4.6',
+  'claude-sonnet-4-5': 'Sonnet 4.5',
+  'claude-haiku-4-5': 'Haiku 4.5',
+  'claude-fable-5': 'Fable 5',
+}
+
+function shortModelLabel(id: string): string {
+  if (MODEL_LABELS[id]) return MODEL_LABELS[id]
+  // strip 'claude-' prefix, capitalize first word, keep the rest
+  const stripped = id.replace(/^claude-/, '')
+  return stripped
+    .replace(/-(\d)/, ' $1')
+    .replace(/^([a-z])/, (c) => c.toUpperCase())
+}
+
 interface Props {
   sessions: Session[]
   activeId: string
@@ -225,6 +244,19 @@ export default function Sidebar({
                       </button>
                     )}
                   </div>
+                  {(() => {
+                    const modelLabel = s.model ? shortModelLabel(s.model) : null
+                    const accountLabel = accounts.length > 1
+                      ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
+                      : null
+                    if (!modelLabel && !accountLabel) return null
+                    return (
+                      <div className="session-badges">
+                        {modelLabel && <span className="session-badge model">{modelLabel}</span>}
+                        {accountLabel && <span className="session-badge account">{accountLabel}</span>}
+                      </div>
+                    )
+                  })()}
                 </div>
               ))}
             </div>

@@ -244,7 +244,11 @@ export default function App() {
     const offErr = window.electronAPI.onAgentError((data: AgentError) => {
       setStreaming(false)
       addTerm({ kind: 'error', text: data.error })
-      appendToLastAssistant(data.appSessionId, (m) => ({ ...m, content: m.content || `Error: ${data.error}` }))
+      appendToLastAssistant(data.appSessionId, (m) => ({
+        ...m,
+        content: m.content || `Error: ${data.error}`,
+        error: true
+      }))
       if (!document.hasFocus()) window.electronAPI.notify('Claude run failed', data.error.slice(0, 120))
     })
 
@@ -271,6 +275,28 @@ export default function App() {
       return rest
     })
   }
+
+  // Shared helper — builds the sendAgent payload from a session + prompt.
+  // Both sendMessage, retryTurn, and editAndResend call this so params stay identical.
+  const buildAgentPayload = useCallback(
+    (session: Session, text: string, images?: { mediaType: string; data: string }[]) => ({
+      appSessionId: session.id,
+      claudeSessionId: session.claudeSessionId,
+      prompt: text,
+      projectPath: session.projectPath,
+      model: session.model || defaultModel,
+      systemPrompt: session.systemPrompt,
+      permissionMode: session.permissionMode,
+      allowedTools: session.allowedTools,
+      useMcp: session.useMcp ?? true,
+      approvalMode: (session.autoApprove ? 'auto' : 'ask') as 'auto' | 'ask',
+      images,
+      remoteHostId: session.remoteHostId,
+      wslDistro: session.wslDistro,
+      accountId: session.accountId ?? defaultAccountId
+    }),
+    [defaultModel, defaultAccountId]
+  )
 
   const sendMessage = useCallback(
     (text: string, images?: { mediaType: string; data: string }[]) => {
@@ -304,23 +330,76 @@ export default function App() {
       setTerminalOpen(true)
       addTerm({ kind: 'user', text: text.slice(0, 120) })
 
-      window.electronAPI.sendAgent({
-        appSessionId: session.id,
-        claudeSessionId: session.claudeSessionId,
-        prompt: text,
-        projectPath: session.projectPath,
-        model: session.model || defaultModel,
-        systemPrompt: session.systemPrompt,
-        permissionMode: session.permissionMode,
-        allowedTools: session.allowedTools,
-        useMcp: session.useMcp ?? true,
-        approvalMode: session.autoApprove ? 'auto' : 'ask',
-        images,
-        remoteHostId: session.remoteHostId,
-        accountId: session.accountId ?? defaultAccountId
-      })
+      window.electronAPI.sendAgent(buildAgentPayload(session, text, images))
     },
-    [sessions, streaming, addTerm, defaultModel, defaultAccountId]
+    [sessions, streaming, addTerm, buildAgentPayload]
+  )
+
+  // Retry the last failed turn: reset the trailing assistant message and re-send
+  // the last user message's content. Uses a ref so the listener-registered callback
+  // always sees current state (same pattern as createSessionRef).
+  const retryTurnRef = useRef<() => void>(() => {})
+  const retryTurn = useCallback(() => {
+    const sid = activeIdRef.current
+    const session = sessionsRef.current.find((s) => s.id === sid)
+    if (!session || streaming) return
+
+    // Find the last user message that precedes the failed assistant message.
+    const msgs = session.messages
+    const lastUserIdx = msgs.map((m) => m.role).lastIndexOf('user')
+    if (lastUserIdx === -1) return
+    const lastUserMsg = msgs[lastUserIdx]
+
+    // Reset the trailing assistant message in-place (clear error state).
+    const freshAssistant: Message = {
+      ...msgs[msgs.length - 1],
+      content: '',
+      toolCalls: [],
+      thinking: undefined,
+      error: false
+    }
+    const nextMsgs = [...msgs.slice(0, msgs.length - 1), freshAssistant]
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sid ? { ...s, messages: nextMsgs } : s))
+    )
+
+    setStreaming(true)
+    setTerminalOpen(true)
+    addTerm({ kind: 'info', text: 'retrying…' })
+
+    // Re-run sends text only — original images are not persisted on Message.
+    window.electronAPI.sendAgent(buildAgentPayload(session, lastUserMsg.content))
+  }, [streaming, addTerm, buildAgentPayload])
+  retryTurnRef.current = retryTurn
+
+  // Edit a user message and resend: truncates history to before that message,
+  // then appends a fresh user + assistant pair with the new text.
+  const editAndResend = useCallback(
+    (messageId: string, newText: string) => {
+      if (streaming || !newText.trim()) return
+      const sid = activeIdRef.current
+      const session = sessionsRef.current.find((s) => s.id === sid)
+      if (!session) return
+
+      const idx = session.messages.findIndex((m) => m.id === messageId)
+      if (idx === -1) return
+
+      const userMsg: Message = { id: generateId(), role: 'user', content: newText.trim(), timestamp: Date.now() }
+      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
+
+      const nextMsgs = [...session.messages.slice(0, idx), userMsg, assistantMsg]
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sid ? { ...s, messages: nextMsgs, updatedAt: Date.now() } : s))
+      )
+
+      setStreaming(true)
+      setTerminalOpen(true)
+      addTerm({ kind: 'user', text: newText.trim().slice(0, 120) })
+
+      // Re-run sends text only — original images are not persisted on Message.
+      window.electronAPI.sendAgent(buildAgentPayload(session, newText.trim()))
+    },
+    [streaming, addTerm, buildAgentPayload]
   )
 
   const stopMessage = useCallback(async () => {
@@ -580,6 +659,8 @@ export default function App() {
               onToggleAutoApprove={toggleAutoApprove}
               onOpenCheckpoints={() => setCheckpointsOpen(true)}
               onOpenGit={() => setGitOpen(true)}
+              onRetry={retryTurn}
+              onEditResend={editAndResend}
             />
             <TerminalPanel
               lines={terminalLines}

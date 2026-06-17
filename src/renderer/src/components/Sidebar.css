@@ -192,6 +192,31 @@
 }
 .session-delete:hover { color: var(--error); background: rgba(224, 82, 82, 0.1); }
 
+.session-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.session-badge {
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: var(--bg-3);
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
+.session-badge.account {
+  max-width: 80px;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;

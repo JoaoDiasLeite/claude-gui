@@ -13,6 +13,8 @@ export interface Message {
   thinking?: string
   toolCalls?: ToolCall[]
   timestamp: number
+  /** Set when this assistant turn ended in an error. */
+  error?: boolean
 }
 
 export interface Session {

@@ -14,9 +14,9 @@ current implementation each item would change.
   through `agent:done` (local + WSL/SSH via `claude-stream.ts`), accumulated per
   session, and shown as a `$cost · Ntok` chip in the chat header with an
   input/output/cache breakdown tooltip.
-- [ ] **Retry / regenerate on failure.** On `agent:error` the assistant bubble
-  just gets `Error: …` text (`App.tsx` ~line 222). Add a "Retry" affordance on a
-  failed turn.
+- [x] **Retry / regenerate on failure.** Done: `agent:error` flags the assistant
+  message with `error`, and a "Retry" button on the failed turn re-runs the last
+  user prompt with the same session params (shared `buildAgentPayload` helper).
 - [x] **Reconcile the sidebar status chip with multi-account.** Done: the chip
   now shows the active chat's account name + email/plan (or "not logged in"),
   with the dot/ready state derived per-account (the default account also counts
@@ -24,15 +24,16 @@ current implementation each item would change.
 
 ## Medium impact
 
-- [ ] **Session list badges.** Sidebar session rows (`Sidebar.tsx` ~line 123)
-  show name + project + date but no **model or account** badge — hard to tell
-  chats apart with multiple accounts/models in play.
+- [x] **Session list badges.** Done: session rows now show subtle model and
+  account pills (account only when >1 account), with short model labels derived
+  in `Sidebar.tsx`.
 - [x] **Wire `⌘N` (New chat).** Done: `Ctrl/Cmd-N` now creates a new chat via the
   global keydown handler (`App.tsx`), matching the palette hint.
 - [x] **Copy buttons.** Done: code-block copy (markdown item above) and a
   per-message copy button (hover-revealed) in `MessageBubble.tsx`.
-- [ ] **Edit & resend a prompt.** No way to edit a previous user message and
-  re-run the conversation from that point.
+- [x] **Edit & resend a prompt.** Done: user messages have an Edit affordance
+  (inline textarea, Save & rerun / Cancel) that truncates history to that point
+  and re-runs the conversation with the edited text.
 
 ## Lower / polish
 

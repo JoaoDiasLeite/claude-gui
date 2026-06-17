@@ -24,6 +24,8 @@ interface Props {
   onToggleAutoApprove: () => void
   onOpenCheckpoints: () => void
   onOpenGit: () => void
+  onRetry: () => void
+  onEditResend: (messageId: string, newText: string) => void
 }
 
 export default function Chat({
@@ -44,7 +46,9 @@ export default function Chat({
   autoApprove,
   onToggleAutoApprove,
   onOpenCheckpoints,
-  onOpenGit
+  onOpenGit,
+  onRetry,
+  onEditResend
 }: Props) {
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
@@ -221,9 +225,18 @@ export default function Chat({
           </div>
         ) : (
           <>
-            {session!.messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} streaming={streaming && msg === session!.messages[session!.messages.length - 1] && msg.role === 'assistant'} />
-            ))}
+            {session!.messages.map((msg, idx) => {
+              const isLast = idx === session!.messages.length - 1
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  streaming={streaming && isLast && msg.role === 'assistant'}
+                  onRetry={isLast && msg.role === 'assistant' && msg.error ? onRetry : undefined}
+                  onEditResend={onEditResend}
+                />
+              )
+            })}
           </>
         )}
         <div ref={bottomRef} />
