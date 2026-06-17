@@ -116,6 +116,15 @@ export default function Chat({
 
   const isEmpty = !session || session.messages.length === 0
 
+  const formatTokens = (n: number): string => {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k'
+    return String(n)
+  }
+
+  const totalTokens = (session?.inputTokens ?? 0) + (session?.outputTokens ?? 0) +
+    (session?.cacheReadTokens ?? 0) + (session?.cacheCreationTokens ?? 0)
+  const showUsageChip = !!session && ((session.costUsd ?? 0) > 0 || totalTokens > 0)
+
   return (
     <div className="chat">
       <div className="chat-header">
@@ -131,14 +140,28 @@ export default function Chat({
           {session?.remoteHostName && (
             <span className="chat-remote" title="Running on remote host over SSH">⇄ {session.remoteHostName}</span>
           )}
+          {showUsageChip && (
+            <span
+              className="chat-usage-chip"
+              title={[
+                `Input: ${formatTokens(session!.inputTokens ?? 0)} tok`,
+                `Output: ${formatTokens(session!.outputTokens ?? 0)} tok`,
+                `Cache read: ${formatTokens(session!.cacheReadTokens ?? 0)} tok`,
+                `Cache write: ${formatTokens(session!.cacheCreationTokens ?? 0)} tok`
+              ].join('\n')}
+            >
+              ${(session!.costUsd ?? 0).toFixed(4)} · {formatTokens(totalTokens)} tok
+            </span>
+          )}
         </div>
         <div className="chat-header-right">
           <button
             className={`approve-toggle ${autoApprove ? 'auto' : 'ask'}`}
             onClick={onToggleAutoApprove}
             title={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
+            aria-label={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
           >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               {autoApprove ? (
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               ) : (
@@ -147,19 +170,19 @@ export default function Chat({
             </svg>
             {autoApprove ? 'Auto' : 'Approve'}
           </button>
-          <button className="header-icon-btn" onClick={onOpenGit} title="Git">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button className="header-icon-btn" onClick={onOpenGit} title="Git" aria-label="Git">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="9" r="3" />
               <path d="M18 12a9 9 0 0 1-9 9M6 9v6" />
             </svg>
           </button>
-          <button className="header-icon-btn" onClick={onOpenCheckpoints} title="Checkpoints / timeline">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button className="header-icon-btn" onClick={onOpenCheckpoints} title="Checkpoints / timeline" aria-label="Checkpoints / timeline">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" />
             </svg>
           </button>
-          <button className="header-icon-btn" onClick={onOpenClaudeMd} title="Edit CLAUDE.md">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button className="header-icon-btn" onClick={onOpenClaudeMd} title="Edit CLAUDE.md" aria-label="Edit CLAUDE.md">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
             </svg>
@@ -212,8 +235,8 @@ export default function Chat({
             {attachments.map((a, i) => (
               <div className="attachment" key={i}>
                 <img src={a.preview} alt="attachment" />
-                <button className="attachment-remove" onClick={() => removeAttachment(i)} title="Remove">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                <button className="attachment-remove" onClick={() => removeAttachment(i)} title="Remove" aria-label="Remove attachment">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
                     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                   </svg>
                 </button>
@@ -235,8 +258,9 @@ export default function Chat({
             onClick={() => fileInputRef.current?.click()}
             disabled={!ready || streaming}
             title="Attach image"
+            aria-label="Attach image"
           >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
             </svg>
           </button>
@@ -256,13 +280,14 @@ export default function Chat({
             onClick={handleSend}
             disabled={(!input.trim() && attachments.length === 0 && !streaming) || !ready}
             title={streaming ? 'Stop' : 'Send (Enter)'}
+            aria-label={streaming ? 'Stop' : 'Send'}
           >
             {streaming ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                 <rect x="6" y="6" width="12" height="12" rx="2" />
               </svg>
             ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="22" y1="2" x2="11" y2="13" />
                 <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>

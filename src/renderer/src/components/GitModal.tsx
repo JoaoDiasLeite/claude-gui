@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { GitStatus, GitFile } from '../types'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './GitModal.css'
 
 interface Props {
@@ -40,6 +41,8 @@ export default function GitModal({ cwd, onClose }: Props) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalA11y(dialogRef, onClose)
 
   const refresh = useCallback(async () => {
     const s = await window.electronAPI.gitStatus(cwd)
@@ -93,17 +96,25 @@ export default function GitModal({ cwd, onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal git-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal git-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="git-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>
+          <h3 id="git-modal-title">
             Git
             {status?.isRepo && <span className="git-branch">{status.branch}</span>}
             {status && (status.ahead > 0 || status.behind > 0) && (
               <span className="git-ab">↑{status.ahead} ↓{status.behind}</span>
             )}
           </h3>
-          <button className="icon-btn" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>

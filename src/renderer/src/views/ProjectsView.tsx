@@ -140,9 +140,15 @@ export default function ProjectsView({ onResume }: Props) {
           {!searching && results.length === 0 && <div className="view-empty small">No sessions match.</div>}
         </div>
       ) : loading ? (
-        <div className="view-loading">Loading projects…</div>
+        <div className="view-loading">
+          <div className="view-spinner" />
+          <span className="view-loading-text">Loading projects…</span>
+        </div>
       ) : projects.length === 0 ? (
-        <div className="view-empty">No Claude Code projects found in ~/.claude/projects.</div>
+        <div className="view-empty">
+          <span className="view-empty-icon">📁</span>
+          <span className="view-empty-msg">No Claude Code projects found yet. Open a project in Claude Code to see it here.</span>
+        </div>
       ) : (
         <div className="projects-split">
           <div className="projects-list">
@@ -173,11 +179,18 @@ export default function ProjectsView({ onResume }: Props) {
 
           <div className="sessions-pane">
             {!selected ? (
-              <div className="view-empty">Select a project</div>
+              <div className="view-empty">
+                <span className="view-empty-msg">Select a project to view its sessions.</span>
+              </div>
             ) : loadingSessions ? (
-              <div className="view-loading">Loading sessions…</div>
+              <div className="view-loading">
+                <div className="view-spinner" />
+                <span className="view-loading-text">Loading sessions…</span>
+              </div>
             ) : sessions.length === 0 ? (
-              <div className="view-empty">No sessions in this project.</div>
+              <div className="view-empty">
+                <span className="view-empty-msg">No sessions in this project.</span>
+              </div>
             ) : (
               <div className="sessions-grid">
                 {sessions.map((s) => (

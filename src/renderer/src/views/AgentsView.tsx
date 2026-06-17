@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AgentDef, ModelInfo, PermissionMode } from '../types'
 import ModelPicker from '../components/ModelPicker'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './views.css'
 
 interface Props {
@@ -56,17 +57,6 @@ export default function AgentsView({ models, defaultModel, onRun }: Props) {
     setAgents(await window.electronAPI.agentsDelete(id))
   }
 
-  const toggleTool = (tool: string) => {
-    if (!editing) return
-    const has = editing.allowedTools.includes(tool)
-    setEditing({
-      ...editing,
-      allowedTools: has
-        ? editing.allowedTools.filter((t) => t !== tool)
-        : [...editing.allowedTools, tool]
-    })
-  }
-
   return (
     <div className="view">
       <div className="view-header">
@@ -108,100 +98,140 @@ export default function AgentsView({ models, defaultModel, onRun }: Props) {
       </div>
 
       {editing && (
-        <div className="modal-backdrop" onClick={() => setEditing(null)}>
-          <div className="modal wide" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{agents.find((a) => a.id === editing.id) ? 'Edit agent' : 'New agent'}</h3>
-              <button className="icon-btn" onClick={() => setEditing(null)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-            <div className="modal-body">
-              <div className="agent-edit-row">
-                <div className="form-group icon-group">
-                  <label>Icon</label>
-                  <div className="icon-options">
-                    {ICON_OPTIONS.map((ic) => (
-                      <button
-                        key={ic}
-                        className={`icon-option ${editing.icon === ic ? 'selected' : ''}`}
-                        onClick={() => setEditing({ ...editing, icon: ic })}
-                      >
-                        {ic}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="form-group grow">
-                  <label>Name</label>
-                  <input
-                    className="text-input"
-                    value={editing.name}
-                    placeholder="e.g. Code Reviewer"
-                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                    autoFocus
-                  />
-                </div>
-              </div>
+        <AgentEditor
+          editing={editing}
+          setEditing={setEditing}
+          isExisting={!!agents.find((a) => a.id === editing.id)}
+          models={models}
+          onSave={save}
+        />
+      )}
+    </div>
+  )
+}
 
-              <div className="form-group">
-                <label>System prompt</label>
-                <textarea
-                  className="text-input textarea"
-                  rows={5}
-                  value={editing.systemPrompt}
-                  placeholder="Describe the agent's role, expertise, and how it should behave…"
-                  onChange={(e) => setEditing({ ...editing, systemPrompt: e.target.value })}
-                />
-              </div>
+interface EditorProps {
+  editing: AgentDef
+  setEditing: (agent: AgentDef | null) => void
+  isExisting: boolean
+  models: ModelInfo[]
+  onSave: () => void
+}
 
-              <div className="agent-edit-row">
-                <div className="form-group">
-                  <label>Model</label>
-                  <ModelPicker
-                    models={models}
-                    value={editing.model}
-                    onChange={(m) => setEditing({ ...editing, model: m })}
-                  />
-                </div>
-                <div className="form-group grow">
-                  <label>Permissions</label>
-                  <select
-                    className="text-input"
-                    value={editing.permissionMode}
-                    onChange={(e) => setEditing({ ...editing, permissionMode: e.target.value as PermissionMode })}
+function AgentEditor({ editing, setEditing, isExisting, models, onSave }: EditorProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalA11y(dialogRef, () => setEditing(null))
+
+  const toggleTool = (tool: string) => {
+    const has = editing.allowedTools.includes(tool)
+    setEditing({
+      ...editing,
+      allowedTools: has
+        ? editing.allowedTools.filter((t) => t !== tool)
+        : [...editing.allowedTools, tool]
+    })
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={() => setEditing(null)}>
+      <div
+        className="modal wide"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="agent-editor-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="modal-header">
+          <h3 id="agent-editor-title">{isExisting ? 'Edit agent' : 'New agent'}</h3>
+          <button className="icon-btn" onClick={() => setEditing(null)} aria-label="Close" title="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          <div className="agent-edit-row">
+            <div className="form-group icon-group">
+              <label>Icon</label>
+              <div className="icon-options">
+                {ICON_OPTIONS.map((ic) => (
+                  <button
+                    key={ic}
+                    className={`icon-option ${editing.icon === ic ? 'selected' : ''}`}
+                    onClick={() => setEditing({ ...editing, icon: ic })}
                   >
-                    {(Object.keys(PERMISSION_LABELS) as PermissionMode[]).map((pm) => (
-                      <option key={pm} value={pm}>{PERMISSION_LABELS[pm]}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Allowed tools</label>
-                <div className="tool-checklist">
-                  {TOOL_OPTIONS.map((t) => (
-                    <button
-                      key={t}
-                      className={`tool-toggle ${editing.allowedTools.includes(t) ? 'on' : ''}`}
-                      onClick={() => toggleTool(t)}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
+                    {ic}
+                  </button>
+                ))}
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn-primary" onClick={save} disabled={!editing.name.trim()}>Save</button>
+            <div className="form-group grow">
+              <label>Name</label>
+              <input
+                className="text-input"
+                value={editing.name}
+                placeholder="e.g. Code Reviewer"
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                autoFocus
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>System prompt</label>
+            <textarea
+              className="text-input textarea"
+              rows={5}
+              value={editing.systemPrompt}
+              placeholder="Describe the agent's role, expertise, and how it should behave…"
+              onChange={(e) => setEditing({ ...editing, systemPrompt: e.target.value })}
+            />
+          </div>
+
+          <div className="agent-edit-row">
+            <div className="form-group">
+              <label>Model</label>
+              <ModelPicker
+                models={models}
+                value={editing.model}
+                onChange={(m) => setEditing({ ...editing, model: m })}
+              />
+            </div>
+            <div className="form-group grow">
+              <label>Permissions</label>
+              <select
+                className="text-input"
+                value={editing.permissionMode}
+                onChange={(e) => setEditing({ ...editing, permissionMode: e.target.value as PermissionMode })}
+              >
+                {(Object.keys(PERMISSION_LABELS) as PermissionMode[]).map((pm) => (
+                  <option key={pm} value={pm}>{PERMISSION_LABELS[pm]}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>Allowed tools</label>
+            <div className="tool-checklist">
+              {TOOL_OPTIONS.map((t) => (
+                <button
+                  key={t}
+                  className={`tool-toggle ${editing.allowedTools.includes(t) ? 'on' : ''}`}
+                  onClick={() => toggleTool(t)}
+                >
+                  {t}
+                </button>
+              ))}
             </div>
           </div>
         </div>
-      )}
+        <div className="modal-footer">
+          <button className="btn-secondary" onClick={() => setEditing(null)}>Cancel</button>
+          <button className="btn-primary" onClick={onSave} disabled={!editing.name.trim()}>Save</button>
+        </div>
+      </div>
     </div>
   )
 }

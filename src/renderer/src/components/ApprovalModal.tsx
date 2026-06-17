@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { ApprovalRequest } from '../types'
 import DiffView from './DiffView'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './ApprovalModal.css'
 
 interface Props {
@@ -14,6 +15,10 @@ function str(v: unknown): string {
 
 export default function ApprovalModal({ request, onDecide }: Props) {
   const { tool, input } = request
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
+  // to avoid a double call. Focus trap + focus-restore still apply.
+  useModalA11y(dialogRef, () => onDecide(false), { escapeToClose: false })
 
   // Keyboard: Enter = allow, Esc = deny.
   useEffect(() => {
@@ -62,9 +67,17 @@ export default function ApprovalModal({ request, onDecide }: Props) {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal approval-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal approval-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="approval-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>
+          <h3 id="approval-modal-title">
             <span className="approval-tool">{tool}</span> wants to {verb}
           </h3>
         </div>

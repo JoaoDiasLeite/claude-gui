@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ClaudeMdFile } from '../types'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './ClaudeMdModal.css'
 
 interface Props {
@@ -13,6 +14,8 @@ export default function ClaudeMdModal({ projectPath, onClose }: Props) {
   const [content, setContent] = useState('')
   const [dirty, setDirty] = useState(false)
   const [saved, setSaved] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalA11y(dialogRef, onClose)
 
   useEffect(() => {
     window.electronAPI.claudeMdRead(projectPath).then((fs) => {
@@ -42,11 +45,19 @@ export default function ClaudeMdModal({ projectPath, onClose }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal claudemd-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal claudemd-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="claudemd-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>CLAUDE.md</h3>
-          <button className="icon-btn" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <h3 id="claudemd-modal-title">CLAUDE.md</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>

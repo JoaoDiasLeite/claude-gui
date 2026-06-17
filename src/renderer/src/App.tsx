@@ -223,7 +223,16 @@ export default function App() {
       setSessions((prev) => {
         const updated = prev.map((s) =>
           s.id === data.appSessionId
-            ? { ...s, claudeSessionId: data.claudeSessionId ?? s.claudeSessionId, updatedAt: Date.now() }
+            ? {
+                ...s,
+                claudeSessionId: data.claudeSessionId ?? s.claudeSessionId,
+                updatedAt: Date.now(),
+                costUsd: (s.costUsd ?? 0) + (data.costUsd ?? 0),
+                inputTokens: (s.inputTokens ?? 0) + (data.inputTokens ?? 0),
+                outputTokens: (s.outputTokens ?? 0) + (data.outputTokens ?? 0),
+                cacheReadTokens: (s.cacheReadTokens ?? 0) + (data.cacheReadTokens ?? 0),
+                cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0)
+              }
             : s
         )
         const session = updated.find((s) => s.id === data.appSessionId)

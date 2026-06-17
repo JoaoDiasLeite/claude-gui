@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AuthStatus, AuthMode } from '../types'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './OnboardingModal.css'
 
 interface Props {
@@ -11,6 +12,10 @@ export default function OnboardingModal({ onFinish }: Props) {
   const [auth, setAuth] = useState<AuthStatus | null>(null)
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Onboarding must be completed (or skipped via the Skip button) — no bare Esc dismiss.
+  // Focus trap and focus-restore are still applied.
+  useModalA11y(dialogRef, null, { escapeToClose: false })
 
   const refresh = async () => setAuth(await window.electronAPI.authStatus())
   useEffect(() => {
@@ -39,7 +44,15 @@ export default function OnboardingModal({ onFinish }: Props) {
 
   return (
     <div className="modal-backdrop">
-      <div className="modal onboarding" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal onboarding"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         {step === 0 && (
           <div className="ob-step ob-welcome">
             <div className="ob-logo">
@@ -48,7 +61,7 @@ export default function OnboardingModal({ onFinish }: Props) {
                 <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </div>
-            <h2>Welcome to Claude GUI</h2>
+            <h2 id="onboarding-modal-title">Welcome to Claude GUI</h2>
             <p>A desktop control center for Claude Code — chat, projects, usage, agents, and remote/WSL backends, all in one place.</p>
             <button className="btn-primary" onClick={() => setStep(1)}>Get started</button>
           </div>
@@ -56,7 +69,7 @@ export default function OnboardingModal({ onFinish }: Props) {
 
         {step === 1 && (
           <div className="ob-step">
-            <h3>Connect your account</h3>
+            <h3 id="onboarding-modal-title">Connect your account</h3>
             <div className={`ob-detect ${detected ? 'ok' : 'warn'}`}>
               <span className={`auth-dot ${detected ? 'ok' : 'warn'}`} />
               {detected

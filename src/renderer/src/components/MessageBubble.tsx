@@ -15,11 +15,11 @@ function CopyMessage({ text }: { text: string }) {
   return (
     <button className="message-copy" onClick={copy} title="Copy message">
       {copied ? (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <polyline points="20 6 9 17 4 12" />
         </svg>
       ) : (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
         </svg>
@@ -45,6 +45,34 @@ function summarizeInput(input: unknown): string {
   return input ? String(input).slice(0, 80) : ''
 }
 
+const RESULT_TRUNCATE = 2000
+
+function ToolResultBody({ result }: { result: string }) {
+  const [expanded, setExpanded] = useState(false)
+  if (result.length <= RESULT_TRUNCATE) {
+    return <pre>{result || '(no output)'}</pre>
+  }
+  if (expanded) {
+    return (
+      <>
+        <pre>{result}</pre>
+        <button className="tool-result-toggle" onClick={() => setExpanded(false)}>
+          Show less
+        </button>
+      </>
+    )
+  }
+  const remaining = result.length - RESULT_TRUNCATE
+  return (
+    <>
+      <pre>{result.slice(0, RESULT_TRUNCATE)}</pre>
+      <button className="tool-result-toggle" onClick={() => setExpanded(true)}>
+        Show full output ({remaining.toLocaleString()} more chars)
+      </button>
+    </>
+  )
+}
+
 function ToolCallView({ call }: { call: ToolCall }) {
   return (
     <details className={`tool-call ${call.isError ? 'error' : ''}`}>
@@ -64,7 +92,7 @@ function ToolCallView({ call }: { call: ToolCall }) {
         {call.result !== undefined && (
           <>
             <div className="tool-call-section-label">{call.isError ? 'Error' : 'Result'}</div>
-            <pre>{call.result || '(no output)'}</pre>
+            <ToolResultBody result={call.result} />
           </>
         )}
       </div>

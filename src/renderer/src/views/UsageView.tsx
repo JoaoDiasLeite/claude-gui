@@ -185,8 +185,22 @@ export default function UsageView() {
     }
   }, [report, range, activeSources, sources])
 
-  if (loading) return <div className="view"><div className="view-loading">Crunching usage across local + WSL…</div></div>
-  if (!report || !view) return <div className="view"><div className="view-empty">No usage data.</div></div>
+  if (loading) return (
+    <div className="view">
+      <div className="view-loading">
+        <div className="view-spinner" />
+        <span className="view-loading-text">Crunching usage across local + WSL…</span>
+      </div>
+    </div>
+  )
+  if (!report || !view) return (
+    <div className="view">
+      <div className="view-empty">
+        <span className="view-empty-icon">📊</span>
+        <span className="view-empty-msg">No usage data found. Use Claude Code to start tracking token usage.</span>
+      </div>
+    </div>
+  )
 
   const maxDay = Math.max(...view.byDay.map((d) => d.costUsd), 0.0001)
   const recentDays = view.byDay.slice(-60)

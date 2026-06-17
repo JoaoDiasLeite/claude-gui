@@ -32,6 +32,45 @@
 }
 .view-empty.small { padding: 24px; }
 
+/* ── Loading spinner ── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.view-loading {
+  flex-direction: column;
+  gap: 14px;
+}
+.view-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+.view-loading-text {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* ── Empty state ── */
+.view-empty {
+  flex-direction: column;
+  gap: 8px;
+}
+.view-empty-icon {
+  font-size: 28px;
+  opacity: 0.4;
+}
+.view-empty-msg {
+  font-size: 13px;
+  color: var(--text-2);
+  text-align: center;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
 /* Buttons */
 .btn-primary, .btn-secondary, .btn-ghost {
   padding: 8px 16px;
