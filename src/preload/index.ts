@@ -5,6 +5,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
   setZoom: (factor: number) => ipcRenderer.invoke('app:set-zoom', factor),
 
+  // Window controls (custom frameless title bar)
+  windowMinimize: () => ipcRenderer.invoke('window:minimize'),
+  windowMaximizeToggle: () => ipcRenderer.invoke('window:maximize-toggle'),
+  windowClose: () => ipcRenderer.invoke('window:close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  windowGetBounds: () => ipcRenderer.invoke('window:get-bounds'),
+  windowSetBounds: (bounds: { x: number; y: number; width: number; height: number }) =>
+    ipcRenderer.send('window:set-bounds', bounds),
+  onWindowMaximized: (cb: (maximized: boolean) => void) => {
+    const fn = (_: unknown, maximized: boolean) => cb(maximized)
+    ipcRenderer.on('window:maximized', fn)
+    return () => ipcRenderer.removeListener('window:maximized', fn)
+  },
+
   // Auth
   authStatus: () => ipcRenderer.invoke('auth:status'),
   setAuthMode: (mode: string) => ipcRenderer.invoke('auth:set-mode', mode),

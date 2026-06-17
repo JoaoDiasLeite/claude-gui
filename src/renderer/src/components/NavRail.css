@@ -1,6 +1,6 @@
 .nav-rail {
   width: 68px;
-  background: var(--bg-1);
+  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;

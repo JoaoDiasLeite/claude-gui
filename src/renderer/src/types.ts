@@ -346,6 +346,15 @@ declare global {
       notify: (title: string, body: string) => Promise<{ shown: boolean }>
       setZoom: (factor: number) => Promise<number>
 
+      // Window controls (custom frameless title bar)
+      windowMinimize: () => Promise<void>
+      windowMaximizeToggle: () => Promise<boolean>
+      windowClose: () => Promise<void>
+      windowIsMaximized: () => Promise<boolean>
+      windowGetBounds: () => Promise<{ x: number; y: number; width: number; height: number }>
+      windowSetBounds: (bounds: { x: number; y: number; width: number; height: number }) => void
+      onWindowMaximized: (cb: (maximized: boolean) => void) => () => void
+
       // Auth
       authStatus: () => Promise<AuthStatus>
       setAuthMode: (mode: AuthMode) => Promise<AuthStatus>

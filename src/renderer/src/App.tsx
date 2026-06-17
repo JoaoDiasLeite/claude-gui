@@ -15,6 +15,8 @@ import {
   CCAccountStatus
 } from './types'
 import Sidebar from './components/Sidebar'
+import TitleBar from './components/TitleBar'
+import ResizeHandles from './components/ResizeHandles'
 import Chat from './components/Chat'
 import TerminalPanel from './components/TerminalPanel'
 import SettingsModal from './components/SettingsModal'
@@ -83,6 +85,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultAccountId, setDefaultAccountId] = useState('default')
   const [accountsOpen, setAccountsOpen] = useState(false)
+  const [maximized, setMaximized] = useState(false)
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -570,6 +573,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Track window maximize state for the custom title bar (icon + corner rounding).
+  useEffect(() => {
+    window.electronAPI.windowIsMaximized().then(setMaximized)
+    return window.electronAPI.onWindowMaximized(setMaximized)
+  }, [])
+
   const paletteItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
     items.push({ id: 'new', title: 'New chat', group: 'Actions', subtitle: '⌘N', run: createSession })
@@ -619,8 +628,11 @@ export default function App() {
   }, [sessions, models, accounts])
 
   return (
-    <div className="app">
-      <NavRail view={view} onChange={setView} onSettings={() => setSettingsOpen(true)} />
+    <div className={`app-shell ${maximized ? 'maximized' : ''}`}>
+      {!maximized && <ResizeHandles />}
+      <TitleBar maximized={maximized} />
+      <div className="app">
+        <NavRail view={view} onChange={setView} onSettings={() => setSettingsOpen(true)} />
 
       {view === 'chat' && (
         <>
@@ -724,6 +736,7 @@ export default function App() {
       {accountsOpen && (
         <AccountsModal onClose={() => setAccountsOpen(false)} onChanged={refreshAccounts} />
       )}
+      </div>
     </div>
   )
 }

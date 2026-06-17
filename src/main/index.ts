@@ -90,9 +90,15 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0f0f0f',
+    // Frameless with the Win11 acrylic backdrop: a transparent backgroundColor lets the
+    // OS frosted-glass material show through wherever the renderer paints translucent
+    // surfaces (title bar / sidebar / nav rail). Win11 rounds material windows. The
+    // renderer still drives resizing through custom handles via window:set-bounds.
+    frame: false,
+    backgroundMaterial: 'acrylic',
+    resizable: true,
+    backgroundColor: '#00000000',
     icon: join(__dirname, '../../build/icon.png'),
-    titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -101,6 +107,9 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow!.show())
+  // Keep the renderer's maximize/restore icon and corner rounding in sync.
+  mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
+  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -132,6 +141,22 @@ app.on('window-all-closed', () => {
 })
 
 // ─── Notifications ────────────────────────────────────────────────────────────
+
+// ─── Window controls (custom frameless title bar) ─────────────────────────────
+
+ipcMain.handle('window:minimize', () => mainWindow?.minimize())
+ipcMain.handle('window:maximize-toggle', () => {
+  if (!mainWindow) return false
+  if (mainWindow.isMaximized()) mainWindow.unmaximize()
+  else mainWindow.maximize()
+  return mainWindow.isMaximized()
+})
+ipcMain.handle('window:close', () => mainWindow?.close())
+ipcMain.handle('window:is-maximized', () => mainWindow?.isMaximized() ?? false)
+ipcMain.handle('window:get-bounds', () => mainWindow?.getBounds() ?? { x: 0, y: 0, width: 0, height: 0 })
+ipcMain.on('window:set-bounds', (_, bounds: { x: number; y: number; width: number; height: number }) => {
+  mainWindow?.setBounds(bounds)
+})
 
 ipcMain.handle('app:set-zoom', (_, factor: number) => {
   const f = Math.max(0.6, Math.min(1.4, factor || 1))

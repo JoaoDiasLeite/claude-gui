@@ -1,6 +1,6 @@
 .sidebar {
   /* width is set via inline style; flex kept rigid so it doesn't grow/shrink */
-  background: var(--bg-1);
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
