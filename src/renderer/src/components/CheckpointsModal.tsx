@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckpointMeta } from '../types'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './CheckpointsModal.css'
 
 interface Props {
@@ -24,6 +25,8 @@ export default function CheckpointsModal({ sessionId, trackedFileCount, onClose,
   const [label, setLabel] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalA11y(dialogRef, onClose)
 
   const load = async () => setList(await window.electronAPI.checkpointList(sessionId))
   useEffect(() => {
@@ -55,11 +58,19 @@ export default function CheckpointsModal({ sessionId, trackedFileCount, onClose,
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal checkpoints-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal checkpoints-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="checkpoints-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Timeline · checkpoints</h3>
-          <button className="icon-btn" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <h3 id="checkpoints-modal-title">Timeline · checkpoints</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>

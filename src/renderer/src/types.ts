@@ -41,6 +41,12 @@ export interface Session {
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
+  /** Accumulated usage across this chat's turns. */
+  costUsd?: number
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
   createdAt: number
   updatedAt: number
 }
@@ -313,6 +319,10 @@ export interface AgentDone {
   costUsd: number
   isError: boolean
   errorText?: string
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheCreationTokens?: number
 }
 
 export interface AgentError {

@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { AuthStatus, AuthMode, ModelInfo, UiPrefs } from '../types'
 import ModelPicker from './ModelPicker'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './SettingsModal.css'
 
 interface Props {
@@ -31,6 +32,8 @@ export default function SettingsModal({
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [savedKey, setSavedKey] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalA11y(dialogRef, onClose)
 
   const claudeDetected = auth?.claudeCodeDetected ?? false
   const hasApiKey = auth?.hasApiKey ?? false
@@ -63,11 +66,19 @@ export default function SettingsModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Connection</h3>
-          <button className="icon-btn" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <h3 id="settings-modal-title">Connection</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -153,14 +164,14 @@ export default function SettingsModal({
                   onKeyDown={(e) => e.key === 'Enter' && saveKey()}
                   spellCheck={false}
                 />
-                <button className="icon-btn show-btn" onClick={() => setShow((v) => !v)} title={show ? 'Hide' : 'Show'}>
+                <button className="icon-btn show-btn" onClick={() => setShow((v) => !v)} title={show ? 'Hide' : 'Show'} aria-label={show ? 'Hide key' : 'Show key'}>
                   {show ? (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
                       <line x1="1" y1="1" x2="23" y2="23" />
                     </svg>
                   ) : (
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                       <circle cx="12" cy="12" r="3" />
                     </svg>

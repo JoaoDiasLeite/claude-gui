@@ -57,9 +57,15 @@ export default function McpView() {
 
       <div className="view-scroll">
         {loading ? (
-          <div className="view-loading">Loading MCP config…</div>
+          <div className="view-loading">
+            <div className="view-spinner" />
+            <span className="view-loading-text">Loading MCP config…</span>
+          </div>
         ) : servers.length === 0 ? (
-          <div className="view-empty">No MCP servers configured.</div>
+          <div className="view-empty">
+            <span className="view-empty-icon">🔌</span>
+            <span className="view-empty-msg">No MCP servers configured. Add a server to give the agent additional tools and context.</span>
+          </div>
         ) : (
           <div className="mcp-list">
             {servers.map((s) => (

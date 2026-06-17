@@ -11,6 +11,10 @@ export interface StreamEmit {
     costUsd: number
     isError: boolean
     errorText?: string
+    inputTokens?: number
+    outputTokens?: number
+    cacheReadTokens?: number
+    cacheCreationTokens?: number
   }) => void
 }
 
@@ -77,7 +81,7 @@ export function handleStreamLine(
           appSessionId,
           kind: 'tool-result',
           toolId: b.tool_use_id,
-          content: text.slice(0, 4000),
+          content: text.slice(0, 50000),
           isError: !!b.is_error
         })
       }
@@ -87,7 +91,11 @@ export function handleStreamLine(
       claudeSessionId: state.sessionId,
       costUsd: obj.total_cost_usd ?? 0,
       isError: obj.subtype !== 'success',
-      errorText: obj.subtype !== 'success' ? obj.result ?? obj.subtype : undefined
+      errorText: obj.subtype !== 'success' ? obj.result ?? obj.subtype : undefined,
+      inputTokens: obj.usage?.input_tokens ?? 0,
+      outputTokens: obj.usage?.output_tokens ?? 0,
+      cacheReadTokens: obj.usage?.cache_read_input_tokens ?? 0,
+      cacheCreationTokens: obj.usage?.cache_creation_input_tokens ?? 0
     })
   }
 }

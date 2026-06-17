@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CCAccountStatus } from '../types'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './AccountsModal.css'
 
 interface Props {
@@ -16,6 +17,8 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [loginCmd, setLoginCmd] = useState<{ id: string; command: string } | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useModalA11y(dialogRef, onClose)
 
   const refresh = async () => {
     const list = await window.electronAPI.accountsList()
@@ -77,11 +80,19 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal accounts-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal accounts-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="accounts-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>Claude accounts</h3>
-          <button className="icon-btn" onClick={onClose}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <h3 id="accounts-modal-title">Claude accounts</h3>
+          <button className="icon-btn" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>

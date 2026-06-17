@@ -26,10 +26,10 @@ export default function AccountPicker({ accounts, value, onChange, onManage, com
 
   return (
     <div className={`account-picker ${compact ? 'compact' : ''}`} ref={ref}>
-      <button className="account-picker-btn" onClick={() => setOpen((v) => !v)} title="Account for this chat">
+      <button className="account-picker-btn" onClick={() => setOpen((v) => !v)} title="Account for this chat" aria-haspopup="listbox" aria-expanded={open}>
         <span className={`account-dot ${current?.loggedIn ? 'ok' : 'warn'}`} />
         <span className="account-picker-label">{current?.name ?? 'Account'}</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>

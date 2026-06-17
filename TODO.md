@@ -10,10 +10,10 @@ current implementation each item would change.
   lists, links) and `rehype-highlight` syntax highlighting (theme-aware token
   colors), with a **copy button on code blocks** and external links opened in the
   browser. User messages stay plain text. Replaced the old regex `formatContent`.
-- [ ] **Per-chat cost & token visibility.** Cost only flashes in the terminal as
-  `done · $X` (`App.tsx` ~line 198); the Usage view is global. Add a running
-  cost/token chip to the chat header, accumulated per session — makes the
-  multi-account work legible (see what each account spends).
+- [x] **Per-chat cost & token visibility.** Done: token counts are plumbed
+  through `agent:done` (local + WSL/SSH via `claude-stream.ts`), accumulated per
+  session, and shown as a `$cost · Ntok` chip in the chat header with an
+  input/output/cache breakdown tooltip.
 - [ ] **Retry / regenerate on failure.** On `agent:error` the assistant bubble
   just gets `Error: …` text (`App.tsx` ~line 222). Add a "Retry" affordance on a
   failed turn.
@@ -36,14 +36,17 @@ current implementation each item would change.
 
 ## Lower / polish
 
-- [ ] **Resizable panels.** Sidebar width and terminal height are fixed; add
-  drag-to-resize (`Sidebar`, `TerminalPanel`).
-- [ ] **Tool-result truncation.** Results are capped at 4000 chars
-  (`claude-stream.ts` ~line 80, `index.ts` ~line 378) with no "show full output".
-- [ ] **Accessibility.** Icon-only buttons have `title` but no `aria-label`;
-  modals don't trap focus or close on `Esc`. Add keyboard nav + ARIA.
-- [ ] **Loading / empty states.** Projects, Usage, and MCP views fetch with no
-  skeletons or empty-state messaging.
+- [x] **Resizable panels.** Done: drag handles on the sidebar's right edge and
+  the terminal panel's top edge, clamped and persisted to `localStorage`
+  (self-contained in `Sidebar`/`TerminalPanel`).
+- [x] **Tool-result truncation.** Done: cap raised to 50000 chars
+  (`claude-stream.ts`, `index.ts`); `MessageBubble` shows the first 2000 chars
+  with a "Show full output" expander.
+- [x] **Accessibility.** Done: `useModalA11y` hook (focus trap, Esc-to-close,
+  restore focus) applied to all modals with `role="dialog"`/`aria-modal`;
+  `aria-label` on icon-only buttons and `aria-hidden` on decorative SVGs.
+- [x] **Loading / empty states.** Done: spinner + skeleton loading and friendly
+  empty-state messaging in Projects, Usage, and MCP views (shared `views.css`).
 
 ## Done
 

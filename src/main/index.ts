@@ -409,7 +409,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
                 appSessionId,
                 kind: 'tool-result',
                 toolId: block.tool_use_id,
-                content: text.slice(0, 4000),
+                content: text.slice(0, 50000),
                 isError: !!block.is_error
               })
             }
@@ -424,7 +424,11 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
             claudeSessionId: capturedSessionId,
             costUsd: m.total_cost_usd ?? 0,
             isError: m.subtype !== 'success',
-            errorText: m.subtype !== 'success' ? m.result ?? m.subtype : undefined
+            errorText: m.subtype !== 'success' ? m.result ?? m.subtype : undefined,
+            inputTokens: m.usage?.input_tokens ?? 0,
+            outputTokens: m.usage?.output_tokens ?? 0,
+            cacheReadTokens: m.usage?.cache_read_input_tokens ?? 0,
+            cacheCreationTokens: m.usage?.cache_creation_input_tokens ?? 0
           })
           break
         }

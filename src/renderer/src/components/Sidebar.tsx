@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Session, AuthStatus, CCAccountStatus } from '../types'
 import FileTree from './FileTree'
 import './Sidebar.css'
@@ -19,6 +19,11 @@ interface Props {
   activeAccountId?: string
 }
 
+const MIN_WIDTH = 200
+const MAX_WIDTH = 500
+const DEFAULT_WIDTH = 260
+const STORAGE_KEY = 'sidebar-width'
+
 export default function Sidebar({
   sessions,
   activeId,
@@ -35,6 +40,55 @@ export default function Sidebar({
   activeAccountId
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [width, setWidth] = useState<number>(() => {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      const parsed = parseInt(stored, 10)
+      if (!isNaN(parsed)) return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, parsed))
+    }
+    return DEFAULT_WIDTH
+  })
+  const draggingRef = useRef(false)
+  const startXRef = useRef(0)
+  const startWidthRef = useRef(0)
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!draggingRef.current) return
+    const delta = e.clientX - startXRef.current
+    const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidthRef.current + delta))
+    setWidth(next)
+  }, [])
+
+  const handleMouseUp = useCallback(() => {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    document.body.style.userSelect = ''
+    document.body.style.cursor = ''
+    setWidth((w) => {
+      localStorage.setItem(STORAGE_KEY, String(w))
+      return w
+    })
+    window.removeEventListener('mousemove', handleMouseMove)
+    window.removeEventListener('mouseup', handleMouseUp)
+  }, [handleMouseMove])
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    draggingRef.current = true
+    startXRef.current = e.clientX
+    startWidthRef.current = width
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [width, handleMouseMove, handleMouseUp])
+
+  useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [handleMouseMove, handleMouseUp])
 
   const handleOpenFolder = async () => {
     const path = await window.electronAPI.openFolder()
@@ -86,7 +140,7 @@ export default function Sidebar({
   }
 
   return (
-    <div className="sidebar">
+    <div className="sidebar" style={{ width, flex: '0 0 auto' }}>
       <div className="sidebar-header">
         <div className="sidebar-logo">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -95,8 +149,8 @@ export default function Sidebar({
           </svg>
           <span>Claude GUI</span>
         </div>
-        <button className="icon-btn" onClick={onOpenSettings} title="Settings">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <button className="icon-btn" onClick={onOpenSettings} title="Settings" aria-label="Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <circle cx="12" cy="12" r="3" />
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
@@ -133,8 +187,8 @@ export default function Sidebar({
           <>
             <div className="sidebar-section-header">
               <span>Sessions</span>
-              <button className="icon-btn" onClick={onNewSession} title="New chat">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <button className="icon-btn" onClick={onNewSession} title="New chat" aria-label="New chat">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
@@ -162,8 +216,9 @@ export default function Sidebar({
                         className="session-delete"
                         onClick={(e) => { e.stopPropagation(); onDeleteSession(s.id) }}
                         title="Delete"
+                        aria-label="Delete session"
                       >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
                           <line x1="18" y1="6" x2="6" y2="18" />
                           <line x1="6" y1="6" x2="18" y2="18" />
                         </svg>
@@ -178,8 +233,8 @@ export default function Sidebar({
           <>
             <div className="sidebar-section-header">
               <span>{projectPath ? projectPath.split(/[\\/]/).pop() : 'No folder'}</span>
-              <button className="icon-btn" onClick={handleOpenFolder} title="Open folder">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <button className="icon-btn" onClick={handleOpenFolder} title="Open folder" aria-label="Open folder">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 </svg>
               </button>
@@ -196,6 +251,8 @@ export default function Sidebar({
           </>
         )}
       </div>
+
+      <div className="sidebar-resize-handle" onMouseDown={handleResizeMouseDown} />
     </div>
   )
 }

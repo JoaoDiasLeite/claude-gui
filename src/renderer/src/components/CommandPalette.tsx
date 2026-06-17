@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useModalA11y } from '../hooks/useModalA11y'
 import './CommandPalette.css'
 
 export interface CommandItem {
@@ -18,6 +19,10 @@ export default function CommandPalette({ items, onClose }: Props) {
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Esc already handled by onKey on the input; escapeToClose: false prevents double-close.
+  // Focus trap + restore-focus are still applied.
+  useModalA11y(dialogRef, onClose, { escapeToClose: false })
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase()
@@ -71,7 +76,15 @@ export default function CommandPalette({ items, onClose }: Props) {
 
   return (
     <div className="cmd-backdrop" onClick={onClose}>
-      <div className="cmd-palette" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="cmd-palette"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        tabIndex={-1}
+        ref={dialogRef}
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           className="cmd-input"
           placeholder="Jump to a session, project, view, or model…"

@@ -183,6 +183,21 @@
   word-break: break-word;
 }
 
+.tool-result-toggle {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.tool-result-toggle:hover { background: var(--bg-hover); color: var(--text-0); }
+
 .cursor-blink {
   display: inline-block;
   width: 2px;
