@@ -203,6 +203,36 @@ export function setDefaultAccount(id: string): { accounts: CCAccountStatus[]; de
 }
 
 /**
+ * Resolve the `claude` CLI to an absolute path so login works even when the npm global
+ * bin dir isn't on PATH (a common situation on Windows). Falls back to the bare command
+ * name, which relies on PATH, if no known install location is found.
+ */
+function resolveClaudeBin(): string {
+  const candidates: string[] = []
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA
+    if (appData) candidates.push(path.join(appData, 'npm', 'claude.cmd'))
+    if (process.env.ProgramFiles) {
+      candidates.push(path.join(process.env.ProgramFiles, 'nodejs', 'claude.cmd'))
+    }
+  } else {
+    candidates.push(
+      path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
+      '/usr/local/bin/claude',
+      '/opt/homebrew/bin/claude'
+    )
+  }
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c)) return c
+    } catch {
+      // ignore
+    }
+  }
+  return 'claude'
+}
+
+/**
  * Launch an interactive Claude Code login for an account, in its own terminal window with
  * CLAUDE_CONFIG_DIR pointed at the account's config dir. The user completes the browser
  * OAuth flow; afterwards the dir holds .credentials.json + .claude.json and the account
@@ -217,28 +247,33 @@ export function loginAccount(id: string): { launched: boolean; command: string }
   }
   fs.mkdirSync(dir, { recursive: true })
 
+  const claudeBin = resolveClaudeBin()
   let command: string
   let child: ReturnType<typeof spawn> | null = null
   try {
     if (process.platform === 'win32') {
-      command = `set "CLAUDE_CONFIG_DIR=${dir}" && claude`
-      // Quoting a `set ... && claude` string through spawn args is fragile, so write a tiny
-      // batch file and launch that — only a single path arg needs quoting. `cmd /k` keeps
-      // the window open so the user can see the login prompt/URL.
+      command = `set "CLAUDE_CONFIG_DIR=${dir}" && "${claudeBin}"`
+      // cmd reads .bat files in the legacy OEM codepage, which corrupts non-ASCII paths
+      // (e.g. an accented user name like "João") — the path then can't be found. Keep the
+      // batch body pure ASCII and pass both the claude binary and config dir through the
+      // environment instead: Windows passes the env block to child processes as Unicode,
+      // so the paths survive intact regardless of codepage. `cmd /k` keeps the window open
+      // so the user can see the login prompt/URL.
       const bat = path.join(os.tmpdir(), `claude-login-${id}.bat`)
-      fs.writeFileSync(bat, `@echo off\r\nset "CLAUDE_CONFIG_DIR=${dir}"\r\nclaude\r\n`)
+      fs.writeFileSync(bat, `@echo off\r\ncall "%CLAUDE_BIN%"\r\n`)
       child = spawn('cmd.exe', ['/c', 'start', '', 'cmd', '/k', bat], {
         detached: true,
-        stdio: 'ignore'
+        stdio: 'ignore',
+        env: { ...process.env, CLAUDE_CONFIG_DIR: dir, CLAUDE_BIN: claudeBin }
       })
     } else if (process.platform === 'darwin') {
-      command = `CLAUDE_CONFIG_DIR='${dir}' claude`
+      command = `CLAUDE_CONFIG_DIR='${dir}' '${claudeBin}'`
       child = spawn('osascript', ['-e', `tell application "Terminal" to do script "${command}"`], {
         detached: true,
         stdio: 'ignore'
       })
     } else {
-      command = `CLAUDE_CONFIG_DIR='${dir}' claude`
+      command = `CLAUDE_CONFIG_DIR='${dir}' '${claudeBin}'`
       // Best-effort: try a common terminal emulator.
       child = spawn('x-terminal-emulator', ['-e', `bash -lc "${command}; exec bash"`], {
         detached: true,
@@ -253,8 +288,8 @@ export function loginAccount(id: string): { launched: boolean; command: string }
   } catch {
     const fallback =
       process.platform === 'win32'
-        ? `set "CLAUDE_CONFIG_DIR=${dir}" && claude`
-        : `CLAUDE_CONFIG_DIR='${dir}' claude`
+        ? `set "CLAUDE_CONFIG_DIR=${dir}" && "${claudeBin}"`
+        : `CLAUDE_CONFIG_DIR='${dir}' '${claudeBin}'`
     return { launched: false, command: fallback }
   }
 }
