@@ -33,6 +33,8 @@ export interface UsageLimits {
 
 export interface UiPrefs {
   theme: 'dark' | 'light'
+  /** Color palette id (see global.css [data-palette]). 'warm-rust' is the default. */
+  palette: string
   density: 'comfortable' | 'compact'
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
@@ -50,7 +52,7 @@ let config: AppConfig = {
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
-  ui: { theme: 'dark', density: 'comfortable', fontSize: 'md', onboarded: false }
+  ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false }
 }
 
 export function loadConfig(): void {
