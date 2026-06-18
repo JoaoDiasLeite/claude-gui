@@ -143,6 +143,12 @@
   color: var(--text-2);
 }
 
+.sidebar-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 /* ── Session list ─────────────────────────────────────────── */
 .session-list {
   flex: 1;

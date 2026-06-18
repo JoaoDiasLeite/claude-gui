@@ -29,6 +29,7 @@ interface Props {
   onTabChange: (tab: 'files' | 'sessions') => void
   onSelectSession: (id: string) => void
   onNewSession: () => void
+  onNewQuickChat?: () => void
   onDeleteSession: (id: string) => void
   projectPath?: string
   onSetProject: (path: string) => void
@@ -50,6 +51,7 @@ export default function Sidebar({
   onTabChange,
   onSelectSession,
   onNewSession,
+  onNewQuickChat,
   onDeleteSession,
   projectPath,
   onSetProject,
@@ -206,12 +208,26 @@ export default function Sidebar({
           <>
             <div className="sidebar-section-header">
               <span>Sessions</span>
-              <button className="icon-btn" onClick={onNewSession} title="New chat" aria-label="New chat">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
+              <div className="sidebar-section-actions">
+                {onNewQuickChat && (
+                  <button
+                    className="icon-btn"
+                    onClick={onNewQuickChat}
+                    title="Quick chat (Haiku — cheapest model)"
+                    aria-label="Quick chat with Haiku"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                  </button>
+                )}
+                <button className="icon-btn" onClick={onNewSession} title="New chat" aria-label="New chat">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              </div>
             </div>
             <div className="session-list">
               {sessions.map((s) => (

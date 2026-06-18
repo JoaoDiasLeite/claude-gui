@@ -423,6 +423,14 @@ export default function App() {
   }
   createSessionRef.current = createSession
 
+  // Quick chat: forces the cheapest model (Haiku) for throwaway / trivial questions.
+  const createQuickChat = () => {
+    const s = newSession(activeSession?.projectPath, 'claude-haiku-4-5', activeSession?.accountId ?? defaultAccountId)
+    setSessions((prev) => [s, ...prev])
+    setActiveId(s.id)
+    setView('chat')
+  }
+
   const deleteSession = async (id: string) => {
     await window.electronAPI.deleteSession(id)
     setSessions((prev) => {
@@ -586,6 +594,7 @@ export default function App() {
   const paletteItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
     items.push({ id: 'new', title: 'New chat', group: 'Actions', subtitle: '⌘N', run: createSession })
+    items.push({ id: 'new-quick', title: 'Quick chat (Haiku · cheapest)', group: 'Actions', run: createQuickChat })
     const views: { v: View; label: string }[] = [
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
@@ -648,6 +657,7 @@ export default function App() {
             onTabChange={setSidebarTab}
             onSelectSession={setActiveId}
             onNewSession={createSession}
+            onNewQuickChat={createQuickChat}
             onDeleteSession={deleteSession}
             projectPath={activeSession?.projectPath}
             onSetProject={setSessionProject}
