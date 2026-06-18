@@ -8,9 +8,10 @@ interface Props {
   onChange: (accountId: string) => void
   onManage: () => void
   compact?: boolean
+  disabled?: boolean
 }
 
-export default function AccountPicker({ accounts, value, onChange, onManage, compact }: Props) {
+export default function AccountPicker({ accounts, value, onChange, onManage, compact, disabled }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -26,7 +27,7 @@ export default function AccountPicker({ accounts, value, onChange, onManage, com
 
   return (
     <div className={`account-picker ${compact ? 'compact' : ''}`} ref={ref}>
-      <button className="account-picker-btn" onClick={() => setOpen((v) => !v)} title="Account for this chat" aria-haspopup="listbox" aria-expanded={open}>
+      <button className="account-picker-btn" onClick={() => setOpen((v) => !v)} disabled={disabled} title="Account for this chat" aria-haspopup="listbox" aria-expanded={open}>
         <span className={`account-dot ${current?.loggedIn ? 'ok' : 'warn'}`} />
         <span className="account-picker-label">{current?.name ?? 'Account'}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">

@@ -879,6 +879,24 @@
   border-radius: 10px;
   padding: 11px 12px;
 }
+/* Brief focus glow on a freshly-saved review (scrolled into view). */
+.review-card.flash {
+  animation: review-flash 2.6s ease-out;
+}
+@keyframes review-flash {
+  0% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim), 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  70% {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim), 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    border-color: var(--border);
+    box-shadow: none;
+  }
+}
 .review-card-head {
   display: flex;
   align-items: center;

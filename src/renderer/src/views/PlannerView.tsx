@@ -17,6 +17,25 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Satu
 const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const PRIORITY_COLORS = ['#d97757', '#5cb37e', '#8c7fd6', '#5b9bd5', '#d9a441', '#c879a8']
 const EFFORTS: Effort[] = ['light', 'medium', 'deep']
+
+// Start screen copy for the modes that run on demand (no notes/image needed first).
+const START_HINTS: Record<PlannerAssistMode, string> = {
+  review:
+    'Claude will read your current week and critique it — flagging overload, missing priorities and gaps, with a balance score and concrete suggestions.',
+  reflect:
+    'Claude will look at planned vs. completed tasks and reflect on the week — wins, misses, and what to adjust next time.',
+  rebalance:
+    'Claude will redistribute your existing tasks across the week for a healthier load, without inventing or deleting anything.',
+  draft: 'Tell Claude your goals and it will draft a balanced week.',
+  import: 'Upload a calendar screenshot and Claude will turn it into a structured week.'
+}
+const START_LABELS: Record<PlannerAssistMode, string> = {
+  review: 'Review my week',
+  reflect: 'Reflect on my week',
+  rebalance: 'Rebalance my week',
+  draft: 'Draft my week',
+  import: 'Read calendar'
+}
 const EFFORT_WEIGHT: Record<Effort, number> = { light: 1, medium: 2, deep: 3 }
 
 // ─── Date helpers (all local time — never round-trip through UTC) ──────────────
@@ -78,6 +97,16 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const todayYmd = ymd(new Date())
+
+  // Briefly highlight a freshly-saved review and scroll it into view.
+  const [flashReviewId, setFlashReviewId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!flashReviewId) return
+    const el = document.querySelector(`[data-review-id="${flashReviewId}"]`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => setFlashReviewId(null), 2600)
+    return () => clearTimeout(t)
+  }, [flashReviewId])
 
   // Load when the visible week changes.
   useEffect(() => {
@@ -227,6 +256,9 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
       adjustments: Array.isArray(data.adjustments) ? data.adjustments : undefined
     }
     mutate((w) => ({ ...w, reviews: [review, ...(w.reviews ?? [])] }))
+    // Close the drawer and draw the eye to the saved card.
+    closeAssist()
+    setFlashReviewId(review.id)
   }
   const deleteReview = (id: string) =>
     mutate((w) => ({ ...w, reviews: (w.reviews ?? []).filter((rv) => rv.id !== id) }))
@@ -504,7 +536,12 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
               </div>
               <div className="reviews-list">
                 {week.reviews.map((rv) => (
-                  <ReviewCard key={rv.id} review={rv} onDelete={() => deleteReview(rv.id)} />
+                  <ReviewCard
+                    key={rv.id}
+                    review={rv}
+                    flash={flashReviewId === rv.id}
+                    onDelete={() => deleteReview(rv.id)}
+                  />
                 ))}
               </div>
             </div>
@@ -522,6 +559,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
           notes={notes}
           setNotes={setNotes}
           onRunWithNotes={() => runAssist('draft', notes)}
+          onStart={() => runAssist(assistMode)}
           needImage={needImage}
           image={image}
           setImage={setImage}
@@ -764,6 +802,7 @@ function AssistDrawer(props: {
   notes: string
   setNotes: (v: string) => void
   onRunWithNotes: () => void
+  onStart: () => void
   needImage: boolean
   image: { mediaType: string; data: string; preview: string } | null
   setImage: (v: { mediaType: string; data: string; preview: string } | null) => void
@@ -789,11 +828,6 @@ function AssistDrawer(props: {
     import: 'Claude · Import from image'
   }
   const fileRef = useRef<HTMLInputElement>(null)
-  const [saved, setSaved] = useState(false)
-  // Reset the "saved" flag whenever a fresh result starts streaming.
-  useEffect(() => {
-    if (props.busy) setSaved(false)
-  }, [props.busy])
 
   // While waiting for an image, accept a pasted screenshot anywhere in the window.
   useEffect(() => {
@@ -851,11 +885,12 @@ function AssistDrawer(props: {
               value={props.runAccountId}
               onChange={props.onPickAccount}
               onManage={() => {}}
+              disabled={props.busy}
             />
           </div>
           <div className="assist-runwith-field">
             <span className="assist-runwith-label">Model</span>
-            <ModelPicker models={props.models} value={props.runModel} onChange={props.onPickModel} />
+            <ModelPicker models={props.models} value={props.runModel} onChange={props.onPickModel} disabled={props.busy} />
           </div>
         </div>
 
@@ -916,6 +951,16 @@ function AssistDrawer(props: {
             </div>
           )}
 
+          {/* Review / Reflect / Rebalance: pick account & model, then Start. */}
+          {!props.needNotes && !props.needImage && !r && !props.busy && (
+            <div className="assist-notes">
+              <p className="assist-hint">{START_HINTS[props.mode]}</p>
+              <button className="assist-btn primary wide" onClick={props.onStart}>
+                <Spark /> {START_LABELS[props.mode]}
+              </button>
+            </div>
+          )}
+
           {props.busy && (
             <div className="assist-loading">
               <div className="view-spinner" />
@@ -956,15 +1001,8 @@ function AssistDrawer(props: {
                     </div>
                   )}
                   <div className="assist-apply-row">
-                    <button
-                      className="assist-btn primary"
-                      disabled={saved}
-                      onClick={() => {
-                        props.onSaveReview('review', r)
-                        setSaved(true)
-                      }}
-                    >
-                      {saved ? '✓ Saved to week' : 'Save review to week'}
+                    <button className="assist-btn primary" onClick={() => props.onSaveReview('review', r)}>
+                      Save review to week
                     </button>
                   </div>
                 </>
@@ -978,15 +1016,8 @@ function AssistDrawer(props: {
                   {renderList('✗ Misses', r.misses, 'warn')}
                   {renderList('→ Try next week', r.adjustments)}
                   <div className="assist-apply-row">
-                    <button
-                      className="assist-btn primary"
-                      disabled={saved}
-                      onClick={() => {
-                        props.onSaveReview('reflect', r)
-                        setSaved(true)
-                      }}
-                    >
-                      {saved ? '✓ Saved to week' : 'Save reflection to week'}
+                    <button className="assist-btn primary" onClick={() => props.onSaveReview('reflect', r)}>
+                      Save reflection to week
                     </button>
                   </div>
                 </>
@@ -1081,7 +1112,7 @@ function AssistDrawer(props: {
   )
 }
 
-function ReviewCard({ review, onDelete }: { review: SavedReview; onDelete: () => void }) {
+function ReviewCard({ review, flash, onDelete }: { review: SavedReview; flash?: boolean; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
   const when = new Date(review.createdAt).toLocaleString(undefined, {
     month: 'short',
@@ -1093,7 +1124,7 @@ function ReviewCard({ review, onDelete }: { review: SavedReview; onDelete: () =>
   const score = review.score
   const tone = typeof score === 'number' ? (score >= 75 ? 'good' : score >= 50 ? 'mid' : 'low') : ''
   return (
-    <div className="review-card">
+    <div className={`review-card ${flash ? 'flash' : ''}`} data-review-id={review.id}>
       <div className="review-card-head" onClick={() => setOpen((v) => !v)}>
         {typeof score === 'number' && <span className={`review-score ${tone}`}>{score}</span>}
         <div className="review-card-meta">

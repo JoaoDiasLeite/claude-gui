@@ -7,9 +7,10 @@ interface Props {
   value: string
   onChange: (modelId: string) => void
   compact?: boolean
+  disabled?: boolean
 }
 
-export default function ModelPicker({ models, value, onChange, compact }: Props) {
+export default function ModelPicker({ models, value, onChange, compact, disabled }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -25,7 +26,7 @@ export default function ModelPicker({ models, value, onChange, compact }: Props)
 
   return (
     <div className={`model-picker ${compact ? 'compact' : ''}`} ref={ref}>
-      <button className="model-picker-btn" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
+      <button className="model-picker-btn" onClick={() => setOpen((v) => !v)} disabled={disabled} aria-haspopup="listbox" aria-expanded={open}>
         <span className="model-picker-label">{current?.label ?? value}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <polyline points="6 9 12 15 18 9" />
