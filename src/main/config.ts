@@ -48,7 +48,9 @@ interface AppConfig {
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
 let config: AppConfig = {
-  defaultModel: 'claude-opus-4-8',
+  // Sonnet is the default: ~40% cheaper per token than Opus and ample for most
+  // chat/coding turns. Opus/Fable remain one click away in the per-chat model picker.
+  defaultModel: 'claude-sonnet-4-6',
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
