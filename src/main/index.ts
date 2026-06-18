@@ -24,6 +24,7 @@ import {
   mcpServersForProject
 } from './mcp'
 import { listAgents, saveAgent, deleteAgent, AgentDef } from './agents'
+import { listWeeks, getWeek, saveWeek, deleteWeek, WeekPlan } from './planner'
 import {
   createCheckpoint,
   listCheckpoints,
@@ -536,6 +537,225 @@ ipcMain.handle('agents:delete', (_, id: string) => {
   deleteAgent(id)
   return listAgents()
 })
+
+// ─── Planner ──────────────────────────────────────────────────────────────────
+
+ipcMain.handle('planner:list', () => listWeeks())
+ipcMain.handle('planner:get', (_, weekStart: string) => getWeek(weekStart))
+ipcMain.handle('planner:save', (_, week: WeekPlan) => saveWeek(week))
+ipcMain.handle('planner:delete', (_, weekStart: string) => deleteWeek(weekStart))
+
+type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
+
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+function serializeWeek(week: WeekPlan): string {
+  const lines: string[] = []
+  lines.push(`Week of ${week.weekStart} (Monday).`)
+  if (week.intention?.trim()) lines.push(`Intention for the week: ${week.intention.trim()}`)
+  lines.push('')
+  lines.push('Weekly priorities:')
+  if (week.priorities.length === 0) lines.push('  (none set)')
+  for (const p of week.priorities) lines.push(`  - [${p.id}] ${p.title}`)
+  lines.push('')
+  for (let d = 0; d < 7; d++) {
+    const dayTasks = week.tasks.filter((t) => t.day === d)
+    lines.push(`${DAY_NAMES[d]}:`)
+    if (dayTasks.length === 0) lines.push('  (empty)')
+    for (const t of dayTasks) {
+      const bits: string[] = []
+      if (t.timeOfDay) bits.push(`${t.timeOfDay}${t.endTime ? `–${t.endTime}` : ''}`)
+      if (t.durationMin) bits.push(`${t.durationMin}min`)
+      if (t.effort) bits.push(t.effort)
+      if (t.priorityId) {
+        const pr = week.priorities.find((p) => p.id === t.priorityId)
+        if (pr) bits.push(`priority:"${pr.title}"`)
+      }
+      const meta = bits.length ? ` (${bits.join(', ')})` : ''
+      lines.push(`  - [${t.id}]${t.done ? ' [done]' : ''} ${t.title}${meta}`)
+    }
+  }
+  const backlog = week.tasks.filter((t) => t.day === null)
+  if (backlog.length) {
+    lines.push('')
+    lines.push('Unscheduled backlog:')
+    for (const t of backlog) lines.push(`  - [${t.id}] ${t.title}`)
+  }
+  return lines.join('\n')
+}
+
+function buildAssistPrompt(mode: PlannerAssistMode, week: WeekPlan, notes?: string): string {
+  const ctx = serializeWeek(week)
+  const note = notes?.trim() ? `\n\nUser's notes / goals for this request:\n${notes.trim()}` : ''
+  const common =
+    'You are a sharp, experienced executive planning coach. Be specific, realistic, and concise. ' +
+    'Respond with ONLY a single JSON object, no markdown fences, no prose outside the JSON.'
+
+  switch (mode) {
+    case 'review':
+      return `${common}
+
+Here is the user's current weekly plan:
+
+${ctx}${note}
+
+Critique this plan. Return JSON of exactly this shape:
+{
+  "score": <integer 0-100, how well-balanced and realistic the week is>,
+  "summary": "<2-3 sentence overall read of the week>",
+  "warnings": ["<concrete risk, e.g. overloaded day, no buffer, missing priority>", ...],
+  "suggestions": [{ "title": "<short actionable suggestion>", "detail": "<one sentence why/how>" }, ...]
+}
+Focus on overload, unrealistic days, missing weekly priorities, lack of deep-work blocks, and no recovery time. 3-6 warnings/suggestions max.`
+
+    case 'draft':
+      return `${common}
+
+The user wants you to draft a balanced week from their goals.${note}
+
+Current state (may be partial — build on it, don't discard existing tasks unless they conflict):
+
+${ctx}
+
+Return JSON of exactly this shape:
+{
+  "intention": "<one-line theme for the week>",
+  "priorities": [{ "title": "<weekly priority, 2-4 total>" }, ...],
+  "tasks": [{ "title": "<task>", "day": <0-6 Mon-Sun>, "effort": "light|medium|deep", "timeOfDay": "<start HH:MM or null>", "endTime": "<end HH:MM or null>", "durationMin": <minutes or null>, "priorityTitle": "<matching priority title or null>" }, ...]
+}
+Distribute deep work across mornings, avoid stacking everything on Monday, leave Friday afternoon and the weekend lighter, and keep each weekday realistic (no more than ~3 deep tasks/day).`
+
+    case 'reflect':
+      return `${common}
+
+The week is ending. Here is the plan with completion status:
+
+${ctx}${note}
+
+Reflect on planned vs. done. Return JSON of exactly this shape:
+{
+  "summary": "<2-3 sentence honest reflection>",
+  "wins": ["<what went well>", ...],
+  "misses": ["<what slipped and a likely reason>", ...],
+  "adjustments": ["<concrete change to try next week>", ...]
+}`
+
+    case 'rebalance':
+      return `${common}
+
+The user feels this week is unbalanced. Redistribute existing tasks across the week WITHOUT inventing new tasks or deleting any.
+
+${ctx}${note}
+
+Return JSON of exactly this shape:
+{
+  "summary": "<one sentence on what you rebalanced>",
+  "moves": [{ "id": "<existing task id>", "day": <0-6 Mon-Sun, or null for backlog>, "reason": "<short why>" }, ...]
+}
+Only include tasks whose day you are changing. Spread load evenly, protect mornings for deep work, and keep the weekend light.`
+
+    case 'import':
+      return `${common}
+
+The user has attached a screenshot/image of a calendar or weekly schedule. Read it carefully and convert it into a structured weekly plan. Map each calendar entry to the correct weekday (Monday=0 … Sunday=6). Use the event's start time as timeOfDay (24h "HH:MM") and infer durationMin from the block length when visible. Group recurring or themed entries into 2-4 weekly priorities. Ignore the image's own week-of date; map purely by weekday.${note}
+
+Existing plan for context (you may ignore it and build fresh from the image):
+
+${ctx}
+
+Return JSON of exactly this shape:
+{
+  "intention": "<one-line theme inferred from the calendar, or empty>",
+  "priorities": [{ "title": "<weekly priority, 2-4 total>" }, ...],
+  "tasks": [{ "title": "<event/task as written>", "day": <0-6 Mon-Sun>, "effort": "light|medium|deep", "timeOfDay": "<start HH:MM or null>", "endTime": "<end HH:MM or null>", "durationMin": <minutes or null>, "priorityTitle": "<matching priority title or null>" }, ...]
+}
+Transcribe every visible event. Capture both the start (timeOfDay) and end (endTime) of each block when the calendar shows them. If a label is unreadable, use your best guess and keep it short. Do not invent events that aren't in the image.`
+  }
+}
+
+function extractJson(text: string): unknown {
+  let t = text.trim()
+  // Strip ```json … ``` fences if the model added them anyway.
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) t = fence[1].trim()
+  // Otherwise grab the first {...} span.
+  if (!t.startsWith('{')) {
+    const start = t.indexOf('{')
+    const end = t.lastIndexOf('}')
+    if (start >= 0 && end > start) t = t.slice(start, end + 1)
+  }
+  return JSON.parse(t)
+}
+
+ipcMain.handle(
+  'planner:assist',
+  async (
+    _,
+    payload: {
+      mode: PlannerAssistMode
+      week: WeekPlan
+      notes?: string
+      images?: { mediaType: string; data: string }[]
+      model?: string
+      accountId?: string
+    }
+  ) => {
+    const abort = new AbortController()
+    const env = buildSubprocessEnv()
+    const configDir = accountConfigDir(payload.accountId)
+    if (configDir) {
+      env.CLAUDE_CONFIG_DIR = configDir
+      delete env.ANTHROPIC_API_KEY
+    }
+    const model = payload.model || getConfig().defaultModel
+    try {
+      const query = await getQuery()
+      const stream = query({
+        prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, '') as string,
+        options: {
+          model,
+          cwd: os.homedir(),
+          env,
+          abortController: abort,
+          permissionMode: 'bypassPermissions',
+          // Pure reasoning — no tools, no MCP, no file access.
+          allowedTools: []
+        }
+      })
+
+      let text = ''
+      let costUsd = 0
+      let isError = false
+      let errorText: string | undefined
+      for await (const message of stream) {
+        if (message.type === 'assistant') {
+          const content = (message as any).message?.content ?? []
+          for (const block of content) {
+            if (block.type === 'text') text += block.text
+          }
+        } else if (message.type === 'result') {
+          const m = message as any
+          costUsd = m.total_cost_usd ?? 0
+          if (m.subtype !== 'success') {
+            isError = true
+            errorText = m.result ?? m.subtype
+          }
+        }
+      }
+
+      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
+      try {
+        const data = extractJson(text)
+        return { ok: true as const, data, costUsd }
+      } catch {
+        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: text, costUsd }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false as const, error: msg, costUsd: 0 }
+    }
+  }
+)
 
 // ─── CLAUDE.md ──────────────────────────────────────────────────────────────
 

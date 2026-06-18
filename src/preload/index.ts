@@ -86,6 +86,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   agentsSave: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
   agentsDelete: (id: string) => ipcRenderer.invoke('agents:delete', id),
 
+  // Planner
+  plannerList: () => ipcRenderer.invoke('planner:list'),
+  plannerGet: (weekStart: string) => ipcRenderer.invoke('planner:get', weekStart),
+  plannerSave: (week: unknown) => ipcRenderer.invoke('planner:save', week),
+  plannerDelete: (weekStart: string) => ipcRenderer.invoke('planner:delete', weekStart),
+  plannerAssist: (payload: unknown) => ipcRenderer.invoke('planner:assist', payload),
+
   // CLAUDE.md
   claudeMdRead: (projectPath?: string) => ipcRenderer.invoke('claudemd:read', projectPath),
   claudeMdWrite: (filePath: string, content: string) =>

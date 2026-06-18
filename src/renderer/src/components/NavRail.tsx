@@ -1,6 +1,6 @@
 import './NavRail.css'
 
-export type View = 'chat' | 'projects' | 'agents' | 'usage' | 'mcp' | 'remote'
+export type View = 'chat' | 'projects' | 'agents' | 'planner' | 'usage' | 'mcp' | 'remote'
 
 interface Props {
   view: View
@@ -18,6 +18,15 @@ const ICONS: Record<string, JSX.Element> = {
       <rect x="3" y="11" width="18" height="10" rx="2" />
       <circle cx="12" cy="5" r="2" />
       <path d="M12 7v4M8 16h.01M16 16h.01" />
+    </>
+  ),
+  planner: (
+    <>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <path d="M8 14h.01M12 14h4M8 18h4" />
     </>
   ),
   usage: (
@@ -46,6 +55,7 @@ const ITEMS: { key: View; label: string }[] = [
   { key: 'chat', label: 'Chat' },
   { key: 'projects', label: 'Projects' },
   { key: 'agents', label: 'Agents' },
+  { key: 'planner', label: 'Planner' },
   { key: 'usage', label: 'Usage' },
   { key: 'mcp', label: 'MCP' },
   { key: 'remote', label: 'Remote' }
