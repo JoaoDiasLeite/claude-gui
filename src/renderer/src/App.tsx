@@ -33,6 +33,7 @@ import ProjectsView from './views/ProjectsView'
 import AgentsView from './views/AgentsView'
 import UsageView from './views/UsageView'
 import McpView from './views/McpView'
+import PlannerView from './views/PlannerView'
 import RemoteView from './views/RemoteView'
 import { SshHostPublic } from './types'
 import './styles/App.css'
@@ -44,6 +45,7 @@ function generateId() {
 function applyUi(ui: UiPrefs) {
   const root = document.documentElement
   root.dataset.theme = ui.theme
+  root.dataset.palette = ui.palette || 'warm-rust'
   root.dataset.density = ui.density
   const zoom = ui.fontSize === 'sm' ? 0.9 : ui.fontSize === 'lg' ? 1.12 : 1
   window.electronAPI.setZoom(zoom)
@@ -586,6 +588,7 @@ export default function App() {
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
       { v: 'agents', label: 'Agents' },
+      { v: 'planner', label: 'Planner' },
       { v: 'usage', label: 'Usage' },
       { v: 'mcp', label: 'MCP' },
       { v: 'remote', label: 'Remote & WSL' }
@@ -686,6 +689,14 @@ export default function App() {
 
       {view === 'projects' && <ProjectsView onResume={resumeCCSession} />}
       {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
+      {view === 'planner' && (
+        <PlannerView
+          accounts={accounts}
+          models={models}
+          defaultModel={defaultModel}
+          defaultAccountId={defaultAccountId}
+        />
+      )}
       {view === 'usage' && <UsageView />}
       {view === 'mcp' && <McpView />}
       {view === 'remote' && <RemoteView onConnect={connectRemote} onConnectWsl={connectWsl} />}

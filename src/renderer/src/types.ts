@@ -80,6 +80,8 @@ export interface UsageLimits {
 
 export interface UiPrefs {
   theme: 'dark' | 'light'
+  /** Color palette id (see global.css [data-palette]). 'warm-rust' is the default. */
+  palette: string
   density: 'comfortable' | 'compact'
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
@@ -183,6 +185,8 @@ export interface UsageReport {
 export interface McpServer {
   name: string
   scope: 'global' | 'project'
+  /** Where it's defined: 'local' or a WSL distro name. */
+  source: string
   projectPath?: string
   transport: 'stdio' | 'sse' | 'http' | 'unknown'
   command?: string
@@ -339,6 +343,67 @@ export interface ApprovalRequest {
   input: Record<string, unknown>
 }
 
+// ─── Planner ──────────────────────────────────────────────────────────────────
+
+export type Effort = 'light' | 'medium' | 'deep'
+
+export interface WeeklyPriority {
+  id: string
+  title: string
+  color: string
+}
+
+export interface PlannerTask {
+  id: string
+  title: string
+  /** 0 = Monday … 6 = Sunday, or null for the unscheduled backlog. */
+  day: number | null
+  done: boolean
+  priorityId?: string | null
+  /** Start time, "HH:MM". */
+  timeOfDay?: string | null
+  /** End time, "HH:MM". */
+  endTime?: string | null
+  durationMin?: number | null
+  effort?: Effort | null
+  notes?: string | null
+}
+
+export interface SavedReview {
+  id: string
+  createdAt: number
+  mode: 'review' | 'reflect'
+  model?: string
+  score?: number | null
+  summary?: string
+  warnings?: string[]
+  suggestions?: { title: string; detail?: string }[]
+  wins?: string[]
+  misses?: string[]
+  adjustments?: string[]
+}
+
+export interface WeekPlan {
+  weekStart: string
+  intention?: string
+  priorities: WeeklyPriority[]
+  tasks: PlannerTask[]
+  reflection?: string
+  reviews?: SavedReview[]
+  createdAt: number
+  updatedAt: number
+}
+
+export type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
+
+export interface PlannerAssistResult {
+  ok: boolean
+  data?: unknown
+  error?: string
+  raw?: string
+  costUsd: number
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -426,6 +491,20 @@ declare global {
       agentsList: () => Promise<AgentDef[]>
       agentsSave: (agent: AgentDef) => Promise<AgentDef>
       agentsDelete: (id: string) => Promise<AgentDef[]>
+
+      // Planner
+      plannerList: () => Promise<string[]>
+      plannerGet: (weekStart: string) => Promise<WeekPlan>
+      plannerSave: (week: WeekPlan) => Promise<WeekPlan>
+      plannerDelete: (weekStart: string) => Promise<string[]>
+      plannerAssist: (payload: {
+        mode: PlannerAssistMode
+        week: WeekPlan
+        notes?: string
+        images?: { mediaType: string; data: string }[]
+        model?: string
+        accountId?: string
+      }) => Promise<PlannerAssistResult>
 
       // CLAUDE.md
       claudeMdRead: (projectPath?: string) => Promise<ClaudeMdFile[]>

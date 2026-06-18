@@ -1,6 +1,7 @@
 .nav-rail {
   width: 68px;
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+  /* Opaque (see TitleBar): avoids the OS-acrylic color shift on maximize/restore. */
+  background: linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 88%, var(--bg-0)));
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
