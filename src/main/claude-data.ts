@@ -564,7 +564,13 @@ const HOUR = 3600_000
 const SESSION = 5 * HOUR
 const WEEK = 7 * 24 * HOUR
 
-function collectUsage(src: ClaudeSource, agg: Map<string, UsageEntry>, win: UsageWindows, now: number): void {
+function collectUsage(
+  src: ClaudeSource,
+  agg: Map<string, UsageEntry>,
+  win: UsageWindows,
+  now: number,
+  seen: Set<string>
+): void {
   if (!fs.existsSync(src.projectsDir)) return
   const pathMap = realPathMap(src.claudeJsonPath)
   let dirs: fs.Dirent[]
@@ -600,6 +606,13 @@ function collectUsage(src: ClaudeSource, agg: Map<string, UsageEntry>, win: Usag
           continue
         }
         if (obj.type !== 'assistant' || !obj.message?.usage) continue
+        // Resume re-logs the same assistant message 2–3× (same message.id / requestId,
+        // different uuid). Count each real API response once or usage inflates ~2.3×.
+        const dedupKey = obj.message?.id ?? obj.requestId ?? obj.uuid
+        if (dedupKey) {
+          if (seen.has(dedupKey)) continue
+          seen.add(dedupKey)
+        }
         const u = obj.message.usage
         const inTok = u.input_tokens ?? 0
         const outTok = u.output_tokens ?? 0
@@ -659,12 +672,15 @@ function collectUsage(src: ClaudeSource, agg: Map<string, UsageEntry>, win: Usag
 }
 
 const USAGE_CACHE_TTL = 12 * HOUR
+// Bump when the usage computation changes so stale cached reports are discarded.
+// v2: dedupe re-logged assistant messages (was inflating cost/tokens ~2.3×).
+const USAGE_CACHE_VERSION = 2
 
 export async function getUsage(force = false): Promise<UsageReport> {
   const now = Date.now()
   if (!force) {
-    const cached = storeGet<{ report: UsageReport; at: number } | null>('usageCache', null)
-    if (cached && now - cached.at < USAGE_CACHE_TTL) return cached.report
+    const cached = storeGet<{ report: UsageReport; at: number; v?: number } | null>('usageCache', null)
+    if (cached && cached.v === USAGE_CACHE_VERSION && now - cached.at < USAGE_CACHE_TTL) return cached.report
   }
   const agg = new Map<string, UsageEntry>()
   const win: UsageWindows = {
@@ -672,14 +688,15 @@ export async function getUsage(force = false): Promise<UsageReport> {
     session: { costUsd: 0, tokens: 0 },
     week: { costUsd: 0, tokens: 0 }
   }
+  const seen = new Set<string>()
   for (const src of await getSources()) {
     try {
-      collectUsage(src, agg, win, now)
+      collectUsage(src, agg, win, now, seen)
     } catch {
       // skip unreadable source
     }
   }
   const report: UsageReport = { entries: [...agg.values()], windows: win, generatedAt: now }
-  storeSet('usageCache', { report, at: now })
+  storeSet('usageCache', { report, at: now, v: USAGE_CACHE_VERSION })
   return report
 }
