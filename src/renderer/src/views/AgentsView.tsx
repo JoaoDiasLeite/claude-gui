@@ -3,6 +3,7 @@ import { AgentDef, ModelInfo, PermissionMode } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
 import './views.css'
+import './AgentsView.css'
 
 interface Props {
   models: ModelInfo[]
@@ -76,9 +77,15 @@ export default function AgentsView({ models, defaultModel, onRun }: Props) {
           <div className="agents-grid">
             {agents.map((a) => (
               <div key={a.id} className="agent-card">
-                <div className="agent-card-icon">{a.icon}</div>
-                <div className="agent-card-name">{a.name}</div>
-                <div className="agent-card-model">{models.find((m) => a.model.startsWith(m.id))?.label ?? a.model}</div>
+                <div className="agent-card-header">
+                  <div className="agent-card-icon-chip">
+                    <span className="agent-card-icon">{a.icon}</span>
+                  </div>
+                  <div className="agent-card-meta">
+                    <div className="agent-card-name">{a.name}</div>
+                    <div className="agent-card-model">{models.find((m) => a.model.startsWith(m.id))?.label ?? a.model}</div>
+                  </div>
+                </div>
                 <div className="agent-card-prompt">{a.systemPrompt || 'No system prompt'}</div>
                 <div className="agent-card-tools">
                   {a.allowedTools.slice(0, 5).map((t) => (

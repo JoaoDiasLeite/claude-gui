@@ -83,13 +83,20 @@
   gap: 6px;
   transition: background 0.15s;
 }
-.btn-primary { background: var(--accent); color: #fff; border: 1px solid transparent; }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary, .btn-secondary, .btn-ghost {
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.1s, box-shadow 0.14s;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 75%, #e0a06f));
+  color: #fff; border: 1px solid transparent;
+  box-shadow: 0 2px 10px var(--accent-dim);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 45%, transparent); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn-secondary { background: var(--bg-3); color: var(--text-1); border: 1px solid var(--border-light); }
-.btn-secondary:hover { background: var(--bg-hover); }
+.btn-secondary:hover { background: var(--bg-hover); transform: translateY(-1px); }
 .btn-ghost { background: var(--bg-2); color: var(--text-1); border: 1px solid var(--border); }
-.btn-ghost:hover { background: var(--bg-hover); color: var(--text-0); }
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-0); transform: translateY(-1px); }
 .btn-primary.small, .btn-ghost.small { padding: 5px 11px; font-size: 12px; }
 .btn-text { font-size: 12px; color: var(--text-2); cursor: pointer; }
 .btn-text:hover { color: var(--text-0); }
@@ -415,3 +422,65 @@ select.text-input { cursor: pointer; }
 .seg-control { display: flex; gap: 0; border: 1px solid var(--border-light); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
 .seg-control button { padding: 7px 14px; font-size: 12.5px; color: var(--text-2); background: var(--bg-1); }
 .seg-control button.on { background: var(--accent-dim); color: var(--accent); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Premium surface refresh — shared design language across all tabs.
+   (Appended last so it layers over the base rules above.)
+   Tokens: gradient card surface · 14px radius · layered soft shadow ·
+           hover lift · accent-tinted borders.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Elevated card surfaces */
+.usage-card,
+.account-card,
+.agent-card,
+.session-card,
+.ssh-card,
+.mcp-card,
+.search-hit {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.1);
+  transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s;
+}
+
+/* Lift on hover for the clickable cards */
+.usage-card:hover,
+.account-card:hover,
+.agent-card:hover,
+.session-card:hover,
+.ssh-card:hover,
+.search-hit:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 10px 26px rgba(0, 0, 0, 0.16);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+/* Header gets a faint depth cue under the divider */
+.view-header {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+/* Range tabs: gradient active pill */
+.range-tab.active {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #e0a06f));
+  box-shadow: 0 1px 6px var(--accent-dim);
+}
+
+/* Status dots glow softly */
+.mcp-status.ok { box-shadow: 0 0 7px color-mix(in srgb, var(--success) 70%, transparent); }
+.mcp-status.warn { box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 70%, transparent); }
+
+/* Inputs round a touch more to match cards */
+.text-input { border-radius: 9px; }
+
+/* Tag/badge polish */
+.badge, .tool-chip { letter-spacing: 0.02em; }
+
+/* Larger, softer empty/loading icon */
+.view-empty-icon { font-size: 34px; opacity: 0.5; }
+.view-spinner {
+  border-width: 2.5px;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 25%, transparent);
+}

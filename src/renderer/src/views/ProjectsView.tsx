@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CCProject, CCSessionMeta, SearchHit } from '../types'
 import './views.css'
+import './ProjectsView.css'
 
 interface Props {
   onResume: (session: CCSessionMeta) => void

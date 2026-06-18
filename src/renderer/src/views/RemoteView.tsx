@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SshHostPublic, SshHostInput, SshAuthType, WslDistro, SourceInfo } from '../types'
 import './views.css'
+import './RemoteView.css'
 
 interface Props {
   onConnect: (host: SshHostPublic) => void
@@ -84,6 +85,7 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
               if (isHidden) {
                 return (
                   <div key={d.name} className="ssh-card hidden-card">
+                    <div className="ssh-icon-chip wsl">{d.name.charAt(0)}</div>
                     <div className="ssh-card-main">
                       <div className="ssh-card-name muted">
                         {d.name}
@@ -99,6 +101,7 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
               }
               return (
                 <div key={d.name} className="ssh-card">
+                  <div className="ssh-icon-chip wsl">{d.name.charAt(0)}</div>
                   <div className="ssh-card-main">
                     <div className="ssh-card-name">
                       {d.name}
@@ -143,6 +146,7 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
           <div className="ssh-list">
             {hosts.map((host) => (
               <div key={host.id} className="ssh-card">
+                <div className="ssh-icon-chip">{host.name.charAt(0)}</div>
                 <div className="ssh-card-main">
                   <div className="ssh-card-name">{host.name}</div>
                   <div className="ssh-card-target">

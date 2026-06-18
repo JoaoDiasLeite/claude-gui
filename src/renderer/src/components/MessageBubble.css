@@ -32,7 +32,7 @@
 
 .claude-avatar {
   background: var(--accent-dim);
-  border: 1px solid rgba(204, 120, 92, 0.3);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   color: var(--accent);
 }
 
@@ -75,6 +75,7 @@
 .message-row:hover .message-copy { opacity: 1; }
 .message-copy:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
+/* ── Message content ──────────────────────────────────────── */
 .message-content {
   color: var(--text-0);
   line-height: 1.7;
@@ -82,13 +83,24 @@
   overflow-wrap: break-word;
 }
 
+/* User bubble: accent-tinted surface */
 .message-row.user .message-content {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg-2)),
+    var(--bg-2)
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: 14px 14px 4px 14px;
   padding: 10px 14px;
   display: inline-block;
   max-width: 600px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.14), 0 4px 12px rgba(0,0,0,0.07);
+}
+
+/* Assistant content: no bubble card — clean flat readable text */
+.message-row.assistant .message-content {
+  padding: 0;
 }
 
 .user-text {
@@ -96,6 +108,7 @@
   word-break: break-word;
 }
 
+/* ── Tool calls ───────────────────────────────────────────── */
 .tool-calls {
   display: flex;
   flex-direction: column;
@@ -104,11 +117,14 @@
 }
 
 .tool-call {
-  background: var(--bg-2);
+  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12), 0 4px 10px rgba(0,0,0,0.07);
+  transition: border-color 0.14s;
 }
+.tool-call:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .tool-call.error { border-color: rgba(224, 82, 82, 0.4); }
 
 .tool-call summary {
@@ -194,10 +210,15 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
-.tool-result-toggle:hover { background: var(--bg-hover); color: var(--text-0); }
+.tool-result-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
 
+/* ── Streaming indicators ─────────────────────────────────── */
 .cursor-blink {
   display: inline-block;
   width: 2px;
@@ -235,7 +256,7 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
-/* Edit button — mirrors .message-copy, revealed on row hover */
+/* ── Edit button ──────────────────────────────────────────── */
 .message-edit {
   display: inline-flex;
   align-items: center;
@@ -252,25 +273,30 @@
 .message-row:hover .message-edit { opacity: 1; }
 .message-edit:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
-/* Retry button — shown below a failed assistant message */
+/* ── Retry button ─────────────────────────────────────────── */
 .message-retry {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin-top: 6px;
-  padding: 3px 10px;
+  padding: 4px 12px;
   font-size: 11.5px;
   color: var(--text-2);
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.14s;
 }
-.message-retry:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-0); border-color: var(--border-light); }
+.message-retry:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-0);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  transform: translateY(-1px);
+}
 .message-retry:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Inline edit area */
+/* ── Inline edit area ─────────────────────────────────────── */
 .message-edit-area {
   display: flex;
   flex-direction: column;
@@ -292,8 +318,12 @@
   outline: none;
   line-height: 1.6;
   box-sizing: border-box;
+  transition: box-shadow 0.14s;
 }
-.message-edit-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-dim); }
+.message-edit-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
 
 .message-edit-actions {
   display: flex;
@@ -305,13 +335,13 @@
   padding: 3px 12px;
   font-size: 12px;
   color: var(--bg-0);
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 75%, #e0a06f));
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: opacity 0.12s;
+  transition: opacity 0.14s, transform 0.14s;
 }
-.message-edit-save:hover:not(:disabled) { opacity: 0.85; }
+.message-edit-save:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
 .message-edit-save:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .message-edit-cancel {
@@ -322,6 +352,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.14s, color 0.14s;
 }
 .message-edit-cancel:hover { background: var(--bg-hover); color: var(--text-0); }

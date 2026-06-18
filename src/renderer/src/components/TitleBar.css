@@ -3,7 +3,9 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  background: color-mix(in srgb, var(--bg-1) 66%, transparent);
+  /* Opaque so it never depends on the OS acrylic backdrop (which Win11 changes on
+     maximize, causing a color shift). Subtle gradient keeps the elevated-chrome feel. */
+  background: linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 92%, var(--bg-0)));
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
