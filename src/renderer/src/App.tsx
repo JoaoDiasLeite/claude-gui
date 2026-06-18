@@ -60,7 +60,9 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
     projectPath,
     model,
     accountId,
-    useMcp: true,
+    // MCP off by default: loading every configured MCP server injects all their tool
+    // schemas into every turn's context. Toggle it on per-chat when a chat needs them.
+    useMcp: false,
     createdAt: now,
     updatedAt: now
   }
@@ -293,7 +295,7 @@ export default function App() {
       systemPrompt: session.systemPrompt,
       permissionMode: session.permissionMode,
       allowedTools: session.allowedTools,
-      useMcp: session.useMcp ?? true,
+      useMcp: session.useMcp ?? false,
       approvalMode: (session.autoApprove ? 'auto' : 'ask') as 'auto' | 'ask',
       images,
       remoteHostId: session.remoteHostId,
@@ -488,7 +490,7 @@ export default function App() {
       claudeSessionId: cc.sessionId,
       model: cc.model || defaultModel,
       accountId: defaultAccountId,
-      useMcp: true,
+      useMcp: false,
       wslDistro: isWsl ? cc.distro : undefined,
       remoteHostName: isWsl ? `WSL · ${cc.distro}` : undefined,
       autoApprove: isWsl ? true : undefined,
@@ -516,7 +518,7 @@ export default function App() {
       systemPrompt: agent.systemPrompt,
       permissionMode: agent.permissionMode,
       allowedTools: agent.allowedTools,
-      useMcp: true,
+      useMcp: false,
       createdAt: Date.now(),
       updatedAt: Date.now()
     }
