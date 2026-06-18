@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { getWslClaudeRoots } from './wsl'
 
 const claudeJsonPath = path.join(os.homedir(), '.claude.json')
 const authCachePath = path.join(os.homedir(), '.claude', 'mcp-needs-auth-cache.json')
@@ -8,6 +9,8 @@ const authCachePath = path.join(os.homedir(), '.claude', 'mcp-needs-auth-cache.j
 export interface McpServer {
   name: string
   scope: 'global' | 'project'
+  /** Where it's defined: 'local' or a WSL distro name. */
+  source: string
   projectPath?: string
   transport: 'stdio' | 'sse' | 'http' | 'unknown'
   command?: string
@@ -17,18 +20,22 @@ export interface McpServer {
   config: Record<string, unknown>
 }
 
-function readClaudeJson(): any {
+function readJson(p: string): any {
   try {
-    return JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'))
+    return JSON.parse(fs.readFileSync(p, 'utf-8'))
   } catch {
     return {}
   }
 }
 
-function authNeeded(): Set<string> {
+function readClaudeJson(): any {
+  return readJson(claudeJsonPath)
+}
+
+function authNeeded(cachePath: string): Set<string> {
   const set = new Set<string>()
   try {
-    const cache = JSON.parse(fs.readFileSync(authCachePath, 'utf-8'))
+    const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
     // Cache shape varies; collect any server names present.
     const collect = (o: unknown) => {
       if (o && typeof o === 'object') {
@@ -56,12 +63,14 @@ function toServer(
   name: string,
   cfg: any,
   scope: McpServer['scope'],
+  source: string,
   needsAuthSet: Set<string>,
   projectPath?: string
 ): McpServer {
   return {
     name,
     scope,
+    source,
     projectPath,
     transport: transportOf(cfg),
     command: cfg.command,
@@ -72,28 +81,51 @@ function toServer(
   }
 }
 
-export function listMcpServers(): McpServer[] {
-  const raw = readClaudeJson()
-  const needs = authNeeded()
-  const servers: McpServer[] = []
-
-  if (raw.mcpServers && typeof raw.mcpServers === 'object') {
+/** Collect global + per-project MCP servers from one parsed .claude.json. */
+function collectFrom(raw: any, source: string, needs: Set<string>, out: McpServer[]): void {
+  if (raw?.mcpServers && typeof raw.mcpServers === 'object') {
     for (const [name, cfg] of Object.entries(raw.mcpServers)) {
-      servers.push(toServer(name, cfg, 'global', needs))
+      out.push(toServer(name, cfg, 'global', source, needs))
     }
   }
-
-  if (raw.projects && typeof raw.projects === 'object') {
+  if (raw?.projects && typeof raw.projects === 'object') {
     for (const [projectPath, pdata] of Object.entries<any>(raw.projects)) {
       if (pdata?.mcpServers && typeof pdata.mcpServers === 'object') {
         for (const [name, cfg] of Object.entries(pdata.mcpServers)) {
-          servers.push(toServer(name, cfg, 'project', needs, projectPath))
+          out.push(toServer(name, cfg, 'project', source, needs, projectPath))
         }
       }
     }
   }
+}
 
-  return servers.sort((a, b) => a.name.localeCompare(b.name))
+/**
+ * List MCP servers from the local ~/.claude.json AND every reachable WSL distro's
+ * ~/.claude.json (read directly over the \\wsl.localhost share — no shelling in).
+ */
+export async function listMcpServers(): Promise<McpServer[]> {
+  const servers: McpServer[] = []
+
+  // Local
+  collectFrom(readClaudeJson(), 'local', authNeeded(authCachePath), servers)
+
+  // WSL distros
+  try {
+    const roots = await getWslClaudeRoots()
+    for (const r of roots) {
+      const wslAuthCache = r.claudeJsonPath.replace(
+        /\.claude\.json$/i,
+        '.claude\\mcp-needs-auth-cache.json'
+      )
+      collectFrom(readJson(r.claudeJsonPath), r.distro, authNeeded(wslAuthCache), servers)
+    }
+  } catch {
+    // WSL not available — local-only is fine.
+  }
+
+  return servers.sort((a, b) =>
+    a.source === b.source ? a.name.localeCompare(b.name) : a.source.localeCompare(b.source)
+  )
 }
 
 function backupAndWrite(data: unknown): void {
@@ -103,8 +135,8 @@ function backupAndWrite(data: unknown): void {
   fs.writeFileSync(claudeJsonPath, JSON.stringify(data, null, 2))
 }
 
-/** Add or update a global MCP server. cfg is the raw server config object. */
-export function upsertGlobalMcpServer(name: string, cfg: Record<string, unknown>): McpServer[] {
+/** Add or update a global MCP server (local ~/.claude.json). cfg is the raw server config. */
+export function upsertGlobalMcpServer(name: string, cfg: Record<string, unknown>): Promise<McpServer[]> {
   const raw = readClaudeJson()
   if (!raw.mcpServers || typeof raw.mcpServers !== 'object') raw.mcpServers = {}
   raw.mcpServers[name] = cfg
@@ -112,7 +144,7 @@ export function upsertGlobalMcpServer(name: string, cfg: Record<string, unknown>
   return listMcpServers()
 }
 
-export function removeGlobalMcpServer(name: string): McpServer[] {
+export function removeGlobalMcpServer(name: string): Promise<McpServer[]> {
   const raw = readClaudeJson()
   if (raw.mcpServers && typeof raw.mcpServers === 'object') {
     delete raw.mcpServers[name]
