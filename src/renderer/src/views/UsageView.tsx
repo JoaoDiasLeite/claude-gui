@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { UsageReport, UsageEntry, SourceInfo, UsageLimits } from '../types'
 import './views.css'
+import './UsageView.css'
 
 function fmtNum(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
@@ -63,6 +65,7 @@ export default function UsageView() {
   const [activeSources, setActiveSources] = useState<Set<string>>(new Set())
   const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 10, sessionUsd: 25, weekUsd: 150 })
   const [editingLimits, setEditingLimits] = useState(false)
+  const [detailKey, setDetailKey] = useState<string | null>(null)
 
   const apply = (rep: UsageReport, srcs: SourceInfo[], lim: UsageLimits) => {
     setReport(rep)
@@ -176,6 +179,7 @@ export default function UsageView() {
       inTok,
       outTok,
       cacheTok,
+      entries,
       byDay: [...byDay.entries()].map(([day, c]) => ({ day, costUsd: c })).sort((a, b) => a.day.localeCompare(b.day)),
       byModel: [...byModel.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.costUsd - a.costUsd),
       byProject: [...byProject.entries()].map(([project, v]) => ({ project, ...v })).sort((a, b) => b.costUsd - a.costUsd),
@@ -184,6 +188,111 @@ export default function UsageView() {
         .sort((a, b) => b.costUsd - a.costUsd)
     }
   }, [report, range, activeSources, sources])
+
+  // Build a CONTINUOUS timeline (fills empty days with $0) over the selected range,
+  // so gaps in activity read correctly. Long ranges bucket by week to keep it legible.
+  const chart = useMemo(() => {
+    if (!view) return null
+    const map = new Map(view.byDay.map((d) => [d.day, d.costUsd]))
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const ymd = (dt: Date) => `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const days = RANGES.find((r) => r.key === range)?.days ?? null
+    const firstDay = view.byDay[0]?.day // earliest day with activity (byDay is sorted asc)
+    let start: Date
+    if (days) {
+      start = new Date(today)
+      start.setDate(start.getDate() - (days - 1))
+    } else {
+      start = firstDay ? new Date(`${firstDay}T00:00:00`) : new Date(today)
+    }
+    // Don't render empty time before any activity exists — clamp the window to the first
+    // active day (so e.g. "Last year" with only 51 days of history shows 51 days, not 53
+    // mostly-empty weeks).
+    if (firstDay) {
+      const first = new Date(`${firstDay}T00:00:00`)
+      if (first > start) start = first
+    }
+    if (start > today) start = new Date(today)
+    const spanDays = Math.round((today.getTime() - start.getTime()) / 86_400_000) + 1
+    const weekly = spanDays > 92
+    const buckets: { key: string; label: string; cost: number; from: string; to: string }[] = []
+    if (!weekly) {
+      const cur = new Date(start)
+      for (let i = 0; i < spanDays; i++) {
+        const k = ymd(cur)
+        buckets.push({ key: k, label: `${pad(cur.getMonth() + 1)}/${pad(cur.getDate())}`, cost: map.get(k) ?? 0, from: k, to: k })
+        cur.setDate(cur.getDate() + 1)
+      }
+    } else {
+      const cur = new Date(start)
+      cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7)) // align to Monday
+      while (cur <= today) {
+        let sum = 0
+        for (let i = 0; i < 7; i++) {
+          const dd = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + i)
+          sum += map.get(ymd(dd)) ?? 0
+        }
+        const end = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 6)
+        buckets.push({ key: ymd(cur), label: `${pad(cur.getMonth() + 1)}/${pad(cur.getDate())}`, cost: sum, from: ymd(cur), to: ymd(end) })
+        cur.setDate(cur.getDate() + 7)
+      }
+    }
+    const max = Math.max(...buckets.map((b) => b.cost), 0.0001)
+    const tickEvery = Math.max(1, Math.ceil(buckets.length / 12))
+    return { buckets, max, weekly, tickEvery }
+  }, [view, range])
+
+  // Per-bucket breakdown for the detail modal: re-aggregate the filtered entries for the
+  // clicked day (or week) into totals, by-model and by-project.
+  const detail = useMemo(() => {
+    if (!detailKey || !view || !chart) return null
+    const bucket = chart.buckets.find((b) => b.key === detailKey)
+    if (!bucket) return null
+    const es = view.entries.filter((e) => e.day >= bucket.from && e.day <= bucket.to)
+    let cost = 0,
+      inTok = 0,
+      outTok = 0,
+      cacheTok = 0
+    const byModel = new Map<string, { costUsd: number; inputTokens: number; outputTokens: number }>()
+    const byProject = new Map<string, { costUsd: number; tokens: number }>()
+    for (const e of es) {
+      cost += e.costUsd
+      inTok += e.inputTokens
+      outTok += e.outputTokens
+      cacheTok += e.cacheTokens
+      const m = byModel.get(e.model) ?? { costUsd: 0, inputTokens: 0, outputTokens: 0 }
+      m.costUsd += e.costUsd
+      m.inputTokens += e.inputTokens
+      m.outputTokens += e.outputTokens
+      byModel.set(e.model, m)
+      const p = byProject.get(e.project) ?? { costUsd: 0, tokens: 0 }
+      p.costUsd += e.costUsd
+      p.tokens += e.inputTokens + e.outputTokens
+      byProject.set(e.project, p)
+    }
+    const fmtDay = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    const title = bucket.from === bucket.to ? fmtDay(bucket.from) : `${fmtDay(bucket.from)} – ${fmtDay(bucket.to)}`
+    return {
+      title,
+      weekly: bucket.from !== bucket.to,
+      cost,
+      inTok,
+      outTok,
+      cacheTok,
+      byModel: [...byModel.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.costUsd - a.costUsd),
+      byProject: [...byProject.entries()].map(([project, v]) => ({ project, ...v })).sort((a, b) => b.costUsd - a.costUsd)
+    }
+  }, [detailKey, view, chart])
+
+  // Esc closes the day-detail modal.
+  useEffect(() => {
+    if (!detailKey) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDetailKey(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [detailKey])
 
   if (loading) return (
     <div className="view">
@@ -202,8 +311,6 @@ export default function UsageView() {
     </div>
   )
 
-  const maxDay = Math.max(...view.byDay.map((d) => d.costUsd), 0.0001)
-  const recentDays = view.byDay.slice(-60)
   const win = report.windows
 
   return (
@@ -305,19 +412,39 @@ export default function UsageView() {
 
         {/* Cards */}
         <div className="usage-cards">
-          <div className="usage-card">
+          <div className="usage-card usage-card--cost">
+            <div className="usage-card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+              </svg>
+            </div>
             <div className="usage-card-value">${view.cost.toFixed(2)}</div>
             <div className="usage-card-label">Est. cost</div>
           </div>
-          <div className="usage-card">
+          <div className="usage-card usage-card--in">
+            <div className="usage-card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
+              </svg>
+            </div>
             <div className="usage-card-value">{fmtNum(view.inTok)}</div>
             <div className="usage-card-label">Input tokens</div>
           </div>
-          <div className="usage-card">
+          <div className="usage-card usage-card--out">
+            <div className="usage-card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="16 7 12 3 8 7"/><line x1="12" y1="3" x2="12" y2="12"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/>
+              </svg>
+            </div>
             <div className="usage-card-value">{fmtNum(view.outTok)}</div>
             <div className="usage-card-label">Output tokens</div>
           </div>
-          <div className="usage-card">
+          <div className="usage-card usage-card--cache">
+            <div className="usage-card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+              </svg>
+            </div>
             <div className="usage-card-value">{fmtNum(view.cacheTok)}</div>
             <div className="usage-card-label">Cache tokens</div>
           </div>
@@ -347,17 +474,46 @@ export default function UsageView() {
 
         {/* Chart */}
         <div className="usage-section">
-          <h2>Cost by day {recentDays.length > 0 && <span className="usage-section-sub">({recentDays.length} days)</span>}</h2>
-          {recentDays.length === 0 ? (
+          <h2>
+            Cost by {chart?.weekly ? 'week' : 'day'}{' '}
+            {chart && chart.buckets.length > 0 && (
+              <span className="usage-section-sub">
+                ({chart.buckets.length} {chart.weekly ? 'weeks' : 'days'})
+              </span>
+            )}
+          </h2>
+          {!chart || chart.buckets.length === 0 ? (
             <div className="view-empty small">No activity in this range.</div>
           ) : (
             <div className="usage-chart">
-              {recentDays.map((d) => (
-                <div className="usage-bar-col" key={d.day} title={`${d.day}: $${d.costUsd.toFixed(4)}`}>
-                  <div className="usage-bar" style={{ height: `${Math.max(2, (d.costUsd / maxDay) * 100)}%` }} />
-                  <div className="usage-bar-label">{d.day.slice(5)}</div>
+              <div className="usage-chart-yaxis">
+                <span>${chart.max >= 100 ? Math.round(chart.max) : chart.max.toFixed(2)}</span>
+                <span>$0</span>
+              </div>
+              <div className="usage-chart-main">
+                <div className="usage-chart-plot">
+                  {chart.buckets.map((b) => (
+                    <div
+                      className={`usage-bar-col ${b.cost > 0 ? 'clickable' : 'empty'}`}
+                      key={b.key}
+                      title={`${b.key}${chart.weekly ? ' · week' : ''} · $${b.cost.toFixed(2)}${b.cost > 0 ? ' · click for details' : ''}`}
+                      onClick={b.cost > 0 ? () => setDetailKey(b.key) : undefined}
+                      role={b.cost > 0 ? 'button' : undefined}
+                      tabIndex={b.cost > 0 ? 0 : undefined}
+                      onKeyDown={b.cost > 0 ? (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), setDetailKey(b.key)) : undefined}
+                    >
+                      <div className="usage-bar" style={{ height: `${(b.cost / chart.max) * 100}%` }} />
+                    </div>
+                  ))}
                 </div>
-              ))}
+                <div className="usage-chart-labels">
+                  {chart.buckets.map((b, i) => (
+                    <div className="usage-bar-label" key={b.key}>
+                      {i % chart.tickEvery === 0 ? b.label : ''}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -397,6 +553,83 @@ export default function UsageView() {
           </div>
         </div>
       </div>
+
+      {detail && createPortal(
+        <div className="usage-modal-overlay" onClick={() => setDetailKey(null)}>
+          <div className="usage-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="usage-modal-head">
+              <div>
+                <div className="usage-modal-title">{detail.title}</div>
+                <div className="usage-modal-sub">{detail.weekly ? 'Week total' : 'Day total'} · local estimate at public API rates</div>
+              </div>
+              <button className="usage-modal-close" onClick={() => setDetailKey(null)} aria-label="Close">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div className="usage-modal-body">
+              <div className="usage-cards">
+                <div className="usage-card usage-card--cost">
+                  <div className="usage-card-value">${detail.cost.toFixed(2)}</div>
+                  <div className="usage-card-label">Est. cost</div>
+                </div>
+                <div className="usage-card usage-card--in">
+                  <div className="usage-card-value">{fmtNum(detail.inTok)}</div>
+                  <div className="usage-card-label">Input</div>
+                </div>
+                <div className="usage-card usage-card--out">
+                  <div className="usage-card-value">{fmtNum(detail.outTok)}</div>
+                  <div className="usage-card-label">Output</div>
+                </div>
+                <div className="usage-card usage-card--cache">
+                  <div className="usage-card-value">{fmtNum(detail.cacheTok)}</div>
+                  <div className="usage-card-label">Cache</div>
+                </div>
+              </div>
+
+              {detail.byModel.length === 0 ? (
+                <div className="view-empty small">No activity recorded for this {detail.weekly ? 'week' : 'day'}.</div>
+              ) : (
+                <>
+                  <div className="usage-section">
+                    <h2>By model</h2>
+                    <table className="usage-table">
+                      <thead><tr><th>Model</th><th>In</th><th>Out</th><th>Cost</th></tr></thead>
+                      <tbody>
+                        {detail.byModel.map((m) => (
+                          <tr key={m.model}>
+                            <td className="mono">{m.model}</td>
+                            <td>{fmtNum(m.inputTokens)}</td>
+                            <td>{fmtNum(m.outputTokens)}</td>
+                            <td>${m.costUsd.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="usage-section">
+                    <h2>By project</h2>
+                    <table className="usage-table">
+                      <thead><tr><th>Project</th><th>Tokens</th><th>Cost</th></tr></thead>
+                      <tbody>
+                        {detail.byProject.map((p) => (
+                          <tr key={p.project}>
+                            <td>{p.project}</td>
+                            <td>{fmtNum(p.tokens)}</td>
+                            <td>${p.costUsd.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
