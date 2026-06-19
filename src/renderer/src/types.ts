@@ -6,6 +6,14 @@ export interface ToolCall {
   isError?: boolean
 }
 
+export interface MessageUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  costUsd: number
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -15,6 +23,8 @@ export interface Message {
   timestamp: number
   /** Set when this assistant turn ended in an error. */
   error?: boolean
+  /** Token usage for this assistant turn (shown under the message). */
+  usage?: MessageUsage
 }
 
 export interface Session {
@@ -35,6 +45,8 @@ export interface Session {
   useMcp?: boolean
   /** When true, skip per-tool approval prompts (auto-accept). */
   autoApprove?: boolean
+  /** Light chat mode: send no tools (allowedTools:[]) to cut per-turn token cost. */
+  lightMode?: boolean
   /** If set, this chat runs on a remote SSH host instead of locally. */
   remoteHostId?: string
   remoteHostName?: string
@@ -491,6 +503,13 @@ declare global {
       agentsList: () => Promise<AgentDef[]>
       agentsSave: (agent: AgentDef) => Promise<AgentDef>
       agentsDelete: (id: string) => Promise<AgentDef[]>
+
+      // Chat compaction
+      summarizeChat: (payload: {
+        transcript: string
+        model?: string
+        accountId?: string
+      }) => Promise<{ ok: boolean; summary?: string; error?: string }>
 
       // Planner
       plannerList: () => Promise<string[]>

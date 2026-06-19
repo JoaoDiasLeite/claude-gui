@@ -22,6 +22,11 @@ interface Props {
   onOpenClaudeMd: () => void
   autoApprove: boolean
   onToggleAutoApprove: () => void
+  lightMode: boolean
+  onToggleLightMode: () => void
+  onStartFresh: () => void
+  onCompact: () => void
+  compacting: boolean
   onOpenCheckpoints: () => void
   onOpenGit: () => void
   onRetry: () => void
@@ -45,6 +50,11 @@ export default function Chat({
   onOpenClaudeMd,
   autoApprove,
   onToggleAutoApprove,
+  lightMode,
+  onToggleLightMode,
+  onStartFresh,
+  onCompact,
+  compacting,
   onOpenCheckpoints,
   onOpenGit,
   onRetry,
@@ -174,6 +184,21 @@ export default function Chat({
             </svg>
             {autoApprove ? 'Auto' : 'Approve'}
           </button>
+          <button
+            className={`approve-toggle ${lightMode ? 'auto' : 'ask'}`}
+            onClick={onToggleLightMode}
+            title={
+              lightMode
+                ? 'Light mode ON — no tools sent (cheapest for plain chat). Click to enable tools.'
+                : 'Tools enabled. Click for Light mode: no tools, fewer tokens per turn (best for plain Q&A).'
+            }
+            aria-label="Toggle light (no-tools) chat mode"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+            </svg>
+            {lightMode ? 'Light' : 'Full'}
+          </button>
           <button className="header-icon-btn" onClick={onOpenGit} title="Git" aria-label="Git">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="9" r="3" />
@@ -243,6 +268,22 @@ export default function Chat({
       </div>
 
       <div className="chat-input-area">
+        {session && session.messages.length >= 40 && (
+          <div className="long-session-banner">
+            <span className="long-session-text">
+              This chat has {session.messages.length} messages — the whole history is re-sent every
+              turn, which burns tokens. Compact it or start fresh.
+            </span>
+            <div className="long-session-actions">
+              <button onClick={onCompact} disabled={compacting}>
+                {compacting ? 'Compacting…' : 'Compact'}
+              </button>
+              <button onClick={onStartFresh} disabled={compacting}>
+                Start fresh
+              </button>
+            </div>
+          </div>
+        )}
         {attachments.length > 0 && (
           <div className="attachments">
             {attachments.map((a, i) => (

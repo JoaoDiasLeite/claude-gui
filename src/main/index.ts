@@ -538,6 +538,57 @@ ipcMain.handle('agents:delete', (_, id: string) => {
   return listAgents()
 })
 
+// ─── Chat compaction (summarize a long session into a fresh one) ───────────────
+
+ipcMain.handle(
+  'chat:summarize',
+  async (_, payload: { transcript: string; model?: string; accountId?: string }) => {
+    const abort = new AbortController()
+    const env = buildSubprocessEnv()
+    const configDir = accountConfigDir(payload.accountId)
+    if (configDir) {
+      env.CLAUDE_CONFIG_DIR = configDir
+      delete env.ANTHROPIC_API_KEY
+    }
+    const model = payload.model || getConfig().defaultModel
+    const prompt = `Summarize the following conversation so it can seed a fresh session with minimal tokens while preserving everything needed to continue. Write a dense, structured brief (markdown) covering: the goal/task, key decisions and constraints, current state, important file paths or identifiers, and open next steps. Omit chit-chat. Output ONLY the summary.\n\n=== CONVERSATION ===\n${payload.transcript}`
+    try {
+      const query = await getQuery()
+      const stream = query({
+        prompt,
+        options: {
+          model,
+          cwd: os.homedir(),
+          env,
+          abortController: abort,
+          permissionMode: 'bypassPermissions',
+          allowedTools: []
+        }
+      })
+      let text = ''
+      let isError = false
+      let errorText: string | undefined
+      for await (const message of stream) {
+        if (message.type === 'assistant') {
+          for (const block of (message as any).message?.content ?? []) {
+            if (block.type === 'text') text += block.text
+          }
+        } else if (message.type === 'result') {
+          const m = message as any
+          if (m.subtype !== 'success') {
+            isError = true
+            errorText = m.result ?? m.subtype
+          }
+        }
+      }
+      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.' }
+      return { ok: true as const, summary: text.trim() }
+    } catch (err: unknown) {
+      return { ok: false as const, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+)
+
 // ─── Planner ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('planner:list', () => listWeeks())

@@ -86,6 +86,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   agentsSave: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
   agentsDelete: (id: string) => ipcRenderer.invoke('agents:delete', id),
 
+  // Chat compaction
+  summarizeChat: (payload: unknown) => ipcRenderer.invoke('chat:summarize', payload),
+
   // Planner
   plannerList: () => ipcRenderer.invoke('planner:list'),
   plannerGet: (weekStart: string) => ipcRenderer.invoke('planner:get', weekStart),

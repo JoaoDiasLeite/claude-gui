@@ -71,6 +71,7 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [activeId, setActiveId] = useState<string>('')
+  const [compacting, setCompacting] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
@@ -227,21 +228,40 @@ export default function App() {
           data.isError ? data.errorText || 'The run ended with an error.' : `${where} is ready.`
         )
       }
+      const turnUsage = {
+        inputTokens: data.inputTokens ?? 0,
+        outputTokens: data.outputTokens ?? 0,
+        cacheReadTokens: data.cacheReadTokens ?? 0,
+        cacheCreationTokens: data.cacheCreationTokens ?? 0,
+        costUsd: data.costUsd ?? 0
+      }
       setSessions((prev) => {
-        const updated = prev.map((s) =>
-          s.id === data.appSessionId
-            ? {
-                ...s,
-                claudeSessionId: data.claudeSessionId ?? s.claudeSessionId,
-                updatedAt: Date.now(),
-                costUsd: (s.costUsd ?? 0) + (data.costUsd ?? 0),
-                inputTokens: (s.inputTokens ?? 0) + (data.inputTokens ?? 0),
-                outputTokens: (s.outputTokens ?? 0) + (data.outputTokens ?? 0),
-                cacheReadTokens: (s.cacheReadTokens ?? 0) + (data.cacheReadTokens ?? 0),
-                cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0)
-              }
-            : s
-        )
+        const updated = prev.map((s) => {
+          if (s.id !== data.appSessionId) return s
+          // Attach this turn's usage to the last assistant message.
+          let lastAssistant = -1
+          for (let i = s.messages.length - 1; i >= 0; i--) {
+            if (s.messages[i].role === 'assistant') {
+              lastAssistant = i
+              break
+            }
+          }
+          const messages =
+            lastAssistant >= 0
+              ? s.messages.map((m, i) => (i === lastAssistant ? { ...m, usage: turnUsage } : m))
+              : s.messages
+          return {
+            ...s,
+            messages,
+            claudeSessionId: data.claudeSessionId ?? s.claudeSessionId,
+            updatedAt: Date.now(),
+            costUsd: (s.costUsd ?? 0) + (data.costUsd ?? 0),
+            inputTokens: (s.inputTokens ?? 0) + (data.inputTokens ?? 0),
+            outputTokens: (s.outputTokens ?? 0) + (data.outputTokens ?? 0),
+            cacheReadTokens: (s.cacheReadTokens ?? 0) + (data.cacheReadTokens ?? 0),
+            cacheCreationTokens: (s.cacheCreationTokens ?? 0) + (data.cacheCreationTokens ?? 0)
+          }
+        })
         const session = updated.find((s) => s.id === data.appSessionId)
         if (session) window.electronAPI.saveSession(session)
         return updated
@@ -294,8 +314,9 @@ export default function App() {
       model: session.model || defaultModel,
       systemPrompt: session.systemPrompt,
       permissionMode: session.permissionMode,
-      allowedTools: session.allowedTools,
-      useMcp: session.useMcp ?? false,
+      // Light mode = no tools at all (drops tool schemas from every turn).
+      allowedTools: session.lightMode ? [] : session.allowedTools,
+      useMcp: session.lightMode ? false : session.useMcp ?? false,
       approvalMode: (session.autoApprove ? 'auto' : 'ask') as 'auto' | 'ask',
       images,
       remoteHostId: session.remoteHostId,
@@ -462,6 +483,49 @@ export default function App() {
 
   const toggleAutoApprove = () => {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, autoApprove: !s.autoApprove } : s)))
+  }
+
+  const toggleLightMode = () => {
+    setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, lightMode: !s.lightMode } : s)))
+  }
+
+  // Summarize the current (long) session and start a FRESH one seeded with the summary as
+  // system context — so each turn re-sends a compact brief instead of the whole transcript.
+  const compactSession = async () => {
+    if (!activeSession || compacting) return
+    setCompacting(true)
+    const transcript = activeSession.messages
+      .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n')
+    const res = await window.electronAPI.summarizeChat({
+      transcript,
+      model: activeSession.model || defaultModel,
+      accountId: activeSession.accountId ?? defaultAccountId
+    })
+    setCompacting(false)
+    if (!res.ok || !res.summary) {
+      addTerm({ kind: 'error', text: res.error || 'Compaction failed.' })
+      return
+    }
+    const s = newSession(
+      activeSession.projectPath,
+      activeSession.model || defaultModel,
+      activeSession.accountId ?? defaultAccountId
+    )
+    s.name = activeSession.name
+    s.lightMode = activeSession.lightMode
+    s.systemPrompt = `Context carried over from a previous (compacted) session:\n\n${res.summary}`
+    s.messages = [
+      {
+        id: generateId(),
+        role: 'assistant',
+        content: `**Session compacted to save tokens.** History is fresh; the summary below is carried forward as context.\n\n${res.summary}`,
+        timestamp: Date.now()
+      }
+    ]
+    setSessions((prev) => [s, ...prev])
+    setActiveId(s.id)
+    window.electronAPI.saveSession(s)
   }
 
   const createCheckpoint = async (label: string) => {
@@ -684,6 +748,11 @@ export default function App() {
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
               onToggleAutoApprove={toggleAutoApprove}
+              lightMode={activeSession?.lightMode ?? false}
+              onToggleLightMode={toggleLightMode}
+              onStartFresh={createSession}
+              onCompact={compactSession}
+              compacting={compacting}
               onOpenCheckpoints={() => setCheckpointsOpen(true)}
               onOpenGit={() => setGitOpen(true)}
               onRetry={retryTurn}

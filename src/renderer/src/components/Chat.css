@@ -309,3 +309,37 @@
   margin-top: 6px;
   text-align: center;
 }
+
+/* ── Long-session guardrail banner ── */
+.long-session-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.long-session-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-1);
+}
+.long-session-actions { display: flex; gap: 6px; }
+.long-session-actions button {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-2);
+  color: var(--text-0);
+  cursor: pointer;
+  transition: background 0.14s, transform 0.1s;
+}
+.long-session-actions button:hover:not(:disabled) { background: var(--bg-hover); transform: translateY(-1px); }
+.long-session-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
