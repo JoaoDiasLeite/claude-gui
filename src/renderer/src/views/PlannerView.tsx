@@ -94,6 +94,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
   const [needNotes, setNeedNotes] = useState(false)
   const [needImage, setNeedImage] = useState(false)
   const [image, setImage] = useState<{ mediaType: string; data: string; preview: string } | null>(null)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const todayYmd = ymd(new Date())
@@ -142,6 +143,40 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
   const updateTask = (id: string, patch: Partial<PlannerTask>) =>
     mutate((w) => ({ ...w, tasks: w.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)) }))
   const deleteTask = (id: string) => mutate((w) => ({ ...w, tasks: w.tasks.filter((t) => t.id !== id) }))
+
+  // Move a task to a day at a specific index (Trello-style reorder). Order within a day is
+  // the global array order filtered by day, so we re-thread the array around the target.
+  const moveTask = (dragId: string, targetDay: number | null, targetIndex: number) => {
+    mutate((w) => {
+      const dragged = w.tasks.find((t) => t.id === dragId)
+      if (!dragged) return w
+      const without = w.tasks.filter((t) => t.id !== dragId)
+      const dayItems = without.filter((t) => t.day === targetDay)
+      const idx = Math.max(0, Math.min(targetIndex, dayItems.length))
+      const before = dayItems[idx] ?? null
+      const moved = { ...dragged, day: targetDay }
+      const result: PlannerTask[] = []
+      let inserted = false
+      for (const t of without) {
+        if (!inserted && before && t.id === before.id) {
+          result.push(moved)
+          inserted = true
+        }
+        result.push(t)
+      }
+      if (!inserted) result.push(moved)
+      return { ...w, tasks: result }
+    })
+  }
+
+  // Check/uncheck every task in a day (header select-all).
+  const toggleDay = (day: number) =>
+    mutate((w) => {
+      const items = w.tasks.filter((t) => t.day === day)
+      if (items.length === 0) return w
+      const allDone = items.every((t) => t.done)
+      return { ...w, tasks: w.tasks.map((t) => (t.day === day ? { ...t, done: !allDone } : t)) }
+    })
 
   const addPriority = (title: string) => {
     const t = title.trim()
@@ -454,40 +489,35 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
 
           {/* Week board */}
           <div className={`planner-board ${showWeekend ? '' : 'work-week'}`}>
-            {DAY_NAMES.slice(0, showWeekend ? 7 : 5).map((name, d) => {
+            {DAY_NAMES.slice(0, showWeekend ? 7 : 5).map((_name, d) => {
               const dayDate = addDays(weekStart, d)
               const isToday = ymd(dayDate) === todayYmd
               const dayTasks = week.tasks.filter((t) => t.day === d)
               return (
                 <DayColumn
                   key={d}
+                  day={d}
                   name={DAY_SHORT[d]}
-                  fullName={name}
                   date={dayDate.getDate()}
                   isToday={isToday}
                   isWeekend={d >= 5}
                   load={stats.load[d]}
                   maxLoad={stats.maxLoad}
                   tasks={dayTasks}
+                  allDone={dayTasks.length > 0 && dayTasks.every((t) => t.done)}
                   priorityById={priorityById}
                   dragging={drag}
                   onDragStart={setDrag}
                   onDragEnd={() => setDrag(null)}
-                  onDropTask={(id) => {
-                    updateTask(id, { day: d })
+                  onMove={(id, index) => {
+                    moveTask(id, d, index)
                     setDrag(null)
                   }}
                   onAdd={(title) => addTask(d, title)}
                   onToggle={(id, done) => updateTask(id, { done })}
+                  onToggleDay={() => toggleDay(d)}
+                  onOpenTask={setEditingTaskId}
                   onDelete={deleteTask}
-                  onCycleEffort={(id, cur) =>
-                    updateTask(id, { effort: EFFORTS[(EFFORTS.indexOf(cur ?? 'medium') + 1) % EFFORTS.length] })
-                  }
-                  onSetTitle={(id, v) => updateTask(id, { title: v })}
-                  onSetTime={(id, v) => updateTask(id, { timeOfDay: v || null })}
-                  onSetEnd={(id, v) => updateTask(id, { endTime: v || null })}
-                  onSetPriority={(id, pid) => updateTask(id, { priorityId: pid })}
-                  priorities={week.priorities}
                 />
               )
             })}
@@ -497,7 +527,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
           <div
             className={`planner-backlog ${drag ? 'droppable' : ''}`}
             onDragOver={(e) => drag && e.preventDefault()}
-            onDrop={() => drag && (updateTask(drag, { day: null }), setDrag(null))}
+            onDrop={() => drag && (moveTask(drag, null, Number.MAX_SAFE_INTEGER), setDrag(null))}
           >
             <div className="backlog-head">
               <span className="planner-label">Backlog / unscheduled</span>
@@ -509,18 +539,11 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
                   key={t.id}
                   task={t}
                   priority={priorityById(t.priorityId)}
-                  priorities={week.priorities}
                   onDragStart={() => setDrag(t.id)}
                   onDragEnd={() => setDrag(null)}
                   onToggle={(done) => updateTask(t.id, { done })}
                   onDelete={() => deleteTask(t.id)}
-                  onCycleEffort={() =>
-                    updateTask(t.id, { effort: EFFORTS[(EFFORTS.indexOf(t.effort ?? 'medium') + 1) % EFFORTS.length] })
-                  }
-                  onSetTitle={(v) => updateTask(t.id, { title: v })}
-                  onSetTime={(v) => updateTask(t.id, { timeOfDay: v || null })}
-                  onSetEnd={(v) => updateTask(t.id, { endTime: v || null })}
-                  onSetPriority={(pid) => updateTask(t.id, { priorityId: pid })}
+                  onOpen={() => setEditingTaskId(t.id)}
                 />
               ))}
               <AddTaskInline onAdd={(title) => addTask(null, title)} placeholder="+ capture a task" />
@@ -580,100 +603,135 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
           onPickModel={setRunModel}
         />
       )}
+
+      {editingTaskId &&
+        (() => {
+          const t = week.tasks.find((x) => x.id === editingTaskId)
+          if (!t) return null
+          return (
+            <TaskModal
+              task={t}
+              priorities={week.priorities}
+              onPatch={(patch) => updateTask(t.id, patch)}
+              onDelete={() => {
+                deleteTask(t.id)
+                setEditingTaskId(null)
+              }}
+              onClose={() => setEditingTaskId(null)}
+            />
+          )
+        })()}
     </div>
   )
 }
 
 // ─── Day column ────────────────────────────────────────────────────────────
 function DayColumn(props: {
+  day: number
   name: string
-  fullName: string
   date: number
   isToday: boolean
   isWeekend: boolean
   load: number
   maxLoad: number
   tasks: PlannerTask[]
-  priorities: WeeklyPriority[]
+  allDone: boolean
   priorityById: (id?: string | null) => WeeklyPriority | undefined
   dragging: string | null
   onDragStart: (id: string) => void
   onDragEnd: () => void
-  onDropTask: (id: string) => void
+  onMove: (id: string, index: number) => void
   onAdd: (title: string) => void
   onToggle: (id: string, done: boolean) => void
+  onToggleDay: () => void
+  onOpenTask: (id: string) => void
   onDelete: (id: string) => void
-  onCycleEffort: (id: string, cur?: Effort | null) => void
-  onSetTitle: (id: string, v: string) => void
-  onSetTime: (id: string, v: string) => void
-  onSetEnd: (id: string, v: string) => void
-  onSetPriority: (id: string, pid: string | null) => void
 }) {
-  const [over, setOver] = useState(false)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
   const loadPct = props.maxLoad ? (props.load / props.maxLoad) * 100 : 0
   const heavy = props.load >= 7
+  const dragging = props.dragging
+  const reset = () => setOverIndex(null)
   return (
     <div
-      className={`day-col ${props.isToday ? 'today' : ''} ${props.isWeekend ? 'weekend' : ''} ${over ? 'over' : ''}`}
-      onDragOver={(e) => {
-        if (props.dragging) {
-          e.preventDefault()
-          setOver(true)
-        }
+      className={`day-col ${props.isToday ? 'today' : ''} ${props.isWeekend ? 'weekend' : ''} ${overIndex !== null ? 'over' : ''}`}
+      onDragOver={(e) => dragging && e.preventDefault()}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) reset()
       }}
-      onDragLeave={() => setOver(false)}
       onDrop={() => {
-        setOver(false)
-        if (props.dragging) props.onDropTask(props.dragging)
+        if (dragging) props.onMove(dragging, overIndex ?? props.tasks.length)
+        reset()
       }}
     >
       <div className="day-head">
-        <span className="day-name">{props.name}</span>
+        <label className="day-check-wrap" title="Mark all tasks in this day">
+          <input
+            type="checkbox"
+            className="day-check"
+            checked={props.allDone}
+            onChange={props.onToggleDay}
+            disabled={props.tasks.length === 0}
+          />
+          <span className="day-name">{props.name}</span>
+        </label>
         <span className="day-date">{props.date}</span>
       </div>
       <div className="day-load" title={`Load: ${props.load}`}>
         <div className={`day-load-fill ${heavy ? 'heavy' : ''}`} style={{ width: `${loadPct}%` }} />
       </div>
-      <div className="day-tasks">
-        {props.tasks.map((t) => (
-          <TaskCard
+      <div
+        className="day-tasks"
+        onDragOver={(e) => {
+          if (dragging && e.target === e.currentTarget) {
+            e.preventDefault()
+            setOverIndex(props.tasks.length)
+          }
+        }}
+      >
+        {props.tasks.map((t, i) => (
+          <div
             key={t.id}
-            task={t}
-            priority={props.priorityById(t.priorityId)}
-            priorities={props.priorities}
-            onDragStart={() => props.onDragStart(t.id)}
-            onDragEnd={props.onDragEnd}
-            onToggle={(done) => props.onToggle(t.id, done)}
-            onDelete={() => props.onDelete(t.id)}
-            onCycleEffort={() => props.onCycleEffort(t.id, t.effort)}
-            onSetTitle={(v) => props.onSetTitle(t.id, v)}
-            onSetTime={(v) => props.onSetTime(t.id, v)}
-            onSetEnd={(v) => props.onSetEnd(t.id, v)}
-            onSetPriority={(pid) => props.onSetPriority(t.id, pid)}
-          />
+            className="task-slot"
+            onDragOver={(e) => {
+              if (!dragging) return
+              e.preventDefault()
+              const r = e.currentTarget.getBoundingClientRect()
+              setOverIndex(e.clientY < r.top + r.height / 2 ? i : i + 1)
+            }}
+          >
+            {dragging && overIndex === i && <div className="drop-line" />}
+            <TaskCard
+              task={t}
+              priority={props.priorityById(t.priorityId)}
+              onDragStart={() => props.onDragStart(t.id)}
+              onDragEnd={() => {
+                props.onDragEnd()
+                reset()
+              }}
+              onToggle={(done) => props.onToggle(t.id, done)}
+              onDelete={() => props.onDelete(t.id)}
+              onOpen={() => props.onOpenTask(t.id)}
+            />
+          </div>
         ))}
+        {dragging && overIndex === props.tasks.length && <div className="drop-line" />}
         <AddTaskInline onAdd={props.onAdd} placeholder="+ task" />
       </div>
     </div>
   )
 }
 
-// ─── Task card ──────────────────────────────────────────────────────────────
+// ─── Task card (click to open the editor, drag to move/reorder) ───────────────
 function TaskCard(props: {
   task: PlannerTask
   priority?: WeeklyPriority
-  priorities: WeeklyPriority[]
   onDragStart: () => void
   onDragEnd: () => void
   onToggle: (done: boolean) => void
   onDelete: () => void
-  onCycleEffort: () => void
-  onSetTitle: (v: string) => void
-  onSetTime: (v: string) => void
-  onSetEnd: (v: string) => void
-  onSetPriority: (pid: string | null) => void
+  onOpen: () => void
 }) {
-  const [expanded, setExpanded] = useState(false)
   const t = props.task
   return (
     <div
@@ -684,20 +742,30 @@ function TaskCard(props: {
         props.onDragStart()
       }}
       onDragEnd={props.onDragEnd}
+      onClick={props.onOpen}
+      title="Click to edit · drag to move"
       style={props.priority ? { ['--accent-edge' as any]: props.priority.color } : undefined}
     >
       <div className="task-main">
         <button
           className={`task-check ${t.done ? 'on' : ''}`}
-          onClick={() => props.onToggle(!t.done)}
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onToggle(!t.done)
+          }}
           title={t.done ? 'Mark not done' : 'Mark done'}
         >
           {t.done ? '✓' : ''}
         </button>
-        <span className="task-title" onClick={() => setExpanded((v) => !v)}>
-          {t.title}
-        </span>
-        <button className="task-del" onClick={props.onDelete} title="Delete">
+        <span className="task-title">{t.title}</span>
+        <button
+          className="task-del"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onDelete()
+          }}
+          title="Delete"
+        >
           ×
         </button>
       </div>
@@ -708,62 +776,13 @@ function TaskCard(props: {
             {t.endTime ? `–${t.endTime}` : ''}
           </span>
         )}
-        <button
-          className={`effort-tag ${t.effort ?? 'medium'}`}
-          onClick={props.onCycleEffort}
-          title="Cycle effort: light → medium → deep"
-        >
-          {t.effort ?? 'medium'}
-        </button>
+        <span className={`effort-tag ${t.effort ?? 'medium'}`}>{t.effort ?? 'medium'}</span>
         {props.priority && (
           <span className="task-prio" style={{ ['--pc' as any]: props.priority.color }}>
             {props.priority.title}
           </span>
         )}
       </div>
-      {expanded && (
-        <div className="task-edit" onClick={(e) => e.stopPropagation()}>
-          <textarea
-            className="text-input mini task-edit-title"
-            rows={2}
-            value={t.title}
-            placeholder="Task title"
-            onChange={(e) => props.onSetTitle(e.target.value)}
-          />
-          <div className="task-edit-times">
-            <label>
-              <span>Start</span>
-              <input
-                type="time"
-                className="text-input mini"
-                value={t.timeOfDay ?? ''}
-                onChange={(e) => props.onSetTime(e.target.value)}
-              />
-            </label>
-            <label>
-              <span>End</span>
-              <input
-                type="time"
-                className="text-input mini"
-                value={t.endTime ?? ''}
-                onChange={(e) => props.onSetEnd(e.target.value)}
-              />
-            </label>
-          </div>
-          <select
-            className="text-input mini"
-            value={t.priorityId ?? ''}
-            onChange={(e) => props.onSetPriority(e.target.value || null)}
-          >
-            <option value="">No priority</option>
-            {props.priorities.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
     </div>
   )
 }
@@ -1105,6 +1124,128 @@ function AssistDrawer(props: {
               )}
             </>
           )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// ─── Task editor modal (pill selectors — native <select> popups don't render here) ──
+function TaskModal(props: {
+  task: PlannerTask
+  priorities: WeeklyPriority[]
+  onPatch: (patch: Partial<PlannerTask>) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const t = props.task
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+  return createPortal(
+    <div className="task-modal-overlay" onClick={props.onClose}>
+      <div className="task-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="task-modal-head">
+          <span className="task-modal-heading">Edit task</span>
+          <button className="chip-x lg" onClick={props.onClose}>
+            ×
+          </button>
+        </div>
+        <div className="task-modal-body">
+          <textarea
+            className="text-input task-modal-title"
+            rows={2}
+            value={t.title}
+            placeholder="Task title"
+            autoFocus
+            onChange={(e) => props.onPatch({ title: e.target.value })}
+          />
+
+          <div className="task-modal-field">
+            <span className="task-modal-label">Day</span>
+            <div className="pill-row">
+              {DAY_SHORT.map((d, i) => (
+                <button key={i} className={`pill ${t.day === i ? 'on' : ''}`} onClick={() => props.onPatch({ day: i })}>
+                  {d}
+                </button>
+              ))}
+              <button className={`pill ${t.day === null ? 'on' : ''}`} onClick={() => props.onPatch({ day: null })}>
+                Backlog
+              </button>
+            </div>
+          </div>
+
+          <div className="task-modal-times">
+            <label>
+              <span className="task-modal-label">Start</span>
+              <input
+                type="time"
+                className="text-input"
+                value={t.timeOfDay ?? ''}
+                onChange={(e) => props.onPatch({ timeOfDay: e.target.value || null })}
+              />
+            </label>
+            <label>
+              <span className="task-modal-label">End</span>
+              <input
+                type="time"
+                className="text-input"
+                value={t.endTime ?? ''}
+                onChange={(e) => props.onPatch({ endTime: e.target.value || null })}
+              />
+            </label>
+          </div>
+
+          <div className="task-modal-field">
+            <span className="task-modal-label">Effort</span>
+            <div className="pill-row">
+              {EFFORTS.map((ef) => (
+                <button
+                  key={ef}
+                  className={`pill effort-tag ${ef} ${(t.effort ?? 'medium') === ef ? 'on' : ''}`}
+                  onClick={() => props.onPatch({ effort: ef })}
+                >
+                  {ef}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="task-modal-field">
+            <span className="task-modal-label">Priority</span>
+            <div className="pill-row">
+              <button className={`pill ${!t.priorityId ? 'on' : ''}`} onClick={() => props.onPatch({ priorityId: null })}>
+                None
+              </button>
+              {props.priorities.map((p) => (
+                <button
+                  key={p.id}
+                  className={`pill ${t.priorityId === p.id ? 'on' : ''}`}
+                  style={{ ['--pc' as any]: p.color }}
+                  onClick={() => props.onPatch({ priorityId: p.id })}
+                >
+                  <span className="pill-dot" />
+                  {p.title}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <label className="task-modal-done">
+            <input type="checkbox" checked={t.done} onChange={(e) => props.onPatch({ done: e.target.checked })} />
+            <span>Mark as done</span>
+          </label>
+        </div>
+        <div className="task-modal-foot">
+          <button className="btn-text danger" onClick={props.onDelete}>
+            Delete task
+          </button>
+          <button className="assist-btn primary" onClick={props.onClose}>
+            Done
+          </button>
         </div>
       </div>
     </div>,

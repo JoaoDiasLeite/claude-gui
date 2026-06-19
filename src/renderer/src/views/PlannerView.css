@@ -937,3 +937,126 @@
   flex-direction: column;
   gap: 12px;
 }
+
+/* ── Trello-style: drop indicator, day select-all, task slots ── */
+.task-slot { position: relative; }
+.drop-line {
+  height: 0;
+  border-top: 2px solid var(--accent);
+  border-radius: 2px;
+  margin: 2px 0;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.task-card { cursor: pointer; }
+.task-card:active { cursor: grabbing; }
+
+.day-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.day-check {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.day-check:disabled { cursor: default; opacity: 0.4; }
+
+/* ── Task editor modal ── */
+.task-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: assist-fade 0.15s ease;
+}
+.task-modal {
+  width: 460px;
+  max-width: 100%;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(170deg, var(--bg-1), var(--bg-0));
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  animation: assist-slide 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.task-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.task-modal-heading { font-size: 15px; font-weight: 600; color: var(--text-0); }
+.task-modal-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.task-modal-title { font-size: 14px; line-height: 1.4; resize: vertical; }
+.task-modal-field { display: flex; flex-direction: column; gap: 7px; }
+.task-modal-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.task-modal-times { display: flex; gap: 12px; }
+.task-modal-times label { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+.task-modal-done {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text-0);
+  cursor: pointer;
+}
+.task-modal-done input { width: 16px; height: 16px; accent-color: var(--success); cursor: pointer; }
+.task-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* Pill selectors */
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  --pc: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.pill:hover { background: var(--bg-hover); color: var(--text-0); }
+.pill.on {
+  background: color-mix(in srgb, var(--pc) 18%, var(--bg-2));
+  border-color: color-mix(in srgb, var(--pc) 50%, transparent);
+  color: var(--text-0);
+}
+.pill-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pc); }
+.pill.effort-tag { text-transform: capitalize; }
+.pill.effort-tag.on.light { --pc: var(--success); }
+.pill.effort-tag.on.medium { --pc: var(--accent); }
+.pill.effort-tag.on.deep { --pc: var(--thinking); }
