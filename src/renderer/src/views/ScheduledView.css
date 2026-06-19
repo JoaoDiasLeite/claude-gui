@@ -1,0 +1,244 @@
+/* ============================================================
+   ScheduledView.css — Routines tab styling.
+   Layers on top of views.css (imported first in ScheduledView.tsx).
+   ============================================================ */
+
+.scheduled-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Routine card ── */
+.scheduled-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px 18px;
+  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.1);
+  transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s;
+}
+
+.scheduled-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2), 0 10px 26px rgba(0, 0, 0, 0.16);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.scheduled-card.disabled {
+  opacity: 0.65;
+}
+
+/* ── Card main content (left side) ── */
+.scheduled-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scheduled-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.scheduled-card-name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scheduled-cadence-badge {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: color-mix(in srgb, var(--accent) 85%, var(--text-1));
+  flex-shrink: 0;
+}
+
+.scheduled-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.scheduled-status-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--success) 70%, transparent);
+}
+
+.scheduled-status-dot.err {
+  background: var(--error);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--error) 70%, transparent);
+}
+
+/* ── Prompt preview ── */
+.scheduled-card-prompt {
+  font-size: 12px;
+  color: var(--text-1);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Footer meta info ── */
+.scheduled-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.scheduled-last-result.ok { color: var(--success); }
+.scheduled-last-result.err { color: var(--error); }
+
+.scheduled-next-run {
+  color: var(--text-2);
+}
+
+.scheduled-path {
+  color: var(--text-2);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scheduled-run-result {
+  font-size: 11.5px;
+}
+
+.scheduled-run-result.ok { color: var(--success); }
+.scheduled-run-result.err { color: var(--error); }
+
+/* ── Actions (right side) ── */
+.scheduled-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Toggle switch ── */
+.toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  transition: color 0.14s;
+}
+
+.toggle-btn.on { color: var(--accent); }
+
+.toggle-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  background: var(--bg-3);
+  border-radius: 9px;
+  border: 1px solid var(--border-light);
+  transition: background 0.2s, border-color 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle-btn.on .toggle-track {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  border-color: var(--accent);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.toggle-btn.on .toggle-thumb {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+
+.toggle-label {
+  font-size: 11.5px;
+  min-width: 20px;
+}
+
+/* ── Cadence form controls ── */
+.cadence-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cadence-kind {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.cadence-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cadence-num {
+  width: 80px;
+}
+
+.cadence-time {
+  width: 120px;
+}
+
+.cadence-day {
+  width: 130px;
+}
+
+.cadence-unit {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+/* ── Folder picker row ── */
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-1);
+  cursor: default;
+}

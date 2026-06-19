@@ -15,7 +15,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, getClaudeSettings, MODELS, UsageLimits, UiPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, MODELS, UsageLimits, UiPrefs, ClaudePermissions, ClaudeHooks } from './config'
 import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
 import {
   listMcpServers,
@@ -29,9 +29,12 @@ import {
   createCheckpoint,
   listCheckpoints,
   restoreCheckpoint,
-  deleteCheckpoint
+  deleteCheckpoint,
+  compareCheckpoints,
+  exportPatch
 } from './checkpoints'
 import { getStatus, getDiff, stageFile, unstageFile, stageAll, commit } from './git'
+import { listCommands } from './commands'
 import {
   listHosts,
   saveHost,
@@ -53,6 +56,15 @@ import {
   setDefaultAccount,
   loginAccount
 } from './accounts'
+import {
+  listScheduledRuns,
+  upsertScheduledRun,
+  deleteScheduledRun,
+  setScheduledRunEnabled,
+  runScheduledRunNow,
+  startScheduler,
+  ScheduledRun
+} from './scheduler'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -130,6 +142,7 @@ app.whenReady().then(() => {
   loadAuthState()
   loadAccounts()
   loadConfig()
+  startScheduler()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   createWindow()
   app.on('activate', () => {
@@ -507,6 +520,10 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
 })
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
 ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
+ipcMain.handle('config:get-permissions', () => getClaudePermissions())
+ipcMain.handle('config:set-permissions', (_, perms: ClaudePermissions) => setClaudePermissions(perms))
+ipcMain.handle('config:get-hooks', () => getClaudeHooks())
+ipcMain.handle('config:set-hooks', (_, hooks: ClaudeHooks) => setClaudeHooks(hooks))
 
 // ─── Claude Code data (real projects / sessions / usage, local + WSL) ──────────
 
@@ -537,6 +554,16 @@ ipcMain.handle('agents:delete', (_, id: string) => {
   deleteAgent(id)
   return listAgents()
 })
+
+// ─── Scheduler / Routines ─────────────────────────────────────────────────────
+
+ipcMain.handle('scheduler:list', () => listScheduledRuns())
+ipcMain.handle('scheduler:upsert', (_, run: ScheduledRun) => upsertScheduledRun(run))
+ipcMain.handle('scheduler:delete', (_, id: string) => deleteScheduledRun(id))
+ipcMain.handle('scheduler:set-enabled', (_, id: string, enabled: boolean) =>
+  setScheduledRunEnabled(id, enabled)
+)
+ipcMain.handle('scheduler:run-now', (_, id: string) => runScheduledRunNow(id))
 
 // ─── Chat compaction (summarize a long session into a fresh one) ───────────────
 
@@ -842,6 +869,28 @@ ipcMain.handle('checkpoint:restore', (_, sessionId: string, id: string) =>
 ipcMain.handle('checkpoint:delete', (_, sessionId: string, id: string) =>
   deleteCheckpoint(sessionId, id)
 )
+ipcMain.handle('checkpoint:compare', (_, sessionId: string, idA: string, idB: string) =>
+  compareCheckpoints(sessionId, idA, idB)
+)
+ipcMain.handle(
+  'checkpoint:save-patch',
+  async (_, sessionId: string, idA: string, idB: string) => {
+    const patch = exportPatch(sessionId, idA, idB)
+    if (!patch) return { saved: false, reason: 'no-diff' }
+    if (!mainWindow) return { saved: false, reason: 'no-window' }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save patch file',
+      defaultPath: `checkpoint-${idA}.patch`,
+      filters: [
+        { name: 'Patch files', extensions: ['patch', 'diff'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return { saved: false, reason: 'canceled' }
+    fs.writeFileSync(result.filePath, patch, 'utf-8')
+    return { saved: true, filePath: result.filePath }
+  }
+)
 
 // ─── Git ──────────────────────────────────────────────────────────────────────
 
@@ -915,3 +964,136 @@ ipcMain.handle('session:delete', (_, sessionId: string) => {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
   return { success: true }
 })
+
+// ─── Commands / Skills discovery ──────────────────────────────────────────────
+
+ipcMain.handle('commands:list', (_, projectPath?: string) => listCommands(projectPath))
+
+// ─── Session export ──────────────────────────────────────────────────────────
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+ipcMain.handle(
+  'session:export',
+  async (
+    _,
+    session: {
+      name: string
+      messages: {
+        role: string
+        content: string
+        thinking?: string
+        toolCalls?: { tool: string; input: unknown; result?: string; isError?: boolean }[]
+        timestamp: number
+      }[]
+      projectPath?: string
+    },
+    format: 'md' | 'html'
+  ) => {
+    if (!mainWindow) return { saved: false }
+
+    const title = session.name || 'Chat export'
+    const date = new Date().toLocaleString()
+
+    if (format === 'md') {
+      const lines: string[] = []
+      lines.push(`# ${title}`)
+      if (session.projectPath) lines.push(`\n_Project: ${session.projectPath}_`)
+      lines.push(`\n_Exported: ${date}_\n`)
+      lines.push('---\n')
+      for (const msg of session.messages) {
+        const role = msg.role === 'user' ? '## User' : '## Assistant'
+        const ts = new Date(msg.timestamp).toLocaleTimeString()
+        lines.push(`${role} _(${ts})_\n`)
+        if (msg.thinking) lines.push(`> _Thinking:_ ${msg.thinking}\n`)
+        if (msg.content) lines.push(msg.content)
+        if (msg.toolCalls && msg.toolCalls.length > 0) {
+          for (const tc of msg.toolCalls) {
+            lines.push(`\n**Tool:** \`${tc.tool}\``)
+            lines.push(`\`\`\`json\n${JSON.stringify(tc.input, null, 2)}\n\`\`\``)
+            if (tc.result !== undefined) {
+              lines.push(`**Result${tc.isError ? ' (error)' : ''}:**`)
+              lines.push(`\`\`\`\n${tc.result.slice(0, 2000)}\n\`\`\``)
+            }
+          }
+        }
+        lines.push('\n---\n')
+      }
+      const content = lines.join('\n')
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: 'Export chat as Markdown',
+        defaultPath: `${title.replace(/[/\\?%*:|"<>]/g, '-')}.md`,
+        filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All files', extensions: ['*'] }]
+      })
+      if (result.canceled || !result.filePath) return { saved: false }
+      fs.writeFileSync(result.filePath, content, 'utf-8')
+      return { saved: true, filePath: result.filePath }
+    }
+
+    // HTML export
+    const msgHtml = session.messages.map((msg) => {
+      const role = msg.role === 'user' ? 'user' : 'assistant'
+      const ts = new Date(msg.timestamp).toLocaleTimeString()
+      let body = ''
+      if (msg.thinking) body += `<div class="thinking"><strong>Thinking:</strong> ${escapeHtml(msg.thinking)}</div>`
+      if (msg.content) body += `<div class="content"><pre>${escapeHtml(msg.content)}</pre></div>`
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const tc of msg.toolCalls) {
+          body += `<div class="tool-call"><span class="tool-name">Tool: ${escapeHtml(tc.tool)}</span>`
+          body += `<pre class="tool-input">${escapeHtml(JSON.stringify(tc.input, null, 2))}</pre>`
+          if (tc.result !== undefined) {
+            body += `<div class="tool-result ${tc.isError ? 'error' : ''}"><strong>Result${tc.isError ? ' (error)' : ''}:</strong><pre>${escapeHtml(tc.result.slice(0, 2000))}</pre></div>`
+          }
+          body += '</div>'
+        }
+      }
+      return `<div class="message ${role}"><div class="msg-header"><span class="role">${role}</span><span class="ts">${ts}</span></div><div class="msg-body">${body}</div></div>`
+    }).join('\n')
+
+    const meta = session.projectPath ? `<div class="meta">Project: ${escapeHtml(session.projectPath)}</div>` : ''
+    const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(title)}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; max-width: 860px; margin: 0 auto; padding: 24px 16px; background: #1c1b19; color: #efece8; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .meta { color: #7c766e; font-size: 12px; margin-bottom: 4px; }
+  .exported { color: #7c766e; font-size: 12px; margin-bottom: 24px; }
+  .message { margin-bottom: 16px; border-radius: 8px; overflow: hidden; border: 1px solid #302c28; }
+  .msg-header { display: flex; justify-content: space-between; padding: 8px 12px; background: #252320; font-size: 12px; }
+  .role { font-weight: 600; text-transform: capitalize; }
+  .message.user .role { color: #df7a52; }
+  .message.assistant .role { color: #7c83ff; }
+  .ts { color: #7c766e; }
+  .msg-body { padding: 12px; }
+  pre { background: #141312; border: 1px solid #302c28; border-radius: 4px; padding: 10px; overflow-x: auto; font-size: 12px; white-space: pre-wrap; word-break: break-word; margin: 6px 0; }
+  .content pre { background: transparent; border: none; padding: 0; margin: 0; }
+  .thinking { color: #8c7fd6; font-style: italic; font-size: 12px; margin-bottom: 8px; }
+  .tool-call { margin-top: 10px; border-left: 3px solid #48423a; padding-left: 10px; }
+  .tool-name { font-weight: 600; font-size: 12px; color: #e3a857; }
+  .tool-result.error pre { color: #e36460; }
+</style>
+</head>
+<body>
+<h1>${escapeHtml(title)}</h1>
+${meta}
+<div class="exported">Exported: ${date}</div>
+${msgHtml}
+</body>
+</html>`
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export chat as HTML',
+      defaultPath: `${title.replace(/[/\\?%*:|"<>]/g, '-')}.html`,
+      filters: [{ name: 'HTML', extensions: ['html'] }, { name: 'All files', extensions: ['*'] }]
+    })
+    if (result.canceled || !result.filePath) return { saved: false }
+    fs.writeFileSync(result.filePath, htmlContent, 'utf-8')
+    return { saved: true, filePath: result.filePath }
+  }
+)

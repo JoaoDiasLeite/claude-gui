@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Session, ModelInfo, ImageAttachment, CCAccountStatus } from '../types'
+import { Session, ModelInfo, ImageAttachment, CCAccountStatus, SlashCommand } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import AccountPicker from './AccountPicker'
@@ -31,6 +31,7 @@ interface Props {
   onOpenGit: () => void
   onRetry: () => void
   onEditResend: (messageId: string, newText: string) => void
+  onExportSession: (format: 'md' | 'html') => void
 }
 
 export default function Chat({
@@ -58,13 +59,70 @@ export default function Chat({
   onOpenCheckpoints,
   onOpenGit,
   onRetry,
-  onEditResend
+  onEditResend,
+  onExportSession
 }: Props) {
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const pickerListRef = useRef<HTMLDivElement>(null)
+
+  // ── Slash-command picker ──────────────────────────────────────────────────
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([])
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerActive, setPickerActive] = useState(0)
+
+  // Fetch command list whenever the project path changes.
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.commandsList(session?.projectPath).then((cmds) => {
+      if (!cancelled) setSlashCommands(cmds)
+    }).catch(() => { /* ignore */ })
+    return () => { cancelled = true }
+  }, [session?.projectPath])
+
+  // Compute the query string after the leading slash (first word only).
+  const slashQuery = (() => {
+    if (!input.startsWith('/')) return null
+    // Only show picker before the user has added a space + args
+    const space = input.indexOf(' ')
+    if (space !== -1) return null
+    return input.slice(1).toLowerCase()
+  })()
+
+  // Filtered list based on what they've typed after '/'.
+  const pickerItems = slashQuery !== null
+    ? slashCommands.filter((c) =>
+        slashQuery === '' || c.name.toLowerCase().includes(slashQuery) ||
+        (c.description ?? '').toLowerCase().includes(slashQuery)
+      )
+    : []
+
+  // Open/close the picker.
+  useEffect(() => {
+    const shouldOpen = slashQuery !== null && pickerItems.length > 0
+    setPickerOpen(shouldOpen)
+    if (shouldOpen) setPickerActive(0)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slashQuery, pickerItems.length])
+
+  // Scroll active item into view.
+  useEffect(() => {
+    const el = pickerListRef.current?.querySelector('.slash-picker-item.active') as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [pickerActive])
+
+  const acceptPickerItem = (item: SlashCommand) => {
+    const insertion = item.kind === 'skill'
+      ? `Use the "${item.name}" skill to `
+      : `/${item.name} `
+    setInput(insertion)
+    setPickerOpen(false)
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -109,6 +167,29 @@ export default function Chat({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (pickerOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setPickerActive((a) => Math.min(a + 1, pickerItems.length - 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setPickerActive((a) => Math.max(a - 1, 0))
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        const item = pickerItems[pickerActive]
+        if (item) acceptPickerItem(item)
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setPickerOpen(false)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey && !streaming) {
       e.preventDefault()
       handleSend()
@@ -205,6 +286,27 @@ export default function Chat({
               <path d="M18 12a9 9 0 0 1-9 9M6 9v6" />
             </svg>
           </button>
+          <div className="export-menu-wrap" style={{ position: 'relative' }}>
+            <button
+              className="header-icon-btn"
+              onClick={() => !isEmpty && setExportMenuOpen((v) => !v)}
+              title="Export chat"
+              aria-label="Export chat"
+              disabled={isEmpty}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+            {exportMenuOpen && (
+              <div className="export-dropdown" onMouseLeave={() => setExportMenuOpen(false)}>
+                <button onClick={() => { setExportMenuOpen(false); onExportSession('md') }}>Export as Markdown</button>
+                <button onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
+              </div>
+            )}
+          </div>
           <button className="header-icon-btn" onClick={onOpenCheckpoints} title="Checkpoints / timeline" aria-label="Checkpoints / timeline">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" />
@@ -299,6 +401,44 @@ export default function Chat({
           </div>
         )}
         <div className="input-wrapper">
+          {pickerOpen && (
+            <div className="slash-picker" role="listbox" aria-label="Slash commands">
+              <div className="slash-picker-list" ref={pickerListRef}>
+                {pickerItems.length === 0 ? (
+                  <div className="slash-picker-empty">No matches</div>
+                ) : (
+                  pickerItems.map((item, i) => (
+                    <div
+                      key={`${item.kind}:${item.scope}:${item.name}`}
+                      className={`slash-picker-item${i === pickerActive ? ' active' : ''}`}
+                      role="option"
+                      aria-selected={i === pickerActive}
+                      onMouseEnter={() => setPickerActive(i)}
+                      onClick={() => acceptPickerItem(item)}
+                    >
+                      <span className="slash-picker-name">/{item.name}</span>
+                      {item.description && (
+                        <span className="slash-picker-desc">{item.description}</span>
+                      )}
+                      <span className="slash-picker-badges">
+                        <span className={`slash-badge slash-badge-kind-${item.kind}`}>
+                          {item.kind}
+                        </span>
+                        {item.scope === 'project' && (
+                          <span className="slash-badge slash-badge-scope-project">project</span>
+                        )}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="slash-picker-foot">
+                <span>↑↓ navigate</span>
+                <span>↵ Tab accept</span>
+                <span>esc dismiss</span>
+              </div>
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"

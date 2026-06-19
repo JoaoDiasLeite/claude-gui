@@ -157,3 +157,168 @@ export function deleteCheckpoint(sessionId: string, id: string): CheckpointMeta[
   if (fs.existsSync(p)) fs.unlinkSync(p)
   return listCheckpoints(sessionId)
 }
+
+export interface CheckpointFileDiff {
+  path: string
+  before: string
+  after: string
+}
+
+export interface CheckpointDiff {
+  files: CheckpointFileDiff[]
+}
+
+/**
+ * Compare two checkpoints (or one checkpoint vs current on-disk state).
+ * Pass idB = 'current' to compare the snapshot against what's on disk right now.
+ */
+export function compareCheckpoints(
+  sessionId: string,
+  idA: string,
+  idB: string
+): CheckpointDiff {
+  const cpA = read(sessionId, idA)
+  if (!cpA) return { files: [] }
+
+  const allPaths = new Set<string>(cpA.files.map((f) => f.path))
+
+  let bMap: Map<string, string>
+  if (idB === 'current') {
+    // Read current on-disk content for each path in cpA
+    bMap = new Map()
+    for (const f of cpA.files) {
+      try {
+        if (fs.existsSync(f.path) && fs.statSync(f.path).isFile()) {
+          bMap.set(f.path, fs.readFileSync(f.path, 'utf-8'))
+        } else {
+          bMap.set(f.path, '')
+        }
+      } catch {
+        bMap.set(f.path, '')
+      }
+    }
+  } else {
+    const cpB = read(sessionId, idB)
+    if (!cpB) return { files: [] }
+    for (const f of cpB.files) allPaths.add(f.path)
+    bMap = new Map(cpB.files.map((f) => [f.path, f.existed ? f.content : '']))
+  }
+
+  const aMap = new Map(cpA.files.map((f) => [f.path, f.existed ? f.content : '']))
+
+  const files: CheckpointFileDiff[] = []
+  for (const p of allPaths) {
+    const before = aMap.get(p) ?? ''
+    const after = bMap.get(p) ?? ''
+    if (before !== after) {
+      files.push({ path: p, before, after })
+    }
+  }
+  return { files }
+}
+
+// ─── Minimal LCS-based unified diff ──────────────────────────────────────────
+
+function lcs(a: string[], b: string[]): number[][] {
+  const n = a.length
+  const m = b.length
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1])
+    }
+  }
+  return dp
+}
+
+type EditOp = { type: 'context' | 'add' | 'del'; text: string }
+
+function buildEdits(a: string[], b: string[], dp: number[][]): EditOp[] {
+  const ops: EditOp[] = []
+  let i = 0
+  let j = 0
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      ops.push({ type: 'context', text: a[i] })
+      i++
+      j++
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      ops.push({ type: 'del', text: a[i] })
+      i++
+    } else {
+      ops.push({ type: 'add', text: b[j] })
+      j++
+    }
+  }
+  while (i < a.length) ops.push({ type: 'del', text: a[i++] })
+  while (j < b.length) ops.push({ type: 'add', text: b[j++] })
+  return ops
+}
+
+function buildUnifiedPatch(filePath: string, before: string, after: string, context = 3): string {
+  const aLines = before === '' ? [] : before.split('\n')
+  const bLines = after === '' ? [] : after.split('\n')
+  const dp = lcs(aLines, bLines)
+  const ops = buildEdits(aLines, bLines, dp)
+
+  // Map ops back to line numbers so we can emit hunks with context.
+  type TaggedOp = EditOp & { aLine: number; bLine: number }
+  const tagged: TaggedOp[] = []
+  let aLine = 1
+  let bLine = 1
+  for (const op of ops) {
+    tagged.push({ ...op, aLine, bLine })
+    if (op.type !== 'add') aLine++
+    if (op.type !== 'del') bLine++
+  }
+
+  // Find change positions and group into hunks.
+  const changeIdx = tagged
+    .map((op, i) => (op.type !== 'context' ? i : -1))
+    .filter((i) => i >= 0)
+
+  if (changeIdx.length === 0) return ''
+
+  const hunks: Array<{ start: number; end: number }> = []
+  let hStart = Math.max(0, changeIdx[0] - context)
+  let hEnd = Math.min(tagged.length - 1, changeIdx[0] + context)
+  for (let k = 1; k < changeIdx.length; k++) {
+    const idx = changeIdx[k]
+    if (idx - context <= hEnd + 1) {
+      hEnd = Math.min(tagged.length - 1, idx + context)
+    } else {
+      hunks.push({ start: hStart, end: hEnd })
+      hStart = Math.max(0, idx - context)
+      hEnd = Math.min(tagged.length - 1, idx + context)
+    }
+  }
+  hunks.push({ start: hStart, end: hEnd })
+
+  const safeFile = filePath.replace(/\\/g, '/')
+  const header = `--- a/${safeFile}\n+++ b/${safeFile}\n`
+  const hunkTexts = hunks.map((h) => {
+    const slice = tagged.slice(h.start, h.end + 1)
+    const aCount = slice.filter((o) => o.type !== 'add').length
+    const bCount = slice.filter((o) => o.type !== 'del').length
+    const aStart = slice[0].aLine
+    const bStart = slice[0].bLine
+    const hunkHeader = `@@ -${aStart},${aCount} +${bStart},${bCount} @@`
+    const lines = slice.map((o) => {
+      const sign = o.type === 'add' ? '+' : o.type === 'del' ? '-' : ' '
+      return `${sign}${o.text}`
+    })
+    return [hunkHeader, ...lines].join('\n')
+  })
+
+  return header + hunkTexts.join('\n') + '\n'
+}
+
+/**
+ * Build a unified-diff patch comparing a checkpoint's snapshot against
+ * current on-disk state, or against another checkpoint (idB = 'current' for disk).
+ */
+export function exportPatch(sessionId: string, idA: string, idB: string): string {
+  const diff = compareCheckpoints(sessionId, idA, idB)
+  if (diff.files.length === 0) return ''
+  return diff.files.map((f) => buildUnifiedPatch(f.path, f.before, f.after)).join('\n')
+}

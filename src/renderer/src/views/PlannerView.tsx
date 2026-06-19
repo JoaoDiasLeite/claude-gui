@@ -11,6 +11,7 @@ interface PlannerProps {
   models: ModelInfo[]
   defaultModel: string
   defaultAccountId: string
+  onRunTask?: (task: PlannerTask) => void
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -74,7 +75,7 @@ const emptyWeek = (weekStart: string): WeekPlan => ({
   updatedAt: Date.now()
 })
 
-export default function PlannerView({ accounts, models, defaultModel, defaultAccountId }: PlannerProps) {
+export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask }: PlannerProps) {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
   const [week, setWeek] = useState<WeekPlan>(() => emptyWeek(mondayOf(new Date())))
   const [loading, setLoading] = useState(true)
@@ -518,6 +519,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
                   onToggleDay={() => toggleDay(d)}
                   onOpenTask={setEditingTaskId}
                   onDelete={deleteTask}
+                  onRunTask={onRunTask}
                 />
               )
             })}
@@ -544,6 +546,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
                   onToggle={(done) => updateTask(t.id, { done })}
                   onDelete={() => deleteTask(t.id)}
                   onOpen={() => setEditingTaskId(t.id)}
+                  onRun={onRunTask ? () => onRunTask(t) : undefined}
                 />
               ))}
               <AddTaskInline onAdd={(title) => addTask(null, title)} placeholder="+ capture a task" />
@@ -646,6 +649,7 @@ function DayColumn(props: {
   onToggleDay: () => void
   onOpenTask: (id: string) => void
   onDelete: (id: string) => void
+  onRunTask?: (task: PlannerTask) => void
 }) {
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const loadPct = props.maxLoad ? (props.load / props.maxLoad) * 100 : 0
@@ -712,6 +716,7 @@ function DayColumn(props: {
               onToggle={(done) => props.onToggle(t.id, done)}
               onDelete={() => props.onDelete(t.id)}
               onOpen={() => props.onOpenTask(t.id)}
+              onRun={props.onRunTask ? () => props.onRunTask!(t) : undefined}
             />
           </div>
         ))}
@@ -731,6 +736,7 @@ function TaskCard(props: {
   onToggle: (done: boolean) => void
   onDelete: () => void
   onOpen: () => void
+  onRun?: () => void
 }) {
   const t = props.task
   return (
@@ -758,6 +764,18 @@ function TaskCard(props: {
           {t.done ? '✓' : ''}
         </button>
         <span className="task-title">{t.title}</span>
+        {props.onRun && (
+          <button
+            className="task-run"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onRun!()
+            }}
+            title="Run with Claude"
+          >
+            <Spark />
+          </button>
+        )}
         <button
           className="task-del"
           onClick={(e) => {

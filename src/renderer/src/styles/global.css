@@ -204,6 +204,48 @@
   --accent: #cf9417; --accent-dim: rgba(207, 148, 23, 0.14); --accent-hover: #b27f0f;
 }
 
+/* Dusk Copper — muted purplish-grey background, warm copper accent */
+:root[data-palette='dusk-copper'] {
+  --bg-0: #14121a; --bg-1: #1d1a24; --bg-2: #27232f; --bg-3: #332e3c; --bg-hover: #3e3849;
+  --border: #312b3b; --border-light: #474055;
+  --text-0: #eee9f5; --text-1: #aea6be; --text-2: #78707f;
+  --accent: #d97c52; --accent-dim: rgba(217, 124, 82, 0.16); --accent-hover: #e8916a;
+}
+:root[data-palette='dusk-copper'][data-theme='light'] {
+  --bg-0: #f8f6fb; --bg-1: #f1edf7; --bg-2: #e9e2f0; --bg-3: #e0d6e9; --bg-hover: #ebe3f3;
+  --border: #e3daea; --border-light: #d0c5de;
+  --text-0: #231d2e; --text-1: #5f5570; --text-2: #9087a0;
+  --accent: #b85e35; --accent-dim: rgba(184, 94, 53, 0.13); --accent-hover: #9e4f2a;
+}
+
+/* Sage Stone — earthy olive-grey background, sage green accent */
+:root[data-palette='sage-stone'] {
+  --bg-0: #111412; --bg-1: #181c18; --bg-2: #20251f; --bg-3: #2b302a; --bg-hover: #363c34;
+  --border: #283028; --border-light: #3a4438;
+  --text-0: #e8ece5; --text-1: #a2ab9c; --text-2: #6c7569;
+  --accent: #8ac06a; --accent-dim: rgba(138, 192, 106, 0.15); --accent-hover: #9fd07f;
+}
+:root[data-palette='sage-stone'][data-theme='light'] {
+  --bg-0: #f5f7f4; --bg-1: #ecf0e9; --bg-2: #e3e9df; --bg-3: #d9e0d3; --bg-hover: #e4ebe0;
+  --border: #dce4d8; --border-light: #c5d0be;
+  --text-0: #1c231a; --text-1: #53604f; --text-2: #849280;
+  --accent: #4f9430; --accent-dim: rgba(79, 148, 48, 0.13); --accent-hover: #417c25;
+}
+
+/* Solar Dune — warm sandstone tones, golden-orange accent */
+:root[data-palette='solar-dune'] {
+  --bg-0: #181411; --bg-1: #211c17; --bg-2: #2c2520; --bg-3: #38302a; --bg-hover: #443b33;
+  --border: #352e27; --border-light: #50453b;
+  --text-0: #f2ece5; --text-1: #b9afa4; --text-2: #82776e;
+  --accent: #f5a742; --accent-dim: rgba(245, 167, 66, 0.16); --accent-hover: #ffb857;
+}
+:root[data-palette='solar-dune'][data-theme='light'] {
+  --bg-0: #faf7f3; --bg-1: #f5f0e8; --bg-2: #ede5d8; --bg-3: #e4d9c8; --bg-hover: #ede5d6;
+  --border: #e8dfd0; --border-light: #d9ccb5;
+  --text-0: #2a2219; --text-1: #645849; --text-2: #97897a;
+  --accent: #c97f14; --accent-dim: rgba(201, 127, 20, 0.14); --accent-hover: #b06c0b;
+}
+
 /* ── Density ── */
 :root[data-density='compact'] .message-row { padding-top: 8px; padding-bottom: 8px; }
 :root[data-density='compact'] .session-item { padding: 5px 8px; }

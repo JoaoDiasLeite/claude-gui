@@ -12,7 +12,9 @@ import {
   CCSessionMeta,
   AgentDef,
   ApprovalRequest,
-  CCAccountStatus
+  CCAccountStatus,
+  PlannerTask,
+  UsageLimits
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -35,6 +37,7 @@ import UsageView from './views/UsageView'
 import McpView from './views/McpView'
 import PlannerView from './views/PlannerView'
 import RemoteView from './views/RemoteView'
+import ScheduledView from './views/ScheduledView'
 import { SshHostPublic } from './types'
 import './styles/App.css'
 
@@ -91,11 +94,18 @@ export default function App() {
   const [defaultAccountId, setDefaultAccountId] = useState('default')
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
+  const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 0, sessionUsd: 0, weekUsd: 0 })
+  // Tracks which budget windows are currently over-limit, to avoid re-notifying on each turn.
+  const overLimitRef = useRef<{ hour: boolean; session: boolean; week: boolean }>({ hour: false, session: false, week: false })
+  // Inline banner: null = no banner, or a message string.
+  const [budgetBanners, setBudgetBanners] = useState<string[]>([])
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
+  const limitsRef = useRef(limits)
+  limitsRef.current = limits
   // Latest createSession, so the global ⌘N handler never calls a stale closure.
   const createSessionRef = useRef<() => void>(() => {})
 
@@ -145,6 +155,7 @@ export default function App() {
       setModels(models)
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
+      setLimits(config.limits)
       applyUi(config.ui)
       if (saved.length > 0) {
         setSessions(saved)
@@ -220,6 +231,38 @@ export default function App() {
       setStreaming(false)
       if (data.isError && data.errorText) addTerm({ kind: 'error', text: data.errorText })
       addTerm({ kind: 'info', text: `done · $${data.costUsd.toFixed(4)}` })
+
+      // Budget alerting — fetch usage windows and check against limits.
+      // Fire-and-forget; non-blocking on the run flow.
+      window.electronAPI.ccUsage(false).then((report) => {
+        const currentLimits = limitsRef.current
+        const win = report.windows
+        const over = overLimitRef.current
+        const newBanners: string[] = []
+
+        const check = (key: 'hour' | 'session' | 'week', costUsd: number, limit: number, label: string) => {
+          if (limit <= 0) {
+            if (over[key]) over[key] = false
+            return
+          }
+          const exceeded = costUsd >= limit
+          if (exceeded && !over[key]) {
+            over[key] = true
+            window.electronAPI.notify(
+              `Budget limit reached: ${label}`,
+              `You've spent $${costUsd.toFixed(2)} this ${label.toLowerCase()} (limit $${limit.toFixed(2)}).`
+            )
+          } else if (!exceeded && over[key]) {
+            over[key] = false
+          }
+          if (exceeded) newBanners.push(`${label} budget exceeded: $${costUsd.toFixed(2)} / $${limit.toFixed(2)}`)
+        }
+
+        check('hour', win.hour.costUsd, currentLimits.hourUsd, 'Hour')
+        check('session', win.session.costUsd, currentLimits.sessionUsd, 'Session')
+        check('week', win.week.costUsd, currentLimits.weekUsd, 'Week')
+        setBudgetBanners(newBanners)
+      }).catch(() => { /* silently ignore */ })
       if (!document.hasFocus()) {
         const sess = sessionsRef.current.find((s) => s.id === data.appSessionId)
         const where = sess?.name ? `“${sess.name}”` : 'chat'
@@ -623,6 +666,34 @@ export default function App() {
     addTerm({ kind: 'info', text: `WSL session on ${distro}` })
   }
 
+  const runPlannerTask = (task: PlannerTask) => {
+    const s = newSession(activeSession?.projectPath, defaultModel, defaultAccountId)
+    s.name = task.title.slice(0, 40)
+
+    const parts: string[] = [`Help me with this planned task: "${task.title}".`]
+    if (task.notes) parts.push(`\nNotes: ${task.notes}`)
+    if (task.effort) parts.push(`\nEffort level: ${task.effort}`)
+    if (typeof task.day === 'number') {
+      const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+      parts.push(`\nScheduled for: ${dayNames[task.day]}`)
+    }
+    parts.push('\nPlease start working on it.')
+    const prompt = parts.join('')
+
+    const userMsg: Message = { id: generateId(), role: 'user', content: prompt, timestamp: Date.now() }
+    const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
+    s.messages = [userMsg, assistantMsg]
+
+    setSessions((prev) => [s, ...prev])
+    setActiveId(s.id)
+    setView('chat')
+    setStreaming(true)
+    setTerminalOpen(true)
+    addTerm({ kind: 'user', text: prompt.slice(0, 120) })
+
+    window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
+  }
+
   const handleSetDefaultModel = async (modelId: string) => {
     setDefaultModel(modelId)
     await window.electronAPI.setDefaultModel(modelId)
@@ -664,6 +735,7 @@ export default function App() {
       { v: 'projects', label: 'Projects' },
       { v: 'agents', label: 'Agents' },
       { v: 'planner', label: 'Planner' },
+      { v: 'scheduled', label: 'Routines' },
       { v: 'usage', label: 'Usage' },
       { v: 'mcp', label: 'MCP' },
       { v: 'remote', label: 'Remote & WSL' }
@@ -731,6 +803,20 @@ export default function App() {
             activeAccountId={activeSession?.accountId ?? defaultAccountId}
           />
           <div className="main-area">
+            {budgetBanners.length > 0 && (
+              <div className="budget-banner">
+                {budgetBanners.map((msg, i) => (
+                  <div key={i} className="budget-banner-item">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    {msg}
+                  </div>
+                ))}
+                <button className="budget-banner-close" onClick={() => setBudgetBanners([])} aria-label="Dismiss">✕</button>
+              </div>
+            )}
             <Chat
               session={activeSession}
               streaming={streaming}
@@ -757,6 +843,9 @@ export default function App() {
               onOpenGit={() => setGitOpen(true)}
               onRetry={retryTurn}
               onEditResend={editAndResend}
+              onExportSession={(format) => {
+                if (activeSession) window.electronAPI.exportSession(activeSession, format)
+              }}
             />
             <TerminalPanel
               lines={terminalLines}
@@ -775,6 +864,15 @@ export default function App() {
           accounts={accounts}
           models={models}
           defaultModel={defaultModel}
+          defaultAccountId={defaultAccountId}
+          onRunTask={runPlannerTask}
+        />
+      )}
+      {view === 'scheduled' && (
+        <ScheduledView
+          models={models}
+          defaultModel={defaultModel}
+          accounts={accounts}
           defaultAccountId={defaultAccountId}
         />
       )}

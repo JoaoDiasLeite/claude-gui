@@ -1,8 +1,54 @@
+// Core build + a curated language set, instead of the full `highlight.js` (which pulls
+// ~190 grammars and roughly doubled the renderer bundle). Languages we don't register
+// just fall through highlightLine's try/catch to plain escaped text — safe degradation.
+import hljs from 'highlight.js/lib/core'
+import typescript from 'highlight.js/lib/languages/typescript'
+import javascript from 'highlight.js/lib/languages/javascript'
+import python from 'highlight.js/lib/languages/python'
+import bash from 'highlight.js/lib/languages/bash'
+import json from 'highlight.js/lib/languages/json'
+import css from 'highlight.js/lib/languages/css'
+import scss from 'highlight.js/lib/languages/scss'
+import less from 'highlight.js/lib/languages/less'
+import xml from 'highlight.js/lib/languages/xml'
+import yaml from 'highlight.js/lib/languages/yaml'
+import markdown from 'highlight.js/lib/languages/markdown'
+import go from 'highlight.js/lib/languages/go'
+import rust from 'highlight.js/lib/languages/rust'
+import java from 'highlight.js/lib/languages/java'
+import c from 'highlight.js/lib/languages/c'
+import cpp from 'highlight.js/lib/languages/cpp'
+import csharp from 'highlight.js/lib/languages/csharp'
+import ruby from 'highlight.js/lib/languages/ruby'
+import php from 'highlight.js/lib/languages/php'
+import sql from 'highlight.js/lib/languages/sql'
+import powershell from 'highlight.js/lib/languages/powershell'
+import ini from 'highlight.js/lib/languages/ini'
+import dockerfile from 'highlight.js/lib/languages/dockerfile'
+import kotlin from 'highlight.js/lib/languages/kotlin'
+import swift from 'highlight.js/lib/languages/swift'
+import lua from 'highlight.js/lib/languages/lua'
+import r from 'highlight.js/lib/languages/r'
+import makefile from 'highlight.js/lib/languages/makefile'
 import './DiffView.css'
+
+for (const [name, lang] of [
+  ['typescript', typescript], ['javascript', javascript], ['python', python],
+  ['bash', bash], ['json', json], ['css', css], ['scss', scss], ['less', less],
+  ['xml', xml], ['yaml', yaml], ['markdown', markdown], ['go', go], ['rust', rust],
+  ['java', java], ['c', c], ['cpp', cpp], ['csharp', csharp], ['ruby', ruby],
+  ['php', php], ['sql', sql], ['powershell', powershell], ['ini', ini],
+  ['dockerfile', dockerfile], ['kotlin', kotlin], ['swift', swift], ['lua', lua],
+  ['r', r], ['makefile', makefile]
+] as const) {
+  hljs.registerLanguage(name, lang)
+}
 
 interface Props {
   oldText: string
   newText: string
+  /** Optional file path used to infer syntax highlighting language. */
+  filePath?: string
 }
 
 interface Row {
@@ -44,16 +90,104 @@ function diffLines(a: string[], b: string[]): Row[] {
   return rows
 }
 
+/** Infer hljs language from a file path extension. Returns undefined if not recognized. */
+function langFromPath(filePath?: string): string | undefined {
+  if (!filePath) return undefined
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  if (!ext) return undefined
+  // Map common extensions to hljs language names
+  const map: Record<string, string> = {
+    ts: 'typescript',
+    tsx: 'typescript',
+    js: 'javascript',
+    jsx: 'javascript',
+    mjs: 'javascript',
+    cjs: 'javascript',
+    py: 'python',
+    rb: 'ruby',
+    rs: 'rust',
+    go: 'go',
+    java: 'java',
+    kt: 'kotlin',
+    cs: 'csharp',
+    cpp: 'cpp',
+    cc: 'cpp',
+    c: 'c',
+    h: 'c',
+    hpp: 'cpp',
+    sh: 'bash',
+    bash: 'bash',
+    zsh: 'bash',
+    fish: 'bash',
+    ps1: 'powershell',
+    css: 'css',
+    scss: 'scss',
+    less: 'less',
+    html: 'xml',
+    htm: 'xml',
+    xml: 'xml',
+    svg: 'xml',
+    json: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    toml: 'ini',
+    ini: 'ini',
+    md: 'markdown',
+    sql: 'sql',
+    graphql: 'graphql',
+    gql: 'graphql',
+    swift: 'swift',
+    php: 'php',
+    r: 'r',
+    dart: 'dart',
+    lua: 'lua',
+    vim: 'vim',
+    dockerfile: 'dockerfile',
+    makefile: 'makefile',
+  }
+  return map[ext]
+}
+
+/**
+ * Highlight a single line's text using hljs. Returns an HTML string.
+ * Falls back to the plain text (escaped) if language is unknown or hljs throws.
+ */
+function highlightLine(text: string, lang: string | undefined): string {
+  if (!lang || text.trim() === '') return escapeHtml(text)
+  try {
+    return hljs.highlight(text, { language: lang, ignoreIllegals: true }).value
+  } catch {
+    return escapeHtml(text)
+  }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 const SIGN: Record<Row['type'], string> = { context: ' ', add: '+', del: '-' }
 
-export default function DiffView({ oldText, newText }: Props) {
+export default function DiffView({ oldText, newText, filePath }: Props) {
   const rows = diffLines(oldText.split('\n'), newText.split('\n'))
+  const lang = langFromPath(filePath)
   return (
     <div className="diff-view">
       {rows.map((r, i) => (
         <div key={i} className={`diff-row ${r.type}`}>
           <span className="diff-sign">{SIGN[r.type]}</span>
-          <span className="diff-text">{r.text || ' '}</span>
+          {lang ? (
+            <span
+              className="diff-text hljs"
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: highlightLine(r.text || ' ', lang) }}
+            />
+          ) : (
+            <span className="diff-text">{r.text || ' '}</span>
+          )}
         </div>
       ))}
     </div>

@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import { AuthStatus, AuthMode, ModelInfo, UiPrefs } from '../types'
 import ModelPicker from './ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
+import PermissionsModal from './PermissionsModal'
+import HooksModal from './HooksModal'
 import './SettingsModal.css'
 
 interface Props {
@@ -32,6 +34,8 @@ export default function SettingsModal({
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [savedKey, setSavedKey] = useState(false)
+  const [showPerms, setShowPerms] = useState(false)
+  const [showHooks, setShowHooks] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
@@ -236,7 +240,10 @@ export default function SettingsModal({
                   ['evergreen', 'Evergreen', '#0f1411', '#1d2620', '#34d27f'],
                   ['ruby-ember', 'Ruby Ember', '#141110', '#25201f', '#e85c6b'],
                   ['ocean-cyan', 'Ocean Cyan', '#0d1417', '#1a262b', '#25c4dd'],
-                  ['harbor', 'Harbor', '#0e1822', '#1d2c3a', '#f9c24a']
+                  ['harbor', 'Harbor', '#0e1822', '#1d2c3a', '#f9c24a'],
+                  ['dusk-copper', 'Dusk Copper', '#14121a', '#27232f', '#d97c52'],
+                  ['sage-stone', 'Sage Stone', '#111412', '#20251f', '#8ac06a'],
+                  ['solar-dune', 'Solar Dune', '#181411', '#2c2520', '#f5a742']
                 ] as const).map(([id, name, b0, b1, ac]) => (
                   <button
                     key={id}
@@ -264,12 +271,30 @@ export default function SettingsModal({
             </div>
             <p className="field-hint">Adaptive thinking · tools enabled (file edits auto-approved).</p>
           </div>
+
+          <div className="form-group">
+            <label>Claude Code settings</label>
+            <div className="cc-settings-row">
+              <button className="btn-secondary small" onClick={() => setShowPerms(true)}>
+                Permissions…
+              </button>
+              <button className="btn-secondary small" onClick={() => setShowHooks(true)}>
+                Hooks…
+              </button>
+              <span className="field-hint inline">
+                Edit allow / deny / ask lists and lifecycle hooks in <code className="settings-code">~/.claude/settings.json</code>.
+              </span>
+            </div>
+          </div>
         </div>
 
         <div className="modal-footer">
           <button className="btn-primary" onClick={onClose}>Done</button>
         </div>
       </div>
+
+      {showPerms && <PermissionsModal onClose={() => setShowPerms(false)} />}
+      {showHooks && <HooksModal onClose={() => setShowHooks(false)} />}
     </div>
   )
 }

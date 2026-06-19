@@ -106,6 +106,28 @@ export interface AppConfig {
   claudeSettings: Record<string, unknown>
 }
 
+// ─── Scheduled Runs ─────────────────────────────────────────────────────────
+
+export type ScheduledCadence =
+  | { kind: 'interval'; everyMinutes: number }
+  | { kind: 'daily'; time: string /* "HH:MM" */ }
+  | { kind: 'weekly'; day: number /* 0=Sun..6=Sat */; time: string }
+
+export interface ScheduledRun {
+  id: string
+  name: string
+  prompt: string
+  model?: string
+  projectPath?: string
+  accountId?: string
+  cadence: ScheduledCadence
+  enabled: boolean
+  createdAt: number
+  lastRunAt?: number
+  lastResult?: { ok: boolean; summary: string; costUsd: number; at: number }
+  nextRunAt?: number
+}
+
 export interface SourceAccount {
   email?: string
   org?: string
@@ -230,6 +252,38 @@ export interface ClaudeMdFile {
   content: string
 }
 
+// ─── Claude permissions & hooks (from ~/.claude/settings.json) ────────────────
+
+export interface ClaudePermissions {
+  allow: string[]
+  deny: string[]
+  ask: string[]
+}
+
+export interface ClaudeHookCommand {
+  type: 'command'
+  command: string
+}
+
+export interface ClaudeHookEntry {
+  matcher?: string
+  hooks: ClaudeHookCommand[]
+}
+
+export type ClaudeHooks = Record<string, ClaudeHookEntry[]>
+
+export const HOOK_EVENTS = [
+  'PreToolUse',
+  'PostToolUse',
+  'Stop',
+  'SubagentStop',
+  'Notification',
+  'UserPromptSubmit',
+  'SessionStart'
+] as const
+
+export type HookEvent = (typeof HOOK_EVENTS)[number]
+
 export interface CheckpointMeta {
   id: string
   sessionId: string
@@ -242,6 +296,16 @@ export interface CheckpointMeta {
 export interface RestoreResult {
   restored: number
   safetyCheckpointId: string | null
+}
+
+export interface CheckpointFileDiff {
+  path: string
+  before: string
+  after: string
+}
+
+export interface CheckpointDiff {
+  files: CheckpointFileDiff[]
 }
 
 export interface GitFile {
@@ -408,6 +472,15 @@ export interface WeekPlan {
 
 export type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
 
+// ─── Slash commands & skills ──────────────────────────────────────────────────
+
+export interface SlashCommand {
+  name: string
+  kind: 'command' | 'skill'
+  scope: 'user' | 'project'
+  description?: string
+}
+
 export interface PlannerAssistResult {
   ok: boolean
   data?: unknown
@@ -525,6 +598,12 @@ declare global {
         accountId?: string
       }) => Promise<PlannerAssistResult>
 
+      // Claude permissions & hooks
+      getClaudePermissions: () => Promise<ClaudePermissions>
+      setClaudePermissions: (perms: ClaudePermissions) => Promise<ClaudePermissions>
+      getClaudeHooks: () => Promise<ClaudeHooks>
+      setClaudeHooks: (hooks: ClaudeHooks) => Promise<ClaudeHooks>
+
       // CLAUDE.md
       claudeMdRead: (projectPath?: string) => Promise<ClaudeMdFile[]>
       claudeMdWrite: (filePath: string, content: string) => Promise<{ success: boolean }>
@@ -539,6 +618,12 @@ declare global {
       checkpointList: (sessionId: string) => Promise<CheckpointMeta[]>
       checkpointRestore: (sessionId: string, id: string) => Promise<RestoreResult>
       checkpointDelete: (sessionId: string, id: string) => Promise<CheckpointMeta[]>
+      checkpointCompare: (sessionId: string, idA: string, idB: string) => Promise<CheckpointDiff>
+      checkpointSavePatch: (
+        sessionId: string,
+        idA: string,
+        idB: string
+      ) => Promise<{ saved: boolean; filePath?: string; reason?: string }>
 
       // SSH
       sshList: () => Promise<SshHostPublic[]>
@@ -569,6 +654,17 @@ declare global {
       listSessions: () => Promise<Session[]>
       saveSession: (session: Session) => Promise<{ success: boolean }>
       deleteSession: (id: string) => Promise<{ success: boolean }>
+      exportSession: (session: Session, format: 'md' | 'html') => Promise<{ saved: boolean; filePath?: string }>
+
+      // Commands & skills
+      commandsList: (projectPath?: string) => Promise<SlashCommand[]>
+
+      // Scheduler / Routines
+      schedulerList: () => Promise<ScheduledRun[]>
+      schedulerUpsert: (run: ScheduledRun) => Promise<ScheduledRun>
+      schedulerDelete: (id: string) => Promise<ScheduledRun[]>
+      schedulerSetEnabled: (id: string, enabled: boolean) => Promise<ScheduledRun[]>
+      schedulerRunNow: (id: string) => Promise<{ ok: boolean; summary: string; costUsd: number } | null>
     }
   }
 }

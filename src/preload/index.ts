@@ -96,6 +96,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   plannerDelete: (weekStart: string) => ipcRenderer.invoke('planner:delete', weekStart),
   plannerAssist: (payload: unknown) => ipcRenderer.invoke('planner:assist', payload),
 
+  // Claude permissions & hooks (edit ~/.claude/settings.json)
+  getClaudePermissions: () => ipcRenderer.invoke('config:get-permissions'),
+  setClaudePermissions: (perms: unknown) => ipcRenderer.invoke('config:set-permissions', perms),
+  getClaudeHooks: () => ipcRenderer.invoke('config:get-hooks'),
+  setClaudeHooks: (hooks: unknown) => ipcRenderer.invoke('config:set-hooks', hooks),
+
   // CLAUDE.md
   claudeMdRead: (projectPath?: string) => ipcRenderer.invoke('claudemd:read', projectPath),
   claudeMdWrite: (filePath: string, content: string) =>
@@ -109,6 +115,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('checkpoint:restore', sessionId, id),
   checkpointDelete: (sessionId: string, id: string) =>
     ipcRenderer.invoke('checkpoint:delete', sessionId, id),
+  checkpointCompare: (sessionId: string, idA: string, idB: string) =>
+    ipcRenderer.invoke('checkpoint:compare', sessionId, idA, idB),
+  checkpointSavePatch: (sessionId: string, idA: string, idB: string) =>
+    ipcRenderer.invoke('checkpoint:save-patch', sessionId, idA, idB),
 
   // SSH
   sshList: () => ipcRenderer.invoke('ssh:list'),
@@ -139,5 +149,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Sessions
   listSessions: () => ipcRenderer.invoke('session:list'),
   saveSession: (session: unknown) => ipcRenderer.invoke('session:save', session),
-  deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id)
+  deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id),
+  exportSession: (session: unknown, format: 'md' | 'html') =>
+    ipcRenderer.invoke('session:export', session, format),
+
+  // Commands & skills
+  commandsList: (projectPath?: string) => ipcRenderer.invoke('commands:list', projectPath),
+
+  // Scheduler / Routines
+  schedulerList: () => ipcRenderer.invoke('scheduler:list'),
+  schedulerUpsert: (run: unknown) => ipcRenderer.invoke('scheduler:upsert', run),
+  schedulerDelete: (id: string) => ipcRenderer.invoke('scheduler:delete', id),
+  schedulerSetEnabled: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('scheduler:set-enabled', id, enabled),
+  schedulerRunNow: (id: string) => ipcRenderer.invoke('scheduler:run-now', id)
 })

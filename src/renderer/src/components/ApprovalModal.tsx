@@ -34,7 +34,7 @@ export default function ApprovalModal({ request, onDecide }: Props) {
 
   const renderBody = () => {
     if (tool === 'Edit') {
-      return <DiffView oldText={str(input.old_string)} newText={str(input.new_string)} />
+      return <DiffView oldText={str(input.old_string)} newText={str(input.new_string)} filePath={filePath} />
     }
     if (tool === 'MultiEdit' && Array.isArray(input.edits)) {
       return (
@@ -42,14 +42,14 @@ export default function ApprovalModal({ request, onDecide }: Props) {
           {(input.edits as { old_string?: string; new_string?: string }[]).map((e, i) => (
             <div key={i} className="approval-multi-item">
               <div className="approval-multi-label">Edit {i + 1}</div>
-              <DiffView oldText={str(e.old_string)} newText={str(e.new_string)} />
+              <DiffView oldText={str(e.old_string)} newText={str(e.new_string)} filePath={filePath} />
             </div>
           ))}
         </div>
       )
     }
     if (tool === 'Write') {
-      return <DiffView oldText="" newText={str(input.content)} />
+      return <DiffView oldText="" newText={str(input.content)} filePath={filePath} />
     }
     if (tool === 'Bash') {
       return (

@@ -112,3 +112,59 @@ export function getClaudeSettings(): Record<string, unknown> {
   }
   return {}
 }
+
+function writeClaudeSettings(patch: Record<string, unknown>): void {
+  const existing = getClaudeSettings()
+  const merged = { ...existing, ...patch }
+  fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true })
+  fs.writeFileSync(claudeSettingsPath, JSON.stringify(merged, null, 2))
+}
+
+// ─── Permissions ──────────────────────────────────────────────────────────────
+
+export interface ClaudePermissions {
+  allow: string[]
+  deny: string[]
+  ask: string[]
+}
+
+export function getClaudePermissions(): ClaudePermissions {
+  const settings = getClaudeSettings()
+  const raw = (settings.permissions ?? {}) as Record<string, unknown>
+  return {
+    allow: Array.isArray(raw.allow) ? (raw.allow as string[]) : [],
+    deny: Array.isArray(raw.deny) ? (raw.deny as string[]) : [],
+    ask: Array.isArray(raw.ask) ? (raw.ask as string[]) : []
+  }
+}
+
+export function setClaudePermissions(perms: ClaudePermissions): ClaudePermissions {
+  writeClaudeSettings({ permissions: perms })
+  return perms
+}
+
+// ─── Hooks ────────────────────────────────────────────────────────────────────
+
+export interface ClaudeHookCommand {
+  type: 'command'
+  command: string
+}
+
+export interface ClaudeHookEntry {
+  matcher?: string
+  hooks: ClaudeHookCommand[]
+}
+
+export type ClaudeHooks = Record<string, ClaudeHookEntry[]>
+
+export function getClaudeHooks(): ClaudeHooks {
+  const settings = getClaudeSettings()
+  const raw = settings.hooks
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+  return raw as ClaudeHooks
+}
+
+export function setClaudeHooks(hooks: ClaudeHooks): ClaudeHooks {
+  writeClaudeSettings({ hooks })
+  return hooks
+}
