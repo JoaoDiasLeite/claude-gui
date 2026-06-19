@@ -103,6 +103,12 @@ function ToolCallView({ call }: { call: ToolCall }) {
   )
 }
 
+function fmtTok(n: number): string {
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
+  return String(Math.round(n))
+}
+
 export default function MessageBubble({ message, streaming, onRetry, onEditResend }: Props) {
   const isUser = message.role === 'user'
   const [editing, setEditing] = useState(false)
@@ -215,6 +221,18 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
           )
         )}
         {streaming && message.content && <span className="cursor-blink" />}
+        {!isUser && message.usage && !streaming && (
+          <div className="msg-usage" title="Tokens for this turn — local estimate at public API rates">
+            <span>{fmtTok(message.usage.inputTokens)} in</span>
+            {message.usage.cacheReadTokens > 0 && (
+              <span className="msg-usage-cache">· ♻ {fmtTok(message.usage.cacheReadTokens)} cached</span>
+            )}
+            <span>· {fmtTok(message.usage.outputTokens)} out</span>
+            <span className="msg-usage-cost">
+              · ~${message.usage.costUsd < 0.01 ? message.usage.costUsd.toFixed(4) : message.usage.costUsd.toFixed(2)}
+            </span>
+          </div>
+        )}
         {onRetry && (
           <button
             className="message-retry"

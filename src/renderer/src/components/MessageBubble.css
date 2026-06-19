@@ -355,3 +355,16 @@
   transition: background 0.14s, color 0.14s;
 }
 .message-edit-cancel:hover { background: var(--bg-hover); color: var(--text-0); }
+
+/* ── Per-turn token usage line ── */
+.msg-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+.msg-usage-cache { color: var(--success); }
+.msg-usage-cost { color: var(--text-1); }
