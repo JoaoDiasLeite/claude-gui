@@ -171,11 +171,26 @@ function escapeHtml(text: string): string {
 
 const SIGN: Record<Row['type'], string> = { context: ' ', add: '+', del: '-' }
 
+/** Above this row count, skip syntax highlighting to avoid hanging the renderer. */
+const HIGHLIGHT_ROW_LIMIT = 2000
+
+/** Above this character count for either input, skip highlighting entirely. */
+const HIGHLIGHT_CHAR_LIMIT = 200_000
+
 export default function DiffView({ oldText, newText, filePath }: Props) {
   const rows = diffLines(oldText.split('\n'), newText.split('\n'))
-  const lang = langFromPath(filePath)
+  const tooLarge =
+    rows.length > HIGHLIGHT_ROW_LIMIT ||
+    oldText.length > HIGHLIGHT_CHAR_LIMIT ||
+    newText.length > HIGHLIGHT_CHAR_LIMIT
+  const lang = tooLarge ? undefined : langFromPath(filePath)
   return (
     <div className="diff-view">
+      {tooLarge && (
+        <div className="diff-truncation-notice">
+          Diff is large — syntax highlighting disabled to keep the UI responsive.
+        </div>
+      )}
       {rows.map((r, i) => (
         <div key={i} className={`diff-row ${r.type}`}>
           <span className="diff-sign">{SIGN[r.type]}</span>

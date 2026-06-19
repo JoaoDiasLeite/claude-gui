@@ -31,3 +31,12 @@
 .diff-row.add .diff-text { color: #b6e6c6; }
 .diff-row.del .diff-text { color: #f0b9b9; }
 .diff-row.context .diff-text { color: var(--text-1); }
+
+.diff-truncation-notice {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  font-style: italic;
+}

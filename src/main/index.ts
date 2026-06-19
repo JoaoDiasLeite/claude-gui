@@ -15,7 +15,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, MODELS, UsageLimits, UiPrefs, ClaudePermissions, ClaudeHooks } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, MODELS, UsageLimits, UiPrefs } from './config'
 import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
 import {
   listMcpServers,
@@ -521,9 +521,9 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
 ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
 ipcMain.handle('config:get-permissions', () => getClaudePermissions())
-ipcMain.handle('config:set-permissions', (_, perms: ClaudePermissions) => setClaudePermissions(perms))
+ipcMain.handle('config:set-permissions', (_, perms: unknown) => setClaudePermissions(perms))
 ipcMain.handle('config:get-hooks', () => getClaudeHooks())
-ipcMain.handle('config:set-hooks', (_, hooks: ClaudeHooks) => setClaudeHooks(hooks))
+ipcMain.handle('config:set-hooks', (_, hooks: unknown) => setClaudeHooks(hooks))
 
 // ─── Claude Code data (real projects / sessions / usage, local + WSL) ──────────
 
@@ -887,7 +887,11 @@ ipcMain.handle(
       ]
     })
     if (result.canceled || !result.filePath) return { saved: false, reason: 'canceled' }
-    fs.writeFileSync(result.filePath, patch, 'utf-8')
+    try {
+      fs.writeFileSync(result.filePath, patch, 'utf-8')
+    } catch {
+      return { saved: false, reason: 'write-error' }
+    }
     return { saved: true, filePath: result.filePath }
   }
 )
@@ -955,11 +959,17 @@ ipcMain.handle('session:list', () => {
 
 ipcMain.handle('session:save', (_, session: unknown) => {
   const s = session as { id: string }
+  if (typeof s.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(s.id) || s.id.length === 0 || s.id.length > 128) {
+    return { success: false, reason: 'invalid-id' }
+  }
   fs.writeFileSync(path.join(sessionsDir, `${s.id}.json`), JSON.stringify(session, null, 2))
   return { success: true }
 })
 
 ipcMain.handle('session:delete', (_, sessionId: string) => {
+  if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(sessionId) || sessionId.length === 0 || sessionId.length > 128) {
+    return { success: false, reason: 'invalid-id' }
+  }
   const filePath = path.join(sessionsDir, `${sessionId}.json`)
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
   return { success: true }
@@ -1028,7 +1038,11 @@ ipcMain.handle(
         filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All files', extensions: ['*'] }]
       })
       if (result.canceled || !result.filePath) return { saved: false }
-      fs.writeFileSync(result.filePath, content, 'utf-8')
+      try {
+        fs.writeFileSync(result.filePath, content, 'utf-8')
+      } catch {
+        return { saved: false, reason: 'write-error' }
+      }
       return { saved: true, filePath: result.filePath }
     }
 
@@ -1042,14 +1056,16 @@ ipcMain.handle(
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         for (const tc of msg.toolCalls) {
           body += `<div class="tool-call"><span class="tool-name">Tool: ${escapeHtml(tc.tool)}</span>`
-          body += `<pre class="tool-input">${escapeHtml(JSON.stringify(tc.input, null, 2))}</pre>`
+          let inputStr = ''
+          try { inputStr = JSON.stringify(tc.input, null, 2) } catch { inputStr = String(tc.input) }
+          body += `<pre class="tool-input">${escapeHtml(inputStr)}</pre>`
           if (tc.result !== undefined) {
             body += `<div class="tool-result ${tc.isError ? 'error' : ''}"><strong>Result${tc.isError ? ' (error)' : ''}:</strong><pre>${escapeHtml(tc.result.slice(0, 2000))}</pre></div>`
           }
           body += '</div>'
         }
       }
-      return `<div class="message ${role}"><div class="msg-header"><span class="role">${role}</span><span class="ts">${ts}</span></div><div class="msg-body">${body}</div></div>`
+      return `<div class="message ${role}"><div class="msg-header"><span class="role">${role}</span><span class="ts">${escapeHtml(ts)}</span></div><div class="msg-body">${body}</div></div>`
     }).join('\n')
 
     const meta = session.projectPath ? `<div class="meta">Project: ${escapeHtml(session.projectPath)}</div>` : ''
@@ -1093,7 +1109,11 @@ ${msgHtml}
       filters: [{ name: 'HTML', extensions: ['html'] }, { name: 'All files', extensions: ['*'] }]
     })
     if (result.canceled || !result.filePath) return { saved: false }
-    fs.writeFileSync(result.filePath, htmlContent, 'utf-8')
+    try {
+      fs.writeFileSync(result.filePath, htmlContent, 'utf-8')
+    } catch {
+      return { saved: false, reason: 'write-error' }
+    }
     return { saved: true, filePath: result.filePath }
   }
 )

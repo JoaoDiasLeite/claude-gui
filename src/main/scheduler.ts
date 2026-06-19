@@ -40,6 +40,24 @@ export interface ScheduledRun {
   lastRunAt?: number
   lastResult?: { ok: boolean; summary: string; costUsd: number; at: number }
   nextRunAt?: number
+  /**
+   * Explicit tool-access intent stored on the run.
+   * 'read-only' → disallowedTools list is passed at execution time (enforced by SDK).
+   * 'full'      → no tool restriction.
+   * Undefined (legacy) → treated as 'full' to preserve existing behavior.
+   */
+  toolAccess?: 'read-only' | 'full'
+  /** @deprecated Use toolAccess instead. Kept for backward-compat read of old saved data. */
+  allowedTools?: string[]
+}
+
+// ─── ID safety ─────────────────────────────────────────────────────────────
+
+const SAFE_ID_RE = /^[A-Za-z0-9_-]+$/
+
+/** Returns true only if the id contains no path separators or traversal sequences. */
+function isSafeId(id: string): boolean {
+  return typeof id === 'string' && id.length > 0 && id.length <= 128 && SAFE_ID_RE.test(id)
 }
 
 // ─── Persistence ───────────────────────────────────────────────────────────
@@ -51,35 +69,119 @@ function ensureDir(): void {
 }
 
 function fileFor(id: string): string {
+  // isSafeId must be verified before calling fileFor
   return path.join(schedulerDir, `${id}.json`)
+}
+
+/** Write JSON atomically: write to a temp file then rename to avoid partial writes on crash. */
+function writeJsonAtomic(filePath: string, obj: unknown): void {
+  const tmp = filePath + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify(obj, null, 2))
+  fs.renameSync(tmp, filePath)
+}
+
+// ─── Cadence validation ─────────────────────────────────────────────────────
+
+const MIN_INTERVAL_MINUTES = 1
+const DEFAULT_INTERVAL_MINUTES = 60
+
+/** Parse "HH:MM" returning { h, m } or null if invalid. */
+function parseHHMM(time: string): { h: number; m: number } | null {
+  if (typeof time !== 'string') return null
+  const parts = time.split(':')
+  if (parts.length !== 2) return null
+  const h = parseInt(parts[0], 10)
+  const m = parseInt(parts[1], 10)
+  if (!Number.isFinite(h) || h < 0 || h > 23) return null
+  if (!Number.isFinite(m) || m < 0 || m > 59) return null
+  return { h, m }
+}
+
+/** Sanitize and clamp a cadence so it can never cause runaway firing. */
+function sanitizeCadence(cadence: Cadence): Cadence {
+  if (cadence.kind === 'interval') {
+    const mins = Number(cadence.everyMinutes)
+    const safe = Number.isFinite(mins) && mins >= MIN_INTERVAL_MINUTES
+      ? Math.floor(mins)
+      : DEFAULT_INTERVAL_MINUTES
+    return { kind: 'interval', everyMinutes: Math.max(MIN_INTERVAL_MINUTES, safe) }
+  }
+  if (cadence.kind === 'daily') {
+    const parsed = parseHHMM(cadence.time)
+    return { kind: 'daily', time: parsed ? cadence.time : '09:00' }
+  }
+  if (cadence.kind === 'weekly') {
+    const parsed = parseHHMM(cadence.time)
+    const day = Number(cadence.day)
+    const safeDay = Number.isFinite(day) && day >= 0 && day <= 6 ? Math.floor(day) : 1
+    return { kind: 'weekly', day: safeDay, time: parsed ? cadence.time : '09:00' }
+  }
+  // Unknown kind — default to hourly interval
+  return { kind: 'interval', everyMinutes: DEFAULT_INTERVAL_MINUTES }
 }
 
 export function listScheduledRuns(): ScheduledRun[] {
   ensureDir()
+  const results: ScheduledRun[] = []
+  let files: string[]
   try {
-    return fs
-      .readdirSync(schedulerDir)
-      .filter((f) => f.endsWith('.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(schedulerDir, f), 'utf-8')) as ScheduledRun)
-      .sort((a, b) => b.createdAt - a.createdAt)
+    files = fs.readdirSync(schedulerDir).filter((f) => f.endsWith('.json'))
   } catch {
     return []
   }
+  for (const f of files) {
+    try {
+      const raw = fs.readFileSync(path.join(schedulerDir, f), 'utf-8')
+      results.push(JSON.parse(raw) as ScheduledRun)
+    } catch {
+      // Skip corrupt or unreadable files; log so operators can detect data issues
+      console.warn(`[scheduler] Skipping unreadable routine file: ${f}`)
+    }
+  }
+  return results.sort((a, b) => b.createdAt - a.createdAt)
 }
 
 export function upsertScheduledRun(run: ScheduledRun): ScheduledRun {
   ensureDir()
-  fs.writeFileSync(fileFor(run.id), JSON.stringify(run, null, 2))
-  return run
+
+  // Validate / sanitize id — generate a safe one if missing or unsafe
+  const rawId = typeof run.id === 'string' ? run.id : ''
+  const safeId = isSafeId(rawId) ? rawId : Math.random().toString(36).slice(2) + Date.now().toString(36)
+
+  // Sanitize cadence to prevent runaway firing
+  const cadence = sanitizeCadence(run.cadence)
+
+  // Trim name/prompt; disallow empty prompt
+  const name = typeof run.name === 'string' ? run.name.trim() : ''
+  const prompt = typeof run.prompt === 'string' ? run.prompt.trim() : ''
+  if (!prompt) throw new Error('Routine prompt must not be empty')
+
+  // Migrate legacy allowedTools field → toolAccess.
+  // If toolAccess is already set, honour it; otherwise infer from the old field.
+  let toolAccess: 'read-only' | 'full' = 'full'
+  if (run.toolAccess === 'read-only' || run.toolAccess === 'full') {
+    toolAccess = run.toolAccess
+  } else if (Array.isArray(run.allowedTools)) {
+    // Old preset stored an explicit list → treat as read-only intent
+    toolAccess = 'read-only'
+  }
+
+  // Strip the deprecated allowedTools field from the persisted record.
+  const { allowedTools: _dropped, ...rest } = run
+  const sanitized: ScheduledRun = { ...rest, id: safeId, cadence, name, prompt, toolAccess }
+  writeJsonAtomic(fileFor(safeId), sanitized)
+  return sanitized
 }
 
 export function deleteScheduledRun(id: string): ScheduledRun[] {
+  if (!isSafeId(id)) return listScheduledRuns()
   const p = fileFor(id)
   if (fs.existsSync(p)) fs.unlinkSync(p)
   return listScheduledRuns()
 }
 
 export function setScheduledRunEnabled(id: string, enabled: boolean): ScheduledRun[] {
+  if (!isSafeId(id)) return listScheduledRuns()
   const p = fileFor(id)
   if (!fs.existsSync(p)) return listScheduledRuns()
   try {
@@ -88,7 +190,7 @@ export function setScheduledRunEnabled(id: string, enabled: boolean): ScheduledR
     if (enabled) {
       updated.nextRunAt = computeNextRun(updated, Date.now())
     }
-    fs.writeFileSync(p, JSON.stringify(updated, null, 2))
+    writeJsonAtomic(p, updated)
   } catch {
     // best-effort
   }
@@ -98,15 +200,15 @@ export function setScheduledRunEnabled(id: string, enabled: boolean): ScheduledR
 // ─── Next-run computation ───────────────────────────────────────────────────
 
 export function computeNextRun(run: ScheduledRun, fromTime: number): number {
-  const { cadence } = run
+  const cadence = sanitizeCadence(run.cadence)
+
   if (cadence.kind === 'interval') {
     return fromTime + cadence.everyMinutes * 60 * 1000
   }
 
-  // Parse HH:MM into hours and minutes
-  const [hStr, mStr] = cadence.time.split(':')
-  const targetH = parseInt(hStr, 10)
-  const targetM = parseInt(mStr, 10)
+  // Parse HH:MM — sanitizeCadence guarantees it's valid here
+  const parsed = parseHHMM(cadence.time) ?? { h: 9, m: 0 }
+  const { h: targetH, m: targetM } = parsed
 
   if (cadence.kind === 'daily') {
     const d = new Date(fromTime)
@@ -120,7 +222,7 @@ export function computeNextRun(run: ScheduledRun, fromTime: number): number {
 
   if (cadence.kind === 'weekly') {
     const d = new Date(fromTime)
-    const targetDay = cadence.day // 0=Sun
+    const targetDay = cadence.day // 0=Sun, already validated (0-6)
     let daysAhead = targetDay - d.getDay()
     if (daysAhead < 0) daysAhead += 7
     const candidate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + daysAhead, targetH, targetM, 0, 0)
@@ -130,7 +232,7 @@ export function computeNextRun(run: ScheduledRun, fromTime: number): number {
     return candidate.getTime()
   }
 
-  // Fallback
+  // Fallback (unreachable after sanitizeCadence)
   return fromTime + 60 * 60 * 1000
 }
 
@@ -152,9 +254,29 @@ async function getQuery(): Promise<typeof QueryFn> {
   return queryFn
 }
 
+// ─── Read-only tool restriction ────────────────────────────────────────────
+
+/**
+ * Tools that can mutate the filesystem or execute arbitrary commands.
+ * These are removed from context (via disallowedTools) for read-only routines,
+ * so they cannot be invoked regardless of permission mode.
+ */
+const MUTATING_TOOLS_FOR_SCHEDULER = [
+  'Bash',
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'KillShell',
+  'KillBash'
+]
+
 // ─── Headless execution ────────────────────────────────────────────────────
 
 const MAX_SUMMARY = 4000
+
+// Abort a headless run after 30 minutes to prevent it running forever
+const HEADLESS_TIMEOUT_MS = 30 * 60 * 1000
 
 async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summary: string; costUsd: number }> {
   const query = await getQuery()
@@ -174,18 +296,36 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
   let costUsd = 0
   let ok = true
 
+  const abort = new AbortController()
+  const timeoutHandle = setTimeout(() => abort.abort(), HEADLESS_TIMEOUT_MS)
+
+  // Determine effective toolAccess: migrate legacy allowedTools field for runs
+  // loaded from disk that were saved before the toolAccess field existed.
+  const effectiveAccess: 'read-only' | 'full' =
+    run.toolAccess === 'read-only'
+      ? 'read-only'
+      : Array.isArray(run.allowedTools)
+        ? 'read-only'  // legacy: any explicit allowedTools list → treat as read-only intent
+        : 'full'
+
   try {
-    const stream = query({
-      prompt: run.prompt,
-      options: {
-        model,
-        cwd,
-        env,
-        // Non-interactive: bypass all permission prompts
-        permissionMode: 'bypassPermissions',
-        includePartialMessages: false
-      }
-    })
+    const streamOptions: Parameters<typeof query>[0]['options'] = {
+      model,
+      cwd,
+      env,
+      abortController: abort,
+      // Non-interactive: bypass all permission prompts.
+      // For read-only routines, disallowedTools removes mutating tools from context
+      // entirely — they cannot be invoked even under bypassPermissions.
+      permissionMode: 'bypassPermissions',
+      includePartialMessages: false
+    }
+
+    if (effectiveAccess === 'read-only') {
+      streamOptions.disallowedTools = MUTATING_TOOLS_FOR_SCHEDULER
+    }
+
+    const stream = query({ prompt: run.prompt, options: streamOptions })
 
     for await (const message of stream) {
       if ((message as any).type === 'assistant') {
@@ -208,6 +348,8 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
   } catch (err) {
     ok = false
     summary = err instanceof Error ? err.message : String(err)
+  } finally {
+    clearTimeout(timeoutHandle)
   }
 
   // Truncate to reasonable storage length
@@ -224,6 +366,7 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
 const inFlight = new Set<string>()
 
 export async function runScheduledRunNow(id: string): Promise<{ ok: boolean; summary: string; costUsd: number } | null> {
+  if (!isSafeId(id)) return null
   const p = fileFor(id)
   if (!fs.existsSync(p)) return null
 
@@ -254,7 +397,7 @@ export async function runScheduledRunNow(id: string): Promise<{ ok: boolean; sum
     nextRunAt: run.enabled ? computeNextRun(run, now) : run.nextRunAt
   }
   try {
-    fs.writeFileSync(p, JSON.stringify(updated, null, 2))
+    writeJsonAtomic(p, updated)
   } catch {
     // best-effort
   }
@@ -305,7 +448,7 @@ export function startScheduler(): void {
         nextRunAt: computeNextRun(run, Date.now())
       }
       try {
-        fs.writeFileSync(fileFor(run.id), JSON.stringify(updated, null, 2))
+        writeJsonAtomic(fileFor(run.id), updated)
       } catch {
         // best-effort
       }

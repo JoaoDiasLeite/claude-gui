@@ -232,37 +232,49 @@ export default function App() {
       if (data.isError && data.errorText) addTerm({ kind: 'error', text: data.errorText })
       addTerm({ kind: 'info', text: `done · $${data.costUsd.toFixed(4)}` })
 
-      // Budget alerting — fetch usage windows and check against limits.
-      // Fire-and-forget; non-blocking on the run flow.
-      window.electronAPI.ccUsage(false).then((report) => {
-        const currentLimits = limitsRef.current
+      // Budget alerting — fetch fresh config + usage windows and check against limits.
+      // Fire-and-forget; non-blocking on the run flow. Any failure is swallowed so
+      // the post-run state updates (cost accounting, session save) always complete.
+      Promise.all([
+        window.electronAPI.ccUsage(false),
+        window.electronAPI.getConfig()
+      ]).then(([report, config]) => {
+        // Always sync limits state so the UI and future checks are fresh.
+        const freshLimits = config.limits
+        setLimits(freshLimits)
+        limitsRef.current = freshLimits
+
         const win = report.windows
         const over = overLimitRef.current
         const newBanners: string[] = []
 
         const check = (key: 'hour' | 'session' | 'week', costUsd: number, limit: number, label: string) => {
-          if (limit <= 0) {
+          // Treat 0 / unset as "no limit for this window" — reset latch and skip.
+          if (!limit || limit <= 0) {
             if (over[key]) over[key] = false
             return
           }
           const exceeded = costUsd >= limit
           if (exceeded && !over[key]) {
+            // Crossing from under → over: fire notification once and latch.
             over[key] = true
             window.electronAPI.notify(
               `Budget limit reached: ${label}`,
               `You've spent $${costUsd.toFixed(2)} this ${label.toLowerCase()} (limit $${limit.toFixed(2)}).`
             )
           } else if (!exceeded && over[key]) {
+            // Usage dropped back under (new period rolled over) — re-arm the latch.
             over[key] = false
           }
           if (exceeded) newBanners.push(`${label} budget exceeded: $${costUsd.toFixed(2)} / $${limit.toFixed(2)}`)
         }
 
-        check('hour', win.hour.costUsd, currentLimits.hourUsd, 'Hour')
-        check('session', win.session.costUsd, currentLimits.sessionUsd, 'Session')
-        check('week', win.week.costUsd, currentLimits.weekUsd, 'Week')
+        check('hour', win.hour.costUsd, freshLimits.hourUsd, 'Hour')
+        check('session', win.session.costUsd, freshLimits.sessionUsd, 'Session')
+        check('week', win.week.costUsd, freshLimits.weekUsd, 'Week')
+        // Replace (not accumulate) banners — prevents stacking duplicates across turns.
         setBudgetBanners(newBanners)
-      }).catch(() => { /* silently ignore */ })
+      }).catch(() => { /* usage fetch failure is non-fatal — silently swallow */ })
       if (!document.hasFocus()) {
         const sess = sessionsRef.current.find((s) => s.id === data.appSessionId)
         const where = sess?.name ? `“${sess.name}”` : 'chat'
@@ -667,7 +679,20 @@ export default function App() {
   }
 
   const runPlannerTask = (task: PlannerTask) => {
-    const s = newSession(activeSession?.projectPath, defaultModel, defaultAccountId)
+    // Guard: no auth → nothing can run.
+    if (!ready) {
+      addTerm({ kind: 'error', text: 'Not authenticated — cannot run planner task.' })
+      return
+    }
+    // Guard: one global streaming state — refuse concurrent runs so the streaming
+    // flag and onAgentDone don't get confused by two overlapping sessions.
+    if (streaming) {
+      addTerm({ kind: 'error', text: 'A run is already in progress — wait for it to finish before starting a planner task.' })
+      setView('chat')
+      return
+    }
+
+    const s = newSession(activeSession?.projectPath, activeSession?.model || defaultModel, activeSession?.accountId ?? defaultAccountId)
     s.name = task.title.slice(0, 40)
 
     const parts: string[] = [`Help me with this planned task: "${task.title}".`]
@@ -866,6 +891,7 @@ export default function App() {
           defaultModel={defaultModel}
           defaultAccountId={defaultAccountId}
           onRunTask={runPlannerTask}
+          streaming={streaming}
         />
       )}
       {view === 'scheduled' && (

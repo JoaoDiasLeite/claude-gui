@@ -14,6 +14,18 @@ interface Props {
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
+/** "read-only" — mutating tools blocked via disallowedTools at execution time. "full" — no restriction. */
+type ToolPreset = 'read-only' | 'full'
+
+function presetFromRun(run: ScheduledRun): ToolPreset {
+  // Honour explicit toolAccess first; fall back to legacy allowedTools presence for old saved data.
+  if (run.toolAccess === 'read-only') return 'read-only'
+  if (run.toolAccess === 'full') return 'full'
+  // Legacy: any allowedTools list was the old read-only preset
+  if (Array.isArray(run.allowedTools)) return 'read-only'
+  return 'full'
+}
+
 function genId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
@@ -28,7 +40,9 @@ function emptyRun(defaultModel: string, defaultAccountId: string): ScheduledRun 
     accountId: defaultAccountId,
     cadence: { kind: 'interval', everyMinutes: 60 },
     enabled: false,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    // Default new routines to read-only for safety
+    toolAccess: 'read-only'
   }
 }
 
@@ -138,6 +152,14 @@ export default function ScheduledView({ models, defaultModel, accounts, defaultA
                   <div className="scheduled-card-top">
                     <span className="scheduled-card-name">{run.name}</span>
                     <span className="scheduled-cadence-badge">{cadenceSummary(run.cadence)}</span>
+                    <span
+                      className={`scheduled-access-badge ${presetFromRun(run) === 'full' ? 'full' : 'readonly'}`}
+                      title={presetFromRun(run) === 'full'
+                        ? 'Full access — can read, write, and run commands'
+                        : 'Read-only — Bash, Write, Edit, and other mutating tools are blocked'}
+                    >
+                      {presetFromRun(run) === 'full' ? 'Full access' : 'Read-only'}
+                    </span>
                     {run.lastResult && (
                       <span
                         className={`scheduled-status-dot ${run.lastResult.ok ? 'ok' : 'err'}`}
@@ -234,8 +256,13 @@ function RoutineEditor({ run, setRun, isExisting, models, accounts, onSave }: Ed
   useModalA11y(dialogRef, () => setRun(null))
 
   const cadence = run.cadence
+  const preset = presetFromRun(run)
 
   const setCadence = (c: ScheduledCadence) => setRun({ ...run, cadence: c })
+
+  const setPreset = (p: ToolPreset) => {
+    setRun({ ...run, toolAccess: p })
+  }
 
   const pickFolder = async () => {
     const p = await window.electronAPI.openFolder()
@@ -279,6 +306,17 @@ function RoutineEditor({ run, setRun, isExisting, models, accounts, onSave }: Ed
         </div>
 
         <div className="modal-body">
+
+          {/* ── Autonomous execution warning ── */}
+          <div className="routine-warning" role="note">
+            <span className="routine-warning-icon" aria-hidden="true">⚠</span>
+            <div className="routine-warning-text">
+              <strong>Routines run autonomously with no approval prompts.</strong>{' '}
+              Each run executes the prompt in the background, on a timer, without asking for
+              confirmation. Use the access level below to limit what Claude can do.
+            </div>
+          </div>
+
           <div className="form-group">
             <label>Name</label>
             <input
@@ -299,6 +337,35 @@ function RoutineEditor({ run, setRun, isExisting, models, accounts, onSave }: Ed
               placeholder="What should Claude do each time this runs?"
               onChange={(e) => setRun({ ...run, prompt: e.target.value })}
             />
+          </div>
+
+          {/* ── Tool access level ── */}
+          <div className="form-group">
+            <label>Access level</label>
+            <div className="preset-row">
+              <button
+                className={`preset-btn ${preset === 'read-only' ? 'active' : ''}`}
+                onClick={() => setPreset('read-only')}
+                type="button"
+              >
+                <span className="preset-btn-icon">🔍</span>
+                <span className="preset-btn-body">
+                  <span className="preset-btn-title">Read-only</span>
+                  <span className="preset-btn-desc">Read, search, and web-fetch only. Cannot write files or run shell commands.</span>
+                </span>
+              </button>
+              <button
+                className={`preset-btn ${preset === 'full' ? 'active' : ''}`}
+                onClick={() => setPreset('full')}
+                type="button"
+              >
+                <span className="preset-btn-icon">⚡</span>
+                <span className="preset-btn-body">
+                  <span className="preset-btn-title">Full access</span>
+                  <span className="preset-btn-desc">All tools including Bash, Write, and Edit. Use only when necessary.</span>
+                </span>
+              </button>
+            </div>
           </div>
 
           <div className="agent-edit-row">

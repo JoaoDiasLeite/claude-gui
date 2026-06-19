@@ -19,6 +19,7 @@ export default function PermissionsModal({ onClose }: Props) {
   const [perms, setPerms] = useState<ClaudePermissions>({ allow: [], deny: [], ask: [] })
   const [inputs, setInputs] = useState<Record<ListKey, string>>({ allow: '', deny: '', ask: '' })
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
@@ -27,8 +28,13 @@ export default function PermissionsModal({ onClose }: Props) {
   }, [])
 
   const persist = async (next: ClaudePermissions) => {
+    setSaveError(null)
+    const result = await window.electronAPI.setClaudePermissions(next)
+    if (!result.ok) {
+      setSaveError(result.error ?? 'Unknown error saving permissions')
+      return
+    }
     setPerms(next)
-    await window.electronAPI.setClaudePermissions(next)
     setSaved(true)
     setTimeout(() => setSaved(false), 1200)
   }
@@ -70,6 +76,12 @@ export default function PermissionsModal({ onClose }: Props) {
             These entries are written to <code>~/.claude/settings.json</code> and control which tools
             Claude Code may use without asking.
           </p>
+
+          {saveError && (
+            <div className="perms-error" role="alert">
+              {saveError}
+            </div>
+          )}
 
           {LISTS.map(({ key, label, hint }) => (
             <div key={key} className="perms-section">

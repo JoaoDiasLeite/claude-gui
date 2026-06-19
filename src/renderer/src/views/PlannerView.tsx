@@ -12,6 +12,7 @@ interface PlannerProps {
   defaultModel: string
   defaultAccountId: string
   onRunTask?: (task: PlannerTask) => void
+  streaming?: boolean
 }
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -75,7 +76,7 @@ const emptyWeek = (weekStart: string): WeekPlan => ({
   updatedAt: Date.now()
 })
 
-export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask }: PlannerProps) {
+export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask, streaming }: PlannerProps) {
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
   const [week, setWeek] = useState<WeekPlan>(() => emptyWeek(mondayOf(new Date())))
   const [loading, setLoading] = useState(true)
@@ -520,6 +521,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
                   onOpenTask={setEditingTaskId}
                   onDelete={deleteTask}
                   onRunTask={onRunTask}
+                  runDisabled={!!streaming}
                 />
               )
             })}
@@ -547,6 +549,7 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
                   onDelete={() => deleteTask(t.id)}
                   onOpen={() => setEditingTaskId(t.id)}
                   onRun={onRunTask ? () => onRunTask(t) : undefined}
+                  runDisabled={!!streaming}
                 />
               ))}
               <AddTaskInline onAdd={(title) => addTask(null, title)} placeholder="+ capture a task" />
@@ -650,6 +653,7 @@ function DayColumn(props: {
   onOpenTask: (id: string) => void
   onDelete: (id: string) => void
   onRunTask?: (task: PlannerTask) => void
+  runDisabled?: boolean
 }) {
   const [overIndex, setOverIndex] = useState<number | null>(null)
   const loadPct = props.maxLoad ? (props.load / props.maxLoad) * 100 : 0
@@ -717,6 +721,7 @@ function DayColumn(props: {
               onDelete={() => props.onDelete(t.id)}
               onOpen={() => props.onOpenTask(t.id)}
               onRun={props.onRunTask ? () => props.onRunTask!(t) : undefined}
+              runDisabled={props.runDisabled}
             />
           </div>
         ))}
@@ -737,6 +742,7 @@ function TaskCard(props: {
   onDelete: () => void
   onOpen: () => void
   onRun?: () => void
+  runDisabled?: boolean
 }) {
   const t = props.task
   return (
@@ -771,7 +777,8 @@ function TaskCard(props: {
               e.stopPropagation()
               props.onRun!()
             }}
-            title="Run with Claude"
+            title={props.runDisabled ? 'A run is already in progress' : 'Run with Claude'}
+            disabled={!!props.runDisabled}
           >
             <Spark />
           </button>

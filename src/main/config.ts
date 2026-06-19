@@ -113,11 +113,62 @@ export function getClaudeSettings(): Record<string, unknown> {
   return {}
 }
 
-function writeClaudeSettings(patch: Record<string, unknown>): void {
-  const existing = getClaudeSettings()
+export interface WriteResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Atomically merge `patch` into ~/.claude/settings.json.
+ *
+ * Three cases:
+ *   (a) File does not exist → create with the patch object.
+ *   (b) File exists and parses successfully → deep-merge then write.
+ *   (c) File exists but FAILS to parse → refuse to write; return an error so
+ *       callers can surface it to the user instead of silently clobbering the file.
+ *
+ * The write is atomic: we write to a sibling temp file and rename over the
+ * target, so a crash mid-write cannot corrupt settings.json.
+ */
+function writeClaudeSettings(patch: Record<string, unknown>): WriteResult {
+  const dir = path.dirname(claudeSettingsPath)
+  fs.mkdirSync(dir, { recursive: true })
+
+  let existing: Record<string, unknown> = {}
+
+  if (fs.existsSync(claudeSettingsPath)) {
+    let raw: string
+    try {
+      raw = fs.readFileSync(claudeSettingsPath, 'utf-8')
+    } catch (e) {
+      return { ok: false, error: `Could not read settings.json: ${String(e)}` }
+    }
+    try {
+      existing = JSON.parse(raw)
+    } catch {
+      // File exists but is not valid JSON (e.g. has JSONC comments or is corrupt).
+      // Refuse to overwrite — the user must fix it manually.
+      return {
+        ok: false,
+        error:
+          '~/.claude/settings.json exists but could not be parsed (it may contain comments or be malformed). ' +
+          'Please fix it manually before saving from this UI.'
+      }
+    }
+  }
+
   const merged = { ...existing, ...patch }
-  fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true })
-  fs.writeFileSync(claudeSettingsPath, JSON.stringify(merged, null, 2))
+  const tmp = claudeSettingsPath + '.tmp'
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(merged, null, 2))
+    fs.renameSync(tmp, claudeSettingsPath)
+  } catch (e) {
+    // Clean up temp file on failure if it exists
+    try { fs.unlinkSync(tmp) } catch { /* ignore */ }
+    return { ok: false, error: `Could not write settings.json: ${String(e)}` }
+  }
+
+  return { ok: true }
 }
 
 // ─── Permissions ──────────────────────────────────────────────────────────────
@@ -138,9 +189,46 @@ export function getClaudePermissions(): ClaudePermissions {
   }
 }
 
-export function setClaudePermissions(perms: ClaudePermissions): ClaudePermissions {
-  writeClaudeSettings({ permissions: perms })
-  return perms
+/**
+ * Validate and coerce an incoming permissions object.
+ * Returns a clean object or throws with a descriptive message.
+ */
+function coercePermissions(raw: unknown): ClaudePermissions {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Permissions must be an object')
+  }
+  const r = raw as Record<string, unknown>
+  const toStringArray = (v: unknown, key: string): string[] => {
+    if (v === undefined || v === null) return []
+    if (!Array.isArray(v)) throw new Error(`permissions.${key} must be an array`)
+    return v.map((item, i) => {
+      if (typeof item !== 'string') throw new Error(`permissions.${key}[${i}] must be a string`)
+      return item.trim()
+    }).filter(Boolean)
+  }
+  return {
+    allow: toStringArray(r.allow, 'allow'),
+    deny: toStringArray(r.deny, 'deny'),
+    ask: toStringArray(r.ask, 'ask')
+  }
+}
+
+export function setClaudePermissions(raw: unknown): WriteResult & { permissions?: ClaudePermissions } {
+  let perms: ClaudePermissions
+  try {
+    perms = coercePermissions(raw)
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+
+  // Merge only allow/deny/ask; preserve all other sub-keys (additionalDirectories, defaultMode, …)
+  const settings = getClaudeSettings()
+  const existingPerms = (settings.permissions ?? {}) as Record<string, unknown>
+  const mergedPerms = { ...existingPerms, allow: perms.allow, deny: perms.deny, ask: perms.ask }
+
+  const result = writeClaudeSettings({ permissions: mergedPerms })
+  if (!result.ok) return result
+  return { ok: true, permissions: perms }
 }
 
 // ─── Hooks ────────────────────────────────────────────────────────────────────
@@ -164,7 +252,65 @@ export function getClaudeHooks(): ClaudeHooks {
   return raw as ClaudeHooks
 }
 
-export function setClaudeHooks(hooks: ClaudeHooks): ClaudeHooks {
-  writeClaudeSettings({ hooks })
-  return hooks
+/**
+ * Validate and coerce an incoming hooks object.
+ * Returns a clean object or throws with a descriptive message.
+ */
+function coerceHooks(raw: unknown): ClaudeHooks {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('Hooks must be an object')
+  }
+  const r = raw as Record<string, unknown>
+  const result: ClaudeHooks = {}
+  for (const [event, entries] of Object.entries(r)) {
+    if (!Array.isArray(entries)) throw new Error(`hooks.${event} must be an array`)
+    result[event] = entries.map((entry, i) => {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new Error(`hooks.${event}[${i}] must be an object`)
+      }
+      const e = entry as Record<string, unknown>
+      if (!Array.isArray(e.hooks)) throw new Error(`hooks.${event}[${i}].hooks must be an array`)
+      const cmds: ClaudeHookCommand[] = e.hooks.map((cmd, j) => {
+        if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) {
+          throw new Error(`hooks.${event}[${i}].hooks[${j}] must be an object`)
+        }
+        const c = cmd as Record<string, unknown>
+        if (typeof c.command !== 'string' || !c.command.trim()) {
+          throw new Error(`hooks.${event}[${i}].hooks[${j}].command must be a non-empty string`)
+        }
+        return { type: 'command' as const, command: c.command.trim() }
+      })
+      const hookEntry: ClaudeHookEntry = { hooks: cmds }
+      if (typeof e.matcher === 'string' && e.matcher.trim()) {
+        hookEntry.matcher = e.matcher.trim()
+      }
+      return hookEntry
+    })
+  }
+  return result
+}
+
+export function setClaudeHooks(raw: unknown): WriteResult & { hooks?: ClaudeHooks } {
+  let incomingHooks: ClaudeHooks
+  try {
+    incomingHooks = coerceHooks(raw)
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+
+  // Merge incoming hooks with existing ones, preserving any event keys the UI
+  // doesn't know about (unknown events stay untouched in the file).
+  const existingHooks = getClaudeHooks()
+  const mergedHooks: ClaudeHooks = { ...existingHooks, ...incomingHooks }
+
+  // Remove event keys that were explicitly cleared (empty array → delete key)
+  for (const [event, entries] of Object.entries(incomingHooks)) {
+    if (entries.length === 0) {
+      delete mergedHooks[event]
+    }
+  }
+
+  const result = writeClaudeSettings({ hooks: mergedHooks })
+  if (!result.ok) return result
+  return { ok: true, hooks: mergedHooks }
 }

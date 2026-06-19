@@ -126,6 +126,15 @@ export interface ScheduledRun {
   lastRunAt?: number
   lastResult?: { ok: boolean; summary: string; costUsd: number; at: number }
   nextRunAt?: number
+  /**
+   * Explicit tool-access level for this routine.
+   * 'read-only' → mutating tools (Bash, Write, Edit, etc.) are removed from context via disallowedTools.
+   * 'full'      → no tool restriction.
+   * Undefined (legacy) → treated as 'full'.
+   */
+  toolAccess?: 'read-only' | 'full'
+  /** @deprecated Use toolAccess. Kept to read legacy saved data. */
+  allowedTools?: string[]
 }
 
 export interface SourceAccount {
@@ -253,6 +262,11 @@ export interface ClaudeMdFile {
 }
 
 // ─── Claude permissions & hooks (from ~/.claude/settings.json) ────────────────
+
+export interface WriteResult {
+  ok: boolean
+  error?: string
+}
 
 export interface ClaudePermissions {
   allow: string[]
@@ -600,9 +614,9 @@ declare global {
 
       // Claude permissions & hooks
       getClaudePermissions: () => Promise<ClaudePermissions>
-      setClaudePermissions: (perms: ClaudePermissions) => Promise<ClaudePermissions>
+      setClaudePermissions: (perms: ClaudePermissions) => Promise<WriteResult & { permissions?: ClaudePermissions }>
       getClaudeHooks: () => Promise<ClaudeHooks>
-      setClaudeHooks: (hooks: ClaudeHooks) => Promise<ClaudeHooks>
+      setClaudeHooks: (hooks: ClaudeHooks) => Promise<WriteResult & { hooks?: ClaudeHooks }>
 
       // CLAUDE.md
       claudeMdRead: (projectPath?: string) => Promise<ClaudeMdFile[]>

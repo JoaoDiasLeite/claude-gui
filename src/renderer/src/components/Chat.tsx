@@ -101,13 +101,22 @@ export default function Chat({
       )
     : []
 
-  // Open/close the picker.
+  // Open/close the picker; reset selection to 0 on every open.
   useEffect(() => {
     const shouldOpen = slashQuery !== null && pickerItems.length > 0
     setPickerOpen(shouldOpen)
     if (shouldOpen) setPickerActive(0)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slashQuery, pickerItems.length])
+  }, [slashQuery])
+
+  // Keep the active index in bounds when the filtered list shrinks.
+  useEffect(() => {
+    if (pickerItems.length > 0) {
+      setPickerActive((prev) => (prev >= pickerItems.length ? pickerItems.length - 1 : prev))
+    }
+    if (pickerItems.length === 0) setPickerOpen(false)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickerItems.length])
 
   // Scroll active item into view.
   useEffect(() => {
@@ -180,6 +189,8 @@ export default function Chat({
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
+        // Don't accept during IME composition (keyCode 229 is the IME sentinel)
+        if (e.isComposing || e.keyCode === 229) return
         const item = pickerItems[pickerActive]
         if (item) acceptPickerItem(item)
         return
@@ -190,10 +201,17 @@ export default function Chat({
         return
       }
     }
-    if (e.key === 'Enter' && !e.shiftKey && !streaming) {
+    // Don't send during IME composition
+    if (e.key === 'Enter' && !e.shiftKey && !streaming && !e.isComposing && e.keyCode !== 229) {
       e.preventDefault()
       handleSend()
     }
+  }
+
+  // Close the picker when the textarea loses focus (e.g. user clicks elsewhere).
+  // Use a short delay so a click on a picker item fires its onClick before the list unmounts.
+  const handleBlur = () => {
+    setTimeout(() => setPickerOpen(false), 150)
   }
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -466,6 +484,7 @@ export default function Chat({
             onChange={handleInput}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onBlur={handleBlur}
             rows={1}
             disabled={!ready}
           />

@@ -24,11 +24,20 @@ function extractDescription(content: string): string | undefined {
   return undefined
 }
 
+/** Maximum directory depth to recurse into (prevents stack overflow on cyclic/deep trees). */
+const MAX_WALK_DEPTH = 8
+/** Maximum total commands returned from a single scan (prevents freeze on enormous dirs). */
+const MAX_COMMANDS = 300
+/** Maximum file size in bytes to read for description extraction (64 KB). */
+const MAX_DESCRIPTION_FILE_BYTES = 64 * 1024
+
 /** Scan a commands directory and return slash command entries. */
 function scanCommandDir(dir: string, scope: 'user' | 'project'): SlashCommand[] {
   if (!fs.existsSync(dir)) return []
   const results: SlashCommand[] = []
-  function walk(current: string, prefix: string): void {
+  function walk(current: string, prefix: string, depth: number): void {
+    if (depth > MAX_WALK_DEPTH) return
+    if (results.length >= MAX_COMMANDS) return
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(current, { withFileTypes: true })
@@ -36,17 +45,23 @@ function scanCommandDir(dir: string, scope: 'user' | 'project'): SlashCommand[] 
       return
     }
     for (const entry of entries) {
+      if (results.length >= MAX_COMMANDS) break
+      // Skip symlinks to avoid following loops into arbitrary locations
+      if (entry.isSymbolicLink()) continue
       const fullPath = path.join(current, entry.name)
       if (entry.isDirectory()) {
         const ns = prefix ? `${prefix}:${entry.name}` : entry.name
-        walk(fullPath, ns)
+        walk(fullPath, ns, depth + 1)
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
         const base = entry.name.slice(0, -3)
         const name = prefix ? `${prefix}:${base}` : base
         let description: string | undefined
         try {
-          const content = fs.readFileSync(fullPath, 'utf-8')
-          description = extractDescription(content)
+          const stat = fs.statSync(fullPath)
+          if (stat.size <= MAX_DESCRIPTION_FILE_BYTES) {
+            const content = fs.readFileSync(fullPath, 'utf-8')
+            description = extractDescription(content)
+          }
         } catch {
           // ignore unreadable files
         }
@@ -54,7 +69,7 @@ function scanCommandDir(dir: string, scope: 'user' | 'project'): SlashCommand[] 
       }
     }
   }
-  walk(dir, '')
+  walk(dir, '', 0)
   return results
 }
 
@@ -69,20 +84,25 @@ function scanSkillDir(dir: string, scope: 'user' | 'project'): SlashCommand[] {
     return []
   }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue
+    if (results.length >= MAX_COMMANDS) break
+    // Only real directories; skip symlinks to avoid loops
+    if (!entry.isDirectory() || entry.isSymbolicLink()) continue
     const skillName = entry.name
     const skillFile = path.join(dir, skillName, 'SKILL.md')
     let description: string | undefined
     if (fs.existsSync(skillFile)) {
       try {
-        const content = fs.readFileSync(skillFile, 'utf-8')
-        // Prefer frontmatter name: override (still use dir name as canonical id)
-        const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/)
-        if (fmMatch) {
-          const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m)
-          if (descMatch) description = descMatch[1].trim()
+        const stat = fs.statSync(skillFile)
+        if (stat.size <= MAX_DESCRIPTION_FILE_BYTES) {
+          const content = fs.readFileSync(skillFile, 'utf-8')
+          // Prefer frontmatter name: override (still use dir name as canonical id)
+          const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/)
+          if (fmMatch) {
+            const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m)
+            if (descMatch) description = descMatch[1].trim()
+          }
+          if (!description) description = extractDescription(content)
         }
-        if (!description) description = extractDescription(content)
       } catch {
         // ignore
       }
