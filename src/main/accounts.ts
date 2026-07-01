@@ -207,7 +207,7 @@ export function setDefaultAccount(id: string): { accounts: CCAccountStatus[]; de
  * bin dir isn't on PATH (a common situation on Windows). Falls back to the bare command
  * name, which relies on PATH, if no known install location is found.
  */
-function resolveClaudeBin(): string {
+export function resolveClaudeBin(): string {
   const candidates: string[] = []
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA

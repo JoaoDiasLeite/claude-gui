@@ -162,5 +162,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   schedulerDelete: (id: string) => ipcRenderer.invoke('scheduler:delete', id),
   schedulerSetEnabled: (id: string, enabled: boolean) =>
     ipcRenderer.invoke('scheduler:set-enabled', id, enabled),
-  schedulerRunNow: (id: string) => ipcRenderer.invoke('scheduler:run-now', id)
+  schedulerRunNow: (id: string) => ipcRenderer.invoke('scheduler:run-now', id),
+
+  // Terminal (embedded PTY)
+  terminalCreate: (id: string, opts: unknown) => ipcRenderer.invoke('terminal:create', id, opts),
+  terminalWrite: (id: string, data: string) => ipcRenderer.send('terminal:write', id, data),
+  terminalResize: (id: string, cols: number, rows: number) =>
+    ipcRenderer.send('terminal:resize', id, cols, rows),
+  terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
+  terminalStartClaude: (id: string, resumeSessionId?: string) =>
+    ipcRenderer.invoke('terminal:start-claude', id, resumeSessionId),
+  onTerminalData: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('terminal:data', fn)
+    return () => ipcRenderer.removeListener('terminal:data', fn)
+  },
+  onTerminalExit: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('terminal:exit', fn)
+    return () => ipcRenderer.removeListener('terminal:exit', fn)
+  }
 })

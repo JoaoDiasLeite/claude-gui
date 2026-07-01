@@ -117,6 +117,14 @@ export function buildSubprocessEnv(): Record<string, string> {
     if (v !== undefined) env[k] = v
   }
 
+  // Strip Claude Code's own runtime/session markers so a `claude` we spawn never thinks
+  // it's nested inside a parent session (which would make it adopt/continue that session
+  // instead of the chat's own). This matters when the app itself was launched from within
+  // a Claude Code session — otherwise the GUI's runs tangle with the launcher's session.
+  for (const k of Object.keys(env)) {
+    if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE')) delete env[k]
+  }
+
   if (state.mode === 'api-key') {
     const key = getApiKey()
     if (key) env.ANTHROPIC_API_KEY = key

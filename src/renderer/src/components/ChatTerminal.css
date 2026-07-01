@@ -1,0 +1,109 @@
+.chat-terminal {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg-elev, var(--bg));
+}
+
+.chat-terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+
+.chat-terminal-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim, var(--text));
+  letter-spacing: 0.02em;
+}
+
+.chat-terminal-cwd {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-faint, var(--text-dim));
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-elev, var(--bg));
+  border: 1px solid var(--border);
+}
+
+.chat-terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-terminal-btn {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev, var(--bg));
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-terminal-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chat-terminal-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+
+.chat-terminal-btn.primary:hover {
+  filter: brightness(1.08);
+  color: var(--accent-contrast, #fff);
+}
+
+.chat-terminal-btn.icon {
+  padding: 3px 5px;
+}
+
+.chat-terminal-host-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+}
+
+.chat-terminal-host {
+  width: 100%;
+  height: 100%;
+}
+
+.chat-terminal-restart {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* Active state for the chat-header terminal toggle. */
+.header-icon-btn.term-active {
+  color: var(--accent);
+}

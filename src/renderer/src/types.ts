@@ -503,6 +503,32 @@ export interface PlannerAssistResult {
   costUsd: number
 }
 
+// ─── Terminal (embedded PTY) ────────────────────────────────────────────────
+
+export interface TerminalCreateOptions {
+  cwd?: string
+  accountId?: string
+  /** Run inside this WSL distro (for WSL-backed chats). */
+  wslDistro?: string
+  cols: number
+  rows: number
+}
+
+export interface TerminalCreateResult {
+  ok: boolean
+  shell?: string
+}
+
+export interface TerminalDataEvent {
+  id: string
+  data: string
+}
+
+export interface TerminalExitEvent {
+  id: string
+  exitCode: number
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -679,6 +705,15 @@ declare global {
       schedulerDelete: (id: string) => Promise<ScheduledRun[]>
       schedulerSetEnabled: (id: string, enabled: boolean) => Promise<ScheduledRun[]>
       schedulerRunNow: (id: string) => Promise<{ ok: boolean; summary: string; costUsd: number } | null>
+
+      // Terminal (embedded PTY)
+      terminalCreate: (id: string, opts: TerminalCreateOptions) => Promise<TerminalCreateResult>
+      terminalWrite: (id: string, data: string) => void
+      terminalResize: (id: string, cols: number, rows: number) => void
+      terminalKill: (id: string) => Promise<{ ok: boolean }>
+      terminalStartClaude: (id: string, resumeSessionId?: string) => Promise<{ ok: boolean }>
+      onTerminalData: (cb: (data: TerminalDataEvent) => void) => () => void
+      onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
     }
   }
 }

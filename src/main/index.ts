@@ -65,6 +65,14 @@ import {
   startScheduler,
   ScheduledRun
 } from './scheduler'
+import {
+  createTerminal,
+  writeTerminal,
+  resizeTerminal,
+  killTerminal,
+  startClaudeInTerminal,
+  killAllTerminals
+} from './terminal'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -151,7 +159,12 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  killAllTerminals()
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  killAllTerminals()
 })
 
 // ─── Notifications ────────────────────────────────────────────────────────────
@@ -564,6 +577,27 @@ ipcMain.handle('scheduler:set-enabled', (_, id: string, enabled: boolean) =>
   setScheduledRunEnabled(id, enabled)
 )
 ipcMain.handle('scheduler:run-now', (_, id: string) => runScheduledRunNow(id))
+
+// ─── Terminal (embedded PTY) ────────────────────────────────────────────────
+
+ipcMain.handle(
+  'terminal:create',
+  (_, id: string, opts: { cwd?: string; accountId?: string; cols: number; rows: number }) =>
+    createTerminal(
+      id,
+      opts,
+      (tid, data) => send('terminal:data', { id: tid, data }),
+      (tid, exitCode) => send('terminal:exit', { id: tid, exitCode })
+    )
+)
+ipcMain.on('terminal:write', (_, id: string, data: string) => writeTerminal(id, data))
+ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
+  resizeTerminal(id, cols, rows)
+)
+ipcMain.handle('terminal:kill', (_, id: string) => killTerminal(id))
+ipcMain.handle('terminal:start-claude', (_, id: string, resumeSessionId?: string) =>
+  startClaudeInTerminal(id, resumeSessionId)
+)
 
 // ─── Chat compaction (summarize a long session into a fresh one) ───────────────
 

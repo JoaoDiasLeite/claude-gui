@@ -3,6 +3,7 @@ import { Session, ModelInfo, ImageAttachment, CCAccountStatus, SlashCommand } fr
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import AccountPicker from './AccountPicker'
+import ChatTerminal from './ChatTerminal'
 import './Chat.css'
 
 interface Props {
@@ -63,6 +64,13 @@ export default function Chat({
   onExportSession
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  // Per-chat terminal toggle, keyed by session id so each chat remembers its own state.
+  const [termOpenById, setTermOpenById] = useState<Record<string, boolean>>({})
+  const termOpen = !!(session && termOpenById[session.id])
+  const toggleTerminal = () => {
+    if (!session) return
+    setTermOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
+  }
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<ImageAttachment[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -304,6 +312,20 @@ export default function Chat({
               <path d="M18 12a9 9 0 0 1-9 9M6 9v6" />
             </svg>
           </button>
+          <button
+            className={`header-icon-btn ${termOpen ? 'term-active' : ''}`}
+            onClick={toggleTerminal}
+            title="Terminal for this chat"
+            aria-label="Terminal for this chat"
+            aria-pressed={termOpen}
+            disabled={!session}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="2" y="4" width="20" height="16" rx="2" />
+              <polyline points="6 9 10 12 6 15" />
+              <line x1="12" y1="15" x2="16" y2="15" />
+            </svg>
+          </button>
           <div className="export-menu-wrap" style={{ position: 'relative' }}>
             <button
               className="header-icon-btn"
@@ -356,7 +378,7 @@ export default function Chat({
         </div>
       </div>
 
-      <div className="chat-messages">
+      <div className="chat-messages" style={termOpen ? { display: 'none' } : undefined}>
         {isEmpty ? (
           <div className="welcome">
             <div className="welcome-icon">
@@ -387,7 +409,19 @@ export default function Chat({
         <div ref={bottomRef} />
       </div>
 
-      <div className="chat-input-area">
+      {session && termOpen && (
+        <ChatTerminal
+          key={session.id}
+          terminalId={`chatterm_${session.id}`}
+          cwd={session.projectPath}
+          accountId={currentAccount}
+          wslDistro={session.wslDistro}
+          resumeSessionId={session.claudeSessionId}
+          onClose={toggleTerminal}
+        />
+      )}
+
+      <div className="chat-input-area" style={termOpen ? { display: 'none' } : undefined}>
         {session && session.messages.length >= 40 && (
           <div className="long-session-banner">
             <span className="long-session-text">
