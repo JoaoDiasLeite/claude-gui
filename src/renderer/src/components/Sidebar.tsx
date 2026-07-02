@@ -210,7 +210,6 @@ export default function Sidebar({
 
       <div className="sidebar-content">
         {tab === 'sessions' ? (
-          visibleSessions.length > 0 && (
           <>
             <div className="sidebar-section-header">
               <span>Sessions</span>
@@ -236,6 +235,11 @@ export default function Sidebar({
               </div>
             </div>
             <div className="session-list">
+              {visibleSessions.length === 0 && (
+                <div className="empty-state session-empty">
+                  No chats yet — send your first message and it will show up here.
+                </div>
+              )}
               {visibleSessions.map((s) => (
                 <div
                   key={s.id}
@@ -283,7 +287,6 @@ export default function Sidebar({
               ))}
             </div>
           </>
-          )
         ) : (
           <>
             <div className="sidebar-section-header">

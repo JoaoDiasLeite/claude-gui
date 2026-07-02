@@ -269,6 +269,13 @@
   gap: 12px;
 }
 
+.session-empty {
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+  line-height: 1.5;
+}
+
 .open-folder-btn {
   padding: 7px 16px;
   background: linear-gradient(150deg, var(--bg-3), color-mix(in srgb, var(--bg-2) 80%, var(--bg-1)));
