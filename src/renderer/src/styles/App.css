@@ -1,7 +1,8 @@
 /* Frameless window shell: titlebar on top, app body below, with rounded corners
-   painted by the renderer (the OS window is transparent). The shell itself is
-   transparent so the translucent chrome (titlebar/sidebar/nav rail) reads as glass;
-   the main content area stays opaque for readability. */
+   painted by the renderer (the OS window is transparent). The shell has its own
+   opaque background so the small corner slivers outside the titlebar/nav-rail's
+   square edges (but inside the shell's rounded clip) show the app's own color
+   instead of punching through to whatever is behind the window on the desktop. */
 .app-shell {
   position: relative;
   display: flex;
@@ -9,7 +10,7 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: transparent;
+  background: var(--bg-0);
   border-radius: 12px;
   border: 1px solid var(--border-light);
 }
