@@ -1,8 +1,6 @@
-/* Frameless window shell: titlebar on top, app body below, with rounded corners
-   painted by the renderer (the OS window is transparent). The shell has its own
-   opaque background so the small corner slivers outside the titlebar/nav-rail's
-   square edges (but inside the shell's rounded clip) show the app's own color
-   instead of punching through to whatever is behind the window on the desktop. */
+/* Frameless window shell: titlebar on top, app body below. The OS window is opaque
+   and Win11's DWM rounds it at ~8px; the shell's CSS radius matches that rounding
+   so the painted border hugs the real window edge with no visible slivers. */
 .app-shell {
   position: relative;
   display: flex;
@@ -11,7 +9,7 @@
   width: 100vw;
   overflow: hidden;
   background: var(--bg-0);
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid var(--border-light);
 }
 .app-shell.maximized {

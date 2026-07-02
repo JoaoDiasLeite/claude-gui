@@ -180,6 +180,12 @@ function ensureDirs(): void {
   if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true })
 }
 
+// Opaque window background matching the current theme, so corner slivers outside
+// the shell's CSS radius (and the pre-paint flash) blend with the app surface.
+function themeBackgroundColor(): string {
+  return getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -188,14 +194,15 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    // Frameless with the Win11 acrylic backdrop: a transparent backgroundColor lets the
-    // OS frosted-glass material show through wherever the renderer paints translucent
-    // surfaces (title bar / sidebar / nav rail). Win11 rounds material windows. The
-    // renderer still drives resizing through custom handles via window:set-bounds.
+    // Frameless but OPAQUE: the shell is fully opaque anyway, and Win11's DWM rounds
+    // plain frameless windows reliably. backgroundMaterial is deliberately NOT used
+    // here — material windows permanently lose their rounding/material after a
+    // maximize→restore cycle on Electron 28 (electron/electron#42393, #46753).
+    // The acrylic look lives on in the aux windows (overlay/toast/pill), which
+    // never maximize and so never hit the bug.
     frame: false,
-    backgroundMaterial: 'acrylic',
     resizable: true,
-    backgroundColor: '#00000000',
+    backgroundColor: themeBackgroundColor(),
     icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -232,18 +239,7 @@ function createWindow(): void {
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
-  mainWindow.on('unmaximize', () => {
-    mainWindow?.webContents.send('window:maximized', false)
-    // Win11's DWM drops the rounded-corner attribute of frameless material windows
-    // after a maximize→restore cycle, so the acrylic keeps painting the square
-    // corners outside the shell's CSS radius (dark triangular slivers). Toggling
-    // the background material forces DWM to re-apply the rounding.
-    setTimeout(() => {
-      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMaximized()) return
-      mainWindow.setBackgroundMaterial('none')
-      mainWindow.setBackgroundMaterial('acrylic')
-    }, 60)
-  })
+  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
 
   // Close hides to the tray so scheduled routines and in-flight runs keep going.
   // A real exit happens via the tray's Quit item or an OS-initiated quit.
@@ -827,7 +823,15 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
   return getConfig()
 })
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
-ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
+ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => {
+  const ui = setUiPrefs(prefs)
+  // Keep the native window background in step with the theme so the corner
+  // slivers outside the CSS radius (and resize pre-paint) stay invisible.
+  if (prefs.theme && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setBackgroundColor(themeBackgroundColor())
+  }
+  return ui
+})
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   const prevOpenAtLogin = getConfig().system.openAtLogin
   const prevShortcut = getConfig().system.overlayShortcut
