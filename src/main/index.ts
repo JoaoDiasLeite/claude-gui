@@ -74,6 +74,8 @@ import {
   killAllTerminals
 } from './terminal'
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, overlayShortcut } from './overlay'
+import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
+import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray } from './tray'
 
 let mainWindow: BrowserWindow | null = null
@@ -105,6 +107,52 @@ function showMainWindow(): void {
 
 // In-flight agent runs keyed by app session id, so we can stop them.
 const activeRuns = new Map<string, AbortController>()
+
+// True while the main window is destroyed/hidden/minimized/unfocused. When a run
+// needs attention (approval, completion) in this state we surface it out-of-window
+// via the toast and taskbar so it never stalls invisibly in the tray.
+function mainWindowInactive(): boolean {
+  return (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    !mainWindow.isVisible() ||
+    mainWindow.isMinimized() ||
+    !mainWindow.isFocused()
+  )
+}
+
+// Taskbar progress: an indeterminate bar while any run is in flight, cleared to
+// none at zero. setProgressBar is a no-op on unsupported platforms — safe to call.
+function updateRunIndicators(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (activeRuns.size > 0) mainWindow.setProgressBar(2, { mode: 'indeterminate' })
+  else mainWindow.setProgressBar(-1)
+}
+
+// Attention cue for a state change (run finished / approval pending) that happened
+// while the window wasn't focused: flash the taskbar button and stamp an overlay
+// dot. Cleared on the main window's focus event. All calls are guarded/no-op-safe.
+function flagAttention(kind: 'success' | 'error' | 'approval'): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isFocused()) return
+  mainWindow.flashFrame(true)
+  const badge =
+    kind === 'success' ? successBadge() : kind === 'error' ? errorBadge() : approvalBadge()
+  const desc =
+    kind === 'success' ? 'Run finished' : kind === 'error' ? 'Run failed' : 'Approval needed'
+  mainWindow.setOverlayIcon(badge, desc)
+}
+
+// Pending toast approvals by id, so the toast stays up until the last one clears.
+const toastApprovals = new Set<string>()
+
+// Resolve an approval everywhere: prune the toast's pending set, tell BOTH windows
+// to drop it (whichever UI didn't answer), and hide the toast once none remain.
+function resolveApprovalEverywhere(approvalId: string): void {
+  toastApprovals.delete(approvalId)
+  sendToMainWindow('approval:resolved', approvalId)
+  sendToToast('approval:resolved', approvalId)
+  if (toastApprovals.size === 0) hideToast()
+}
 
 // The Agent SDK ships as ESM only. The main process is bundled to CommonJS, so a
 // static require() fails. Load it through a real dynamic import() that the bundler
@@ -155,6 +203,12 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow!.show())
+  // Focusing the window means the user is here now: stop flashing and clear the
+  // taskbar overlay badge that was cueing a background run's state change.
+  mainWindow.on('focus', () => {
+    mainWindow?.flashFrame(false)
+    mainWindow?.setOverlayIcon(null, '')
+  })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
@@ -205,6 +259,7 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   createWindow()
   createOverlayWindow()
+  createToastWindow()
   const shortcut = registerOverlayShortcut()
   hasTray = !!createTray(
     {
@@ -260,6 +315,13 @@ function sendToMainWindow(channel: string, payload?: unknown): void {
 ipcMain.on('overlay:hide', () => hideOverlay())
 ipcMain.handle('overlay:shortcut', () => overlayShortcut())
 ipcMain.on('overlay:open-main', () => {
+  hideOverlay()
+  showMainWindow()
+})
+// From the approval toast's "Open app" button. Reuses the overlay's open-main path
+// but does NOT hide the toast — the approval:resolved broadcast cleans it up once
+// the user answers in the modal.
+ipcMain.on('toast:open-main', () => {
   hideOverlay()
   showMainWindow()
 })
@@ -420,6 +482,8 @@ ipcMain.handle(
       pendingApprovals.delete(payload.approvalId)
       resolver({ allow: payload.allow, updatedInput: payload.updatedInput })
     }
+    // Whoever answered (main-window modal OR toast), tell both UIs to drop it.
+    resolveApprovalEverywhere(payload.approvalId)
     return { ok: true }
   }
 )
@@ -449,6 +513,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
   const abort = new AbortController()
   activeRuns.set(appSessionId, abort)
+  updateRunIndicators()
 
   const cwd = projectPath && fs.existsSync(projectPath) ? projectPath : os.homedir()
   const model = payload.model || getConfig().defaultModel
@@ -471,11 +536,24 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
           return { behavior: 'allow' as const, updatedInput: input }
         }
         const approvalId = nextApprovalId()
-        send('agent:approval-request', { appSessionId, approvalId, tool: toolName, input })
+        const req = { appSessionId, approvalId, tool: toolName, input }
+        send('agent:approval-request', req)
+        // If the main window can't show the modal right now (hidden/unfocused in the
+        // tray), also surface the request in the always-on-top toast and cue the
+        // taskbar, so the run doesn't stall where nobody can see it.
+        if (mainWindowInactive()) {
+          toastApprovals.add(approvalId)
+          sendToToast('toast:approval', req)
+          showToast()
+          flagAttention('approval')
+        }
         const decision = await new Promise<ApprovalDecision>((resolve) => {
           pendingApprovals.set(approvalId, resolve)
           abort.signal.addEventListener('abort', () => {
-            if (pendingApprovals.delete(approvalId)) resolve({ allow: false })
+            if (pendingApprovals.delete(approvalId)) {
+              resolveApprovalEverywhere(approvalId)
+              resolve({ allow: false })
+            }
           })
         })
         return decision.allow
@@ -580,6 +658,8 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
         case 'result': {
           const m = message as any
+          // Cue the taskbar if the user has stepped away while this run finished.
+          flagAttention(m.subtype !== 'success' ? 'error' : 'success')
           send('agent:done', {
             appSessionId,
             claudeSessionId: capturedSessionId,
@@ -597,9 +677,11 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     }
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
+    flagAttention('error')
     send('agent:error', { appSessionId, error: msg })
   } finally {
     activeRuns.delete(appSessionId)
+    updateRunIndicators()
   }
 })
 
@@ -608,6 +690,7 @@ ipcMain.handle('agent:stop', (_, appSessionId: string) => {
   if (ctrl) {
     ctrl.abort()
     activeRuns.delete(appSessionId)
+    updateRunIndicators()
     return { stopped: true }
   }
   if (stopRemote(appSessionId)) return { stopped: true }

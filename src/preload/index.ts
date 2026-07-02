@@ -88,6 +88,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('agent:approval-request', fn)
   },
   respondApproval: (payload: unknown) => ipcRenderer.invoke('agent:approval-response', payload),
+  // An approval was answered (by the toast or the main modal): drop it in the other UI.
+  onApprovalResolved: (cb: (approvalId: string) => void) => {
+    const fn = (_: unknown, approvalId: string) => cb(approvalId)
+    ipcRenderer.on('approval:resolved', fn)
+    return () => ipcRenderer.removeListener('approval:resolved', fn)
+  },
+
+  // Approval toast window (calls made by / events received in the TOAST window)
+  onToastApproval: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('toast:approval', fn)
+    return () => ipcRenderer.removeListener('toast:approval', fn)
+  },
+  toastOpenMain: () => ipcRenderer.send('toast:open-main'),
 
   // Config / models
   getConfig: () => ipcRenderer.invoke('config:get'),

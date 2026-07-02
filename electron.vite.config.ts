@@ -19,9 +19,11 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          // Main window + quick-launcher overlay window (see src/main/overlay.ts).
+          // Main window + quick-launcher overlay + approval toast auxiliary windows
+          // (see src/main/overlay.ts and src/main/toast.ts).
           index: resolve('src/renderer/index.html'),
-          overlay: resolve('src/renderer/overlay.html')
+          overlay: resolve('src/renderer/overlay.html'),
+          toast: resolve('src/renderer/toast.html')
         }
       }
     }

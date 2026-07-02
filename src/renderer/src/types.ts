@@ -600,6 +600,11 @@ declare global {
         allow: boolean
         updatedInput?: Record<string, unknown>
       }) => Promise<{ ok: boolean }>
+      onApprovalResolved: (cb: (approvalId: string) => void) => () => void
+
+      // Approval toast window
+      onToastApproval: (cb: (data: ApprovalRequest) => void) => () => void
+      toastOpenMain: () => void
 
       // Config / models
       getConfig: () => Promise<AppConfig>

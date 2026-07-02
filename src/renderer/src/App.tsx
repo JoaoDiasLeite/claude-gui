@@ -338,11 +338,18 @@ export default function App() {
       setApprovalQueue((prev) => [...prev, data])
     })
 
+    // An approval answered elsewhere (e.g. the always-on-top toast while this
+    // window was hidden) — drop it here so the modal doesn't linger unanswered.
+    const offResolved = window.electronAPI.onApprovalResolved((approvalId: string) => {
+      setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
+    })
+
     return () => {
       offEvent()
       offDone()
       offErr()
       offApproval()
+      offResolved()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
