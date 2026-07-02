@@ -232,7 +232,18 @@ function createWindow(): void {
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
-  mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('window:maximized', false)
+    // Win11's DWM drops the rounded-corner attribute of frameless material windows
+    // after a maximize→restore cycle, so the acrylic keeps painting the square
+    // corners outside the shell's CSS radius (dark triangular slivers). Toggling
+    // the background material forces DWM to re-apply the rounding.
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMaximized()) return
+      mainWindow.setBackgroundMaterial('none')
+      mainWindow.setBackgroundMaterial('acrylic')
+    }, 60)
+  })
 
   // Close hides to the tray so scheduled routines and in-flight runs keep going.
   // A real exit happens via the tray's Quit item or an OS-initiated quit.
