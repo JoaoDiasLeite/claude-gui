@@ -49,3 +49,9 @@ export function updateTrayShortcutLabel(shortcut: string): void {
   if (!tray || !trayActions) return
   tray.setContextMenu(buildMenu(trayActions, shortcut))
 }
+
+/** Update the tray hover tooltip (e.g. live plan usage). No-op if no tray exists. */
+export function updateTrayTooltip(text: string): void {
+  if (!tray) return
+  tray.setToolTip(text || 'Claude GUI')
+}

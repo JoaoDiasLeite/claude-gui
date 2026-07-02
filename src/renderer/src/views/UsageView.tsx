@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { UsageReport, UsageEntry, SourceInfo, UsageLimits, PlanUsage } from '../types'
+import { UsageReport, UsageEntry, SourceInfo, UsageLimits, PlanUsage, PlanUsageReport } from '../types'
 import './views.css'
 import './UsageView.css'
+
+// Batch A compat: getPlanUsage now returns a multi-account report, but this view still
+// renders a single account. Pick the primary account (or the first with windows) until
+// batch B migrates the view to render every account.
+function primaryAccount(report: PlanUsageReport): PlanUsage | null {
+  return (
+    report.accounts.find((a) => a.accountKey === report.primary) ??
+    report.accounts[0] ??
+    null
+  )
+}
 
 function fmtNum(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
@@ -109,7 +120,7 @@ export default function UsageView() {
   // Recompute in the background (no full-screen spinner) and update in place.
   const refresh = async () => {
     setRefreshing(true)
-    window.electronAPI.ccPlanUsage(true).then(setPlan).catch(() => {})
+    window.electronAPI.ccPlanUsage(true).then((r) => setPlan(primaryAccount(r))).catch(() => {})
     const [rep, srcs, cfg] = await Promise.all([
       window.electronAPI.ccUsage(true),
       window.electronAPI.ccSources(),
@@ -122,7 +133,7 @@ export default function UsageView() {
   useEffect(() => {
     let cancelled = false
     const init = async () => {
-      window.electronAPI.ccPlanUsage(false).then((p) => { if (!cancelled) setPlan(p) }).catch(() => {})
+      window.electronAPI.ccPlanUsage(false).then((r) => { if (!cancelled) setPlan(primaryAccount(r)) }).catch(() => {})
       // Paint instantly from cache…
       const [rep, srcs, cfg] = await Promise.all([
         window.electronAPI.ccUsage(false),

@@ -137,6 +137,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('cc:read-session', sourceId, encodedDir, sessionId),
   ccUsage: (force?: boolean) => ipcRenderer.invoke('cc:usage', force),
   ccPlanUsage: (force?: boolean) => ipcRenderer.invoke('cc:plan-usage', force),
+  // Live plan-usage updates pushed from the main-process watcher.
+  onPlanUsage: (cb: (report: unknown) => void) => {
+    const fn = (_: unknown, report: unknown) => cb(report)
+    ipcRenderer.on('plan:update', fn)
+    return () => ipcRenderer.removeListener('plan:update', fn)
+  },
+  // Main process asks the renderer to switch to a view (e.g. from a notification click).
+  onOpenView: (cb: (view: string) => void) => {
+    const fn = (_: unknown, view: string) => cb(view)
+    ipcRenderer.on('app:open-view', fn)
+    return () => ipcRenderer.removeListener('app:open-view', fn)
+  },
   ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
 
   // MCP

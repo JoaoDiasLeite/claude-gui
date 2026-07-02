@@ -244,8 +244,16 @@ export interface PlanWindow {
   resetsAt?: string
 }
 
-export interface PlanUsage {
-  status: 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
+export type PlanStatus = 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
+
+/** Real plan usage for a single account/login (see src/main/plan-usage.ts). */
+export interface AccountPlanUsage {
+  /** 'default' | account id | 'wsl:<distro>' */
+  accountKey: string
+  /** Display name: the account name, or the distro name for WSL sources. */
+  accountName: string
+  email?: string
+  status: PlanStatus
   error?: string
   /** True when `windows` is carried over from an older successful fetch. */
   stale?: boolean
@@ -254,6 +262,17 @@ export interface PlanUsage {
   fetchedAt: number
   windows: PlanWindow[]
 }
+
+export interface PlanUsageReport {
+  accounts: AccountPlanUsage[]
+  /** accountKey of the entry ambient UI should feature. */
+  primary?: string
+  generatedAt: number
+}
+
+// Compatibility alias for the pre-multi-account renderer (UsageView still consumes a
+// single account's shape). Batch B migrates the renderer to PlanUsageReport directly.
+export type PlanUsage = AccountPlanUsage
 
 export interface McpServer {
   name: string
@@ -689,7 +708,9 @@ declare global {
         sessionId: string
       ) => Promise<CCTranscriptMessage[]>
       ccUsage: (force?: boolean) => Promise<UsageReport>
-      ccPlanUsage: (force?: boolean) => Promise<PlanUsage>
+      ccPlanUsage: (force?: boolean) => Promise<PlanUsageReport>
+      onPlanUsage: (cb: (report: PlanUsageReport) => void) => () => void
+      onOpenView: (cb: (view: string) => void) => () => void
       ccSearch: (query: string) => Promise<SearchHit[]>
 
       // MCP

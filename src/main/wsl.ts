@@ -88,6 +88,38 @@ export interface WslClaudeRoot {
   claudeJsonPath: string
 }
 
+export interface WslCredentialsPath {
+  distro: string
+  /** Windows-side UNC path to the distro's ~/.claude/.credentials.json. */
+  credentialsPath: string
+}
+
+/**
+ * For every reachable WSL distro, resolve the Windows-side UNC path to its
+ * ~/.claude/.credentials.json — so plan-usage can read a distro's Claude Code
+ * OAuth token with plain fs, the same way getWslClaudeRoots reads its projects.
+ * Distros without a credentials file are skipped silently.
+ */
+export async function getWslCredentialsPaths(): Promise<WslCredentialsPath[]> {
+  if (!isWindows) return []
+  const distros = await listDistros()
+  const hidden = new Set(getHiddenDistros())
+  const out: WslCredentialsPath[] = []
+  for (const d of distros) {
+    if (SKIP_DISTROS.has(d.name) || hidden.has(d.name)) continue
+    const home = await wslHome(d.name)
+    if (!home) continue
+    const unc = `\\\\wsl.localhost\\${d.name}${home.replace(/\//g, '\\')}`
+    const credentialsPath = `${unc}\\.claude\\.credentials.json`
+    try {
+      if (fs.existsSync(credentialsPath)) out.push({ distro: d.name, credentialsPath })
+    } catch {
+      // not reachable — skip
+    }
+  }
+  return out
+}
+
 /**
  * For every reachable WSL distro that has Claude Code data, return Windows-side UNC paths
  * to its ~/.claude so the existing fs-based parsing can read it directly.

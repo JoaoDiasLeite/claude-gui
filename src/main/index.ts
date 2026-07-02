@@ -79,7 +79,7 @@ import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from '
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow } from './updater'
-import { getPlanUsage } from './plan-usage'
+import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -311,6 +311,16 @@ app.whenReady().then(() => {
     },
     shortcut
   )
+  // Live plan usage: refresh in the background (initial fetch ~30s in, then every 10
+  // minutes), push updates to the renderer, keep the tray tooltip current, and fire
+  // threshold notifications from the main process so they surface while tray-resident.
+  startPlanUsageWatcher({
+    broadcast: (r) => sendToMainWindow('plan:update', r),
+    showMain: () => {
+      showMainWindow()
+      sendToMainWindow('app:open-view', 'usage')
+    }
+  })
   // Keep the Windows registry "run at login" entry in sync with config on every
   // startup (covers the case where it was changed outside this app, or the app
   // was reinstalled). Skipped in dev — electron.exe as the login target would
@@ -856,7 +866,7 @@ ipcMain.handle('cc:read-session', (_, sourceId: string, encodedDir: string, sess
   readSession(sourceId, encodedDir, sessionId)
 )
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
-ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsage(!!force))
+ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsageForIpc(!!force))
 ipcMain.handle('cc:search', (_, query: string) => searchSessions(query))
 
 // ─── MCP ────────────────────────────────────────────────────────────────────

@@ -1,13 +1,23 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import { listConfigDirs } from './accounts'
+import { Notification } from 'electron'
+import { listConfigDirs, listAccountStatus } from './accounts'
+import { getWslCredentialsPaths } from './wsl'
+import { updateTrayTooltip } from './tray'
 
 // Real plan usage straight from Anthropic, the way community HUDs (claude-hud,
 // claudeline, ccusage-style statuslines) do it: GET api.anthropic.com/api/oauth/usage
 // with the Claude Code OAuth token from ~/.claude/.credentials.json. UNDOCUMENTED
 // endpoint — it can change without notice, so parsing is deliberately tolerant and
 // every failure degrades to a status the UI can explain instead of an exception.
+//
+// This module fetches PER ACCOUNT: every managed Claude login (plus each WSL distro
+// with its own login) has its own token, its own numbers, and — critically — its own
+// cache / backoff / lockout state. The endpoint rate-limits aggressively and escalates
+// to ~1h lockouts if hammered or called with expired tokens, so each credential source
+// is isolated: one account being locked out or expired never forces a network call for
+// another, and fetches run sequentially with a small gap between real network calls.
 
 export interface PlanWindow {
   key: string
@@ -18,8 +28,15 @@ export interface PlanWindow {
   resetsAt?: string
 }
 
-export interface PlanUsage {
-  status: 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
+export type PlanStatus = 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
+
+export interface AccountPlanUsage {
+  /** 'default' | account id | 'wsl:<distro>' */
+  accountKey: string
+  /** Display name: the account name, or the distro name for WSL sources. */
+  accountName: string
+  email?: string
+  status: PlanStatus
   error?: string
   /** True when `windows` is carried over from an older successful fetch. */
   stale?: boolean
@@ -29,6 +46,14 @@ export interface PlanUsage {
   windows: PlanWindow[]
 }
 
+export interface PlanUsageReport {
+  accounts: AccountPlanUsage[]
+  /** accountKey of the entry ambient UI should feature: the default account if it has
+   *  windows, else the first entry with windows. */
+  primary?: string
+  generatedAt: number
+}
+
 const ENDPOINT = 'https://api.anthropic.com/api/oauth/usage'
 const CACHE_TTL_MS = 5 * 60_000
 // Failed lookups retry sooner than the happy path, but never hammer the endpoint —
@@ -36,6 +61,9 @@ const CACHE_TTL_MS = 5 * 60_000
 const ERROR_TTL_MS = 90_000
 // How long a previous good result stays worth showing alongside an error.
 const STALE_OK_MS = 30 * 60_000
+// Spacing between actual network calls when polling multiple accounts in sequence —
+// the endpoint rate-limits aggressively, so we never fire two real requests back to back.
+const NETWORK_GAP_MS = 300
 
 // Known window spellings across endpoint revisions / community reports.
 const WINDOW_SHAPES: { key: string; label: string; alts: string[] }[] = [
@@ -45,26 +73,6 @@ const WINDOW_SHAPES: { key: string; label: string; alts: string[] }[] = [
   { key: 'seven_day_sonnet', label: 'Week · Sonnet', alts: ['seven_day_sonnet'] }
 ]
 
-let cache: PlanUsage | null = null
-// Last successful fetch, kept so transient failures (429s especially) degrade to
-// slightly-old numbers instead of an empty error panel.
-let lastGood: PlanUsage | null = null
-
-// On failure, surface the last good windows (if recent) as stale data with the
-// failure status attached, so the UI can show bars + a hint instead of nothing.
-function failure(partial: Omit<PlanUsage, 'fetchedAt' | 'windows'>): PlanUsage {
-  const carryOver = lastGood && Date.now() - lastGood.fetchedAt < STALE_OK_MS
-  cache = {
-    ...partial,
-    fetchedAt: Date.now(),
-    windows: carryOver ? lastGood!.windows : [],
-    stale: carryOver || undefined,
-    subscriptionType: partial.subscriptionType ?? lastGood?.subscriptionType,
-    rateLimitTier: partial.rateLimitTier ?? lastGood?.rateLimitTier
-  }
-  return cache
-}
-
 interface OauthCreds {
   accessToken: string
   expiresAt?: number
@@ -72,11 +80,38 @@ interface OauthCreds {
   rateLimitTier?: string
 }
 
-function readCredentialsFile(dir: string): OauthCreds | null {
+// Per-account polling state: each credential source keeps its own cache, last-good
+// snapshot, and 429 lockout independently so one account can never trip another's backoff.
+interface AccountState {
+  cache: AccountPlanUsage | null
+  lastGood: AccountPlanUsage | null
+  // When the endpoint said 429 with a Retry-After, don't touch it again before this.
+  retryAt: number
+}
+
+const states = new Map<string, AccountState>()
+
+function stateFor(key: string): AccountState {
+  let s = states.get(key)
+  if (!s) {
+    s = { cache: null, lastGood: null, retryAt: 0 }
+    states.set(key, s)
+  }
+  return s
+}
+
+// A credential source to poll. `credsPath` is the .credentials.json to read.
+interface Source {
+  accountKey: string
+  accountName: string
+  email?: string
+  credsPath: string
+}
+
+function readCredentialsFile(credsPath: string): OauthCreds | null {
   try {
-    const p = path.join(dir, '.credentials.json')
-    if (!fs.existsSync(p)) return null
-    const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as Record<string, unknown>
+    if (!fs.existsSync(credsPath)) return null
+    const raw = JSON.parse(fs.readFileSync(credsPath, 'utf-8')) as Record<string, unknown>
     const o = (raw.claudeAiOauth ?? raw) as Record<string, unknown>
     if (typeof o?.accessToken !== 'string' || !o.accessToken) return null
     return {
@@ -90,24 +125,102 @@ function readCredentialsFile(dir: string): OauthCreds | null {
   }
 }
 
-/** Hunt across the machine default + every managed account's config dir for the
- *  freshest token. Chats run under app-managed accounts refresh THEIR credentials,
- *  not ~/.claude's — so only checking the default dir misses valid logins. */
-function bestCredentials(): { creds: OauthCreds; expired: boolean } | null {
-  const dirs = new Set(listConfigDirs().map((d) => d ?? path.join(os.homedir(), '.claude')))
-  const all: OauthCreds[] = []
-  for (const d of dirs) {
-    const c = readCredentialsFile(d)
-    if (c) all.push(c)
+/** Resolve a managed account's config dir to its .credentials.json path (null = ~/.claude). */
+function credentialsPathForDir(configDir: string | null): string {
+  const dir = configDir ?? path.join(os.homedir(), '.claude')
+  return path.join(dir, '.credentials.json')
+}
+
+/**
+ * Enumerate every credential source to poll: each managed account (keyed by its id, or
+ * 'default' for the machine-default account), plus each WSL distro that has its own login.
+ * Dedupe:
+ *  - two accounts resolving to the same credentials file share one fetch (first wins);
+ *  - a WSL distro whose token matches a local account's token is skipped (same login).
+ */
+async function enumerateSources(): Promise<Source[]> {
+  const sources: Source[] = []
+  const seenPaths = new Set<string>()
+  const seenTokens = new Set<string>()
+
+  const { accounts } = listAccountStatus()
+  for (const acc of accounts) {
+    const credsPath = credentialsPathForDir(acc.configDir)
+    const norm = credsPath.toLowerCase()
+    if (seenPaths.has(norm)) continue
+    seenPaths.add(norm)
+    const creds = readCredentialsFile(credsPath)
+    if (creds) seenTokens.add(creds.accessToken)
+    sources.push({
+      accountKey: acc.isDefault ? 'default' : acc.id,
+      accountName: acc.name,
+      email: acc.email,
+      credsPath
+    })
   }
-  if (all.length === 0) return null
-  // 60s skew: a token about to lapse mid-request counts as expired.
-  const cutoff = Date.now() + 60_000
-  const freshest = (arr: OauthCreds[]) =>
-    [...arr].sort((a, b) => (b.expiresAt ?? 0) - (a.expiresAt ?? 0))[0]
-  const valid = all.filter((c) => !c.expiresAt || c.expiresAt > cutoff)
-  if (valid.length > 0) return { creds: freshest(valid), expired: false }
-  return { creds: freshest(all), expired: true }
+
+  // Safety net: any config dir known to accounts.ts that wasn't covered above (should
+  // already be covered, but listConfigDirs is the historical source of truth).
+  for (const dir of listConfigDirs()) {
+    const credsPath = credentialsPathForDir(dir)
+    const norm = credsPath.toLowerCase()
+    if (seenPaths.has(norm)) continue
+    seenPaths.add(norm)
+    const creds = readCredentialsFile(credsPath)
+    if (creds) seenTokens.add(creds.accessToken)
+    sources.push({
+      accountKey: dir ? `dir:${dir}` : 'default',
+      accountName: dir ? path.basename(dir) : 'Default',
+      credsPath
+    })
+  }
+
+  // WSL distros — best-effort. Skip a distro whose token matches a local login (same
+  // account logged in from both sides), and skip silently on any read failure.
+  try {
+    for (const w of await getWslCredentialsPaths()) {
+      const norm = w.credentialsPath.toLowerCase()
+      if (seenPaths.has(norm)) continue
+      seenPaths.add(norm)
+      const creds = readCredentialsFile(w.credentialsPath)
+      if (creds && seenTokens.has(creds.accessToken)) continue // dup of a local account
+      if (creds) seenTokens.add(creds.accessToken)
+      sources.push({
+        accountKey: `wsl:${w.distro}`,
+        accountName: w.distro,
+        credsPath: w.credentialsPath
+      })
+    }
+  } catch {
+    // WSL unavailable — local accounts only.
+  }
+
+  return sources
+}
+
+// On failure, surface the last good windows (if recent) as stale data with the failure
+// status attached, so the UI can show bars + a hint instead of nothing. Mirrors the
+// original single-account failure() helper, but scoped to one account's state.
+function failure(
+  src: Source,
+  st: AccountState,
+  partial: { status: PlanStatus; error?: string; subscriptionType?: string; rateLimitTier?: string }
+): AccountPlanUsage {
+  const carryOver = st.lastGood && Date.now() - st.lastGood.fetchedAt < STALE_OK_MS
+  const result: AccountPlanUsage = {
+    accountKey: src.accountKey,
+    accountName: src.accountName,
+    email: src.email,
+    status: partial.status,
+    error: partial.error,
+    fetchedAt: Date.now(),
+    windows: carryOver ? st.lastGood!.windows : [],
+    stale: carryOver || undefined,
+    subscriptionType: partial.subscriptionType ?? st.lastGood?.subscriptionType,
+    rateLimitTier: partial.rateLimitTier ?? st.lastGood?.rateLimitTier
+  }
+  st.cache = result
+  return result
 }
 
 function extractWindows(body: Record<string, unknown>): PlanWindow[] {
@@ -135,30 +248,41 @@ function extractWindows(body: Record<string, unknown>): PlanWindow[] {
   return windows
 }
 
-// When the endpoint said 429 with a Retry-After, don't touch it again before this.
-let retryAt = 0
+// Fetch one account. Returns { entry, hitNetwork }: hitNetwork distinguishes an actual
+// HTTP request (which must be spaced out) from a cached/expired/backing-off short-circuit.
+async function fetchAccount(
+  src: Source,
+  force: boolean
+): Promise<{ entry: AccountPlanUsage; hitNetwork: boolean }> {
+  const st = stateFor(src.accountKey)
 
-export async function getPlanUsage(force = false): Promise<PlanUsage> {
-  if (cache) {
-    const age = Date.now() - cache.fetchedAt
+  if (st.cache) {
+    const age = Date.now() - st.cache.fetchedAt
     // Backoff wins even over a forced refresh — the endpoint 429s readily (and
     // escalates: repeated bad calls earn multi-minute Retry-After lockouts).
-    if (cache.status === 'rate-limited' && Date.now() < retryAt) return cache
-    if (cache.status !== 'ok' && age < ERROR_TTL_MS) return cache
-    if (cache.status === 'ok' && !force && age < CACHE_TTL_MS) return cache
+    if (st.cache.status === 'rate-limited' && Date.now() < st.retryAt)
+      return { entry: st.cache, hitNetwork: false }
+    if (st.cache.status !== 'ok' && age < ERROR_TTL_MS) return { entry: st.cache, hitNetwork: false }
+    if (st.cache.status === 'ok' && !force && age < CACHE_TTL_MS)
+      return { entry: st.cache, hitNetwork: false }
   }
 
-  const found = bestCredentials()
-  if (!found) return failure({ status: 'no-credentials' })
-  const { creds, expired } = found
+  const creds = readCredentialsFile(src.credsPath)
+  if (!creds) return { entry: failure(src, st, { status: 'no-credentials' }), hitNetwork: false }
+
+  // 60s skew: a token about to lapse mid-request counts as expired.
+  const expired = !!creds.expiresAt && creds.expiresAt <= Date.now() + 60_000
   if (expired) {
     // Never spend a request on a token we can already see is dead — repeated
     // expired-token calls are what trigger the edge-level 429 lockout.
-    return failure({
-      status: 'unauthorized',
-      subscriptionType: creds.subscriptionType,
-      rateLimitTier: creds.rateLimitTier
-    })
+    return {
+      entry: failure(src, st, {
+        status: 'unauthorized',
+        subscriptionType: creds.subscriptionType,
+        rateLimitTier: creds.rateLimitTier
+      }),
+      hitNetwork: false
+    }
   }
 
   try {
@@ -170,37 +294,209 @@ export async function getPlanUsage(force = false): Promise<PlanUsage> {
       }
     })
     if (res.status === 401 || res.status === 403) {
-      // Token rejected despite a future expiry — Claude Code rotates it on its next
-      // run; nothing to do here. Deliberately NOT refreshing with the refresh token:
-      // rotating it out from under Claude Code could invalidate the CLI's session.
-      return failure({
-        status: 'unauthorized',
-        subscriptionType: creds.subscriptionType,
-        rateLimitTier: creds.rateLimitTier
-      })
+      // Token rejected despite a future expiry — Claude Code rotates it on its next run;
+      // nothing to do here. Deliberately NOT refreshing with the refresh token: rotating
+      // it out from under Claude Code could invalidate the CLI's session.
+      return {
+        entry: failure(src, st, {
+          status: 'unauthorized',
+          subscriptionType: creds.subscriptionType,
+          rateLimitTier: creds.rateLimitTier
+        }),
+        hitNetwork: true
+      }
     }
     if (res.status === 429) {
       const ra = Number(res.headers.get('retry-after'))
-      retryAt =
+      st.retryAt =
         Date.now() + Math.min(isFinite(ra) && ra > 0 ? ra * 1000 : ERROR_TTL_MS, 3600_000)
-      return failure({ status: 'rate-limited', error: 'HTTP 429' })
+      return { entry: failure(src, st, { status: 'rate-limited', error: 'HTTP 429' }), hitNetwork: true }
     }
     if (!res.ok) {
-      return failure({ status: 'error', error: `HTTP ${res.status}` })
+      return { entry: failure(src, st, { status: 'error', error: `HTTP ${res.status}` }), hitNetwork: true }
     }
     const body = (await res.json()) as Record<string, unknown>
-    cache = lastGood = {
+    const entry: AccountPlanUsage = {
+      accountKey: src.accountKey,
+      accountName: src.accountName,
+      email: src.email,
       status: 'ok',
       fetchedAt: Date.now(),
       windows: extractWindows(body),
       subscriptionType: creds.subscriptionType,
       rateLimitTier: creds.rateLimitTier
     }
-    return cache
+    st.cache = st.lastGood = entry
+    return { entry, hitNetwork: true }
   } catch (err) {
-    return failure({
-      status: 'error',
-      error: err instanceof Error ? err.message : String(err)
-    })
+    return {
+      entry: failure(src, st, {
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err)
+      }),
+      hitNetwork: true
+    }
   }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** Pick the accountKey the ambient UI (tray, notifications) should feature: the default
+ *  account if it has windows, else the first entry with windows. */
+function pickPrimary(accounts: AccountPlanUsage[]): string | undefined {
+  const def = accounts.find((a) => a.accountKey === 'default' && a.windows.length > 0)
+  if (def) return def.accountKey
+  const first = accounts.find((a) => a.windows.length > 0)
+  return first?.accountKey
+}
+
+export async function getPlanUsage(force = false): Promise<PlanUsageReport> {
+  const sources = await enumerateSources()
+  const accounts: AccountPlanUsage[] = []
+  // Sequential — the endpoint rate-limits aggressively. Only actual network calls get
+  // the inter-request gap; cached / expired / backing-off entries are free.
+  let firstNetworkDone = false
+  for (const src of sources) {
+    if (firstNetworkDone) await sleep(NETWORK_GAP_MS)
+    const { entry, hitNetwork } = await fetchAccount(src, force)
+    if (hitNetwork) firstNetworkDone = true
+    accounts.push(entry)
+  }
+  const report: PlanUsageReport = {
+    accounts,
+    primary: pickPrimary(accounts),
+    generatedAt: Date.now()
+  }
+  return report
+}
+
+// ─── Watcher: periodic refresh + tray tooltip + threshold notifications ─────────
+
+// Threshold-crossing latches, keyed by `${accountKey}:${windowKey}:${threshold}`. A latch
+// prevents re-notifying for a threshold already reported; it re-arms when utilization drops
+// below (threshold − 5) or the window's resetsAt changes (a new window period began).
+interface Latch {
+  armed: boolean
+  resetsAt?: string
+}
+const latches = new Map<string, Latch>()
+const THRESHOLDS = [85, 95]
+const NOTIFY_WINDOW_KEYS = new Set(['five_hour', 'seven_day'])
+
+function windowLabelForTooltip(key: string): string {
+  return key === 'five_hour' ? 'Session' : 'Week'
+}
+
+function buildTooltip(report: PlanUsageReport): string {
+  const primary = report.primary && report.accounts.find((a) => a.accountKey === report.primary)
+  if (!primary || primary.windows.length === 0) return 'Claude GUI'
+  const parts: string[] = []
+  const five = primary.windows.find((w) => w.key === 'five_hour')
+  const seven = primary.windows.find((w) => w.key === 'seven_day')
+  if (five) parts.push(`Session ${five.utilization.toFixed(0)}%`)
+  if (seven) parts.push(`Week ${seven.utilization.toFixed(0)}%`)
+  if (parts.length === 0) return 'Claude GUI'
+  return `Claude GUI — ${parts.join(' · ')}`
+}
+
+// "resets in 1h 20m" for a notification body — plain and terse.
+function fmtResetShort(iso?: string): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (!isFinite(t)) return ''
+  const mins = Math.round((t - Date.now()) / 60000)
+  if (mins <= 0) return 'resets soon'
+  if (mins < 60) return `resets in ${mins}m`
+  return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+function checkThresholds(report: PlanUsageReport, showMain: () => void): void {
+  if (!Notification.isSupported()) return
+  for (const acc of report.accounts) {
+    // Only fresh, real numbers drive notifications — never stale carry-over.
+    if (acc.status !== 'ok' || acc.stale) continue
+    for (const w of acc.windows) {
+      if (!NOTIFY_WINDOW_KEYS.has(w.key)) continue
+      for (const threshold of THRESHOLDS) {
+        const latchKey = `${acc.accountKey}:${w.key}:${threshold}`
+        const latch = latches.get(latchKey) ?? { armed: true, resetsAt: w.resetsAt }
+        // Re-arm if the window rolled over (new reset time) or dropped back below the
+        // threshold's hysteresis band — so a fresh climb can notify again.
+        if (latch.resetsAt !== w.resetsAt || w.utilization < threshold - 5) {
+          latch.armed = true
+          latch.resetsAt = w.resetsAt
+        }
+        if (latch.armed && w.utilization >= threshold) {
+          latch.armed = false
+          latch.resetsAt = w.resetsAt
+          const reset = fmtResetShort(w.resetsAt)
+          const body =
+            `${windowLabelForTooltip(w.key)} window ${w.utilization.toFixed(0)}% used` +
+            (reset ? ` · ${reset}` : '')
+          try {
+            const n = new Notification({ title: `Plan limit warning — ${acc.accountName}`, body })
+            n.on('click', () => showMain())
+            n.show()
+          } catch {
+            // Notifications are best-effort — never let one throw into the watcher.
+          }
+        }
+        latches.set(latchKey, latch)
+      }
+    }
+  }
+}
+
+export interface PlanUsageWatcherHandlers {
+  broadcast: (report: PlanUsageReport) => void
+  showMain: () => void
+}
+
+let watcherHandlers: PlanUsageWatcherHandlers | null = null
+
+// The shared post-fetch path: everything that should happen after ANY fetch (the initial
+// watcher fetch, the interval, or an IPC-triggered getPlanUsage) runs through here so the
+// tray tooltip, broadcast, and threshold notifications stay consistent.
+function afterFetch(report: PlanUsageReport): void {
+  if (!watcherHandlers) return
+  try {
+    updateTrayTooltip(buildTooltip(report))
+  } catch {
+    /* tray may not exist */
+  }
+  try {
+    watcherHandlers.broadcast(report)
+  } catch {
+    /* renderer may be loading */
+  }
+  checkThresholds(report, watcherHandlers.showMain)
+}
+
+/** Run a fetch and push the result through the shared post-fetch path. */
+async function refreshAndDispatch(force: boolean): Promise<PlanUsageReport> {
+  const report = await getPlanUsage(force)
+  afterFetch(report)
+  return report
+}
+
+let watcherStarted = false
+
+export function startPlanUsageWatcher(handlers: PlanUsageWatcherHandlers): void {
+  if (watcherStarted) return
+  watcherStarted = true
+  watcherHandlers = handlers
+
+  // Initial fetch ~30s after start (let the app settle; don't hammer the endpoint on
+  // launch), then every 10 minutes.
+  setTimeout(() => {
+    void refreshAndDispatch(false)
+    setInterval(() => void refreshAndDispatch(false), 10 * 60_000)
+  }, 30_000)
+}
+
+/** IPC entry point. Fetches and — once the watcher is running — pushes the result through
+ *  the same tray/broadcast/notification path as the scheduled fetches. */
+export async function getPlanUsageForIpc(force = false): Promise<PlanUsageReport> {
+  if (watcherHandlers) return refreshAndDispatch(force)
+  return getPlanUsage(force)
 }
