@@ -606,6 +606,16 @@ declare global {
       onToastApproval: (cb: (data: ApprovalRequest) => void) => () => void
       toastOpenMain: () => void
 
+      // Agent status pill window
+      onPillUpdate: (
+        cb: (data: {
+          state?: 'running' | 'done' | 'error'
+          sessionName?: string
+          tool?: string | null
+        }) => void
+      ) => () => void
+      pillOpenMain: () => void
+
       // Config / models
       getConfig: () => Promise<AppConfig>
       getModels: () => Promise<ModelInfo[]>

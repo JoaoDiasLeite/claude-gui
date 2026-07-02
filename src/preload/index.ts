@@ -103,6 +103,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   toastOpenMain: () => ipcRenderer.send('toast:open-main'),
 
+  // Agent status pill window (events received in / calls made by the PILL window)
+  onPillUpdate: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('pill:update', fn)
+    return () => ipcRenderer.removeListener('pill:update', fn)
+  },
+  pillOpenMain: () => ipcRenderer.send('pill:open-main'),
+
   // Config / models
   getConfig: () => ipcRenderer.invoke('config:get'),
   getModels: () => ipcRenderer.invoke('config:models'),

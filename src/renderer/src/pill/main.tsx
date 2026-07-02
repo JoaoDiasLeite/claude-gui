@@ -1,0 +1,11 @@
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import Pill from './Pill'
+import '../styles/global.css'
+import './Pill.css'
+
+createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <Pill />
+  </React.StrictMode>
+)

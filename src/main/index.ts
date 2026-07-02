@@ -75,6 +75,7 @@ import {
 } from './terminal'
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
+import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray } from './tray'
 
@@ -208,6 +209,16 @@ function createWindow(): void {
   mainWindow.on('focus', () => {
     mainWindow?.flashFrame(false)
     mainWindow?.setOverlayIcon(null, '')
+    // The app is visible/focused now, so the background-activity pill is redundant.
+    hidePill()
+  })
+  // If a run is in flight when the user hides or minimizes the window mid-run, bring
+  // up the pill at that moment so background activity stays visible.
+  mainWindow.on('hide', () => {
+    if (activeRuns.size > 0) showPill()
+  })
+  mainWindow.on('minimize', () => {
+    if (activeRuns.size > 0) showPill()
   })
   // Keep the renderer's maximize/restore icon and corner rounding in sync.
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
@@ -260,6 +271,7 @@ app.whenReady().then(() => {
   createWindow()
   createOverlayWindow()
   createToastWindow()
+  createPillWindow()
   const shortcut = registerOverlayShortcut()
   hasTray = !!createTray(
     {
@@ -323,6 +335,13 @@ ipcMain.on('overlay:open-main', () => {
 // the user answers in the modal.
 ipcMain.on('toast:open-main', () => {
   hideOverlay()
+  showMainWindow()
+})
+// From the status pill's "open" button: jump back to the app and drop the (now
+// redundant) pill. The main window's focus handler also hides it, but do it here
+// too so it goes away immediately even if focus is momentarily delayed.
+ipcMain.on('pill:open-main', () => {
+  hidePill()
   showMainWindow()
 })
 ipcMain.on('overlay:submit', (_, payload: { prompt: string; quick?: boolean }) => {
@@ -515,6 +534,21 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   activeRuns.set(appSessionId, abort)
   updateRunIndicators()
 
+  // Surface background activity in the status pill if the app isn't in view. Display
+  // is best-effort — never let it interfere with the run.
+  try {
+    if (mainWindowInactive()) {
+      showPill()
+      sendToPill('pill:update', {
+        state: 'running',
+        sessionName: prompt.slice(0, 40),
+        tool: null
+      })
+    }
+  } catch {
+    /* pill is decorative — ignore any failure */
+  }
+
   const cwd = projectPath && fs.existsSync(projectPath) ? projectPath : os.homedir()
   const model = payload.model || getConfig().defaultModel
 
@@ -562,6 +596,9 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       }
     : undefined
 
+  // Whether the run ended in error, so the pill's grace period can be longer for
+  // failures (set in the catch / cleared on the normal completion path).
+  let runErrored = false
   try {
     const query = await getQuery()
     const stream = query({
@@ -629,6 +666,8 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
                 input: block.input,
                 toolId: block.id
               })
+              // Cheap live status for the pill; the hidden window just ignores it.
+              sendToPill('pill:update', { state: 'running', tool: block.name })
             }
           }
           break
@@ -660,6 +699,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
           const m = message as any
           // Cue the taskbar if the user has stepped away while this run finished.
           flagAttention(m.subtype !== 'success' ? 'error' : 'success')
+          sendToPill('pill:update', { state: m.subtype !== 'success' ? 'error' : 'done' })
           send('agent:done', {
             appSessionId,
             claudeSessionId: capturedSessionId,
@@ -679,9 +719,14 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     const msg = err instanceof Error ? err.message : String(err)
     flagAttention('error')
     send('agent:error', { appSessionId, error: msg })
+    runErrored = true
+    sendToPill('pill:update', { state: 'error' })
   } finally {
     activeRuns.delete(appSessionId)
     updateRunIndicators()
+    // Once nothing is running, let the finished/errored state linger briefly then
+    // hide. A new run starting in the grace period cancels this via showPill().
+    if (activeRuns.size === 0) hidePillSoon(runErrored ? 4000 : 2500)
   }
 })
 
@@ -691,6 +736,9 @@ ipcMain.handle('agent:stop', (_, appSessionId: string) => {
     ctrl.abort()
     activeRuns.delete(appSessionId)
     updateRunIndicators()
+    // Reflect the stop in the pill and let it fade after the short success grace.
+    sendToPill('pill:update', { state: 'done' })
+    if (activeRuns.size === 0) hidePillSoon(2500)
     return { stopped: true }
   }
   if (stopRemote(appSessionId)) return { stopped: true }
