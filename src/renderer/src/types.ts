@@ -536,6 +536,19 @@ declare global {
       notify: (title: string, body: string) => Promise<{ shown: boolean }>
       setZoom: (factor: number) => Promise<number>
 
+      // Tray / quick-launcher overlay — events received by the MAIN window
+      onNewChat: (cb: () => void) => () => void
+      onOverlayPrompt: (cb: (payload: { prompt: string; quick?: boolean }) => void) => () => void
+      onOpenSession: (cb: (sessionId: string) => void) => () => void
+
+      // Quick-launcher overlay — calls made by the OVERLAY window
+      overlaySubmit: (payload: { prompt: string; quick?: boolean }) => void
+      overlayOpenSession: (sessionId: string) => void
+      overlayOpenMain: () => void
+      overlayHide: () => void
+      overlayShortcut: () => Promise<string>
+      onOverlayShown: (cb: () => void) => () => void
+
       // Window controls (custom frameless title bar)
       windowMinimize: () => Promise<void>
       windowMaximizeToggle: () => Promise<boolean>

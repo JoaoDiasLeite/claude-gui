@@ -485,6 +485,68 @@ export default function App() {
     [streaming, addTerm, buildAgentPayload]
   )
 
+  // Launch a new chat from the quick-launcher overlay (global shortcut) or tray.
+  // If a run is already in progress or auth is missing, the prompt is preserved as a
+  // failed turn (error + Retry) instead of being silently dropped.
+  const startOverlayPrompt = useCallback(
+    (payload: { prompt: string; quick?: boolean }) => {
+      const prompt = payload.prompt.trim()
+      if (!prompt) return
+      const base = sessionsRef.current.find((s) => s.id === activeIdRef.current)
+      const s = newSession(
+        base?.projectPath,
+        payload.quick ? 'claude-haiku-4-5' : defaultModel,
+        base?.accountId ?? defaultAccountId
+      )
+      s.name = prompt.slice(0, 40)
+
+      const userMsg: Message = { id: generateId(), role: 'user', content: prompt, timestamp: Date.now() }
+      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
+
+      const blocked = !ready
+        ? 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.'
+        : streaming
+          ? 'Another run was in progress — press Retry to send this prompt.'
+          : null
+
+      s.messages = blocked
+        ? [userMsg, { ...assistantMsg, content: blocked, error: true }]
+        : [userMsg, assistantMsg]
+      setSessions((prev) => [s, ...prev])
+      setActiveId(s.id)
+      setView('chat')
+      if (blocked) {
+        window.electronAPI.saveSession(s)
+        return
+      }
+      setStreaming(true)
+      setTerminalOpen(true)
+      addTerm({ kind: 'user', text: prompt.slice(0, 120) })
+      window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
+    },
+    [defaultModel, defaultAccountId, ready, streaming, addTerm, buildAgentPayload]
+  )
+  const startOverlayPromptRef = useRef(startOverlayPrompt)
+  startOverlayPromptRef.current = startOverlayPrompt
+
+  // Tray & overlay events from the main process. Registered once; refs keep the
+  // handlers seeing fresh state (same pattern as createSessionRef).
+  useEffect(() => {
+    const offNewChat = window.electronAPI.onNewChat(() => createSessionRef.current())
+    const offPrompt = window.electronAPI.onOverlayPrompt((p) => startOverlayPromptRef.current(p))
+    const offOpen = window.electronAPI.onOpenSession((id) => {
+      if (sessionsRef.current.some((s) => s.id === id)) {
+        setActiveId(id)
+        setView('chat')
+      }
+    })
+    return () => {
+      offNewChat()
+      offPrompt()
+      offOpen()
+    }
+  }, [])
+
   const stopMessage = useCallback(async () => {
     await window.electronAPI.stopAgent(activeIdRef.current)
     setStreaming(false)

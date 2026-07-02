@@ -15,6 +15,15 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    build: {
+      rollupOptions: {
+        input: {
+          // Main window + quick-launcher overlay window (see src/main/overlay.ts).
+          index: resolve('src/renderer/index.html'),
+          overlay: resolve('src/renderer/overlay.html')
+        }
+      }
+    }
   }
 })

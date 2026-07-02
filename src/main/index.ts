@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Notification } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Notification, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
@@ -73,8 +73,35 @@ import {
   startClaudeInTerminal,
   killAllTerminals
 } from './terminal'
+import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, overlayShortcut } from './overlay'
+import { createTray } from './tray'
 
 let mainWindow: BrowserWindow | null = null
+// True once the user (or OS) actually intends to exit — lets the close handler
+// distinguish "hide to tray" from a real quit.
+let isQuitting = false
+// Close-to-tray only engages when a tray icon actually exists, so the app can
+// never be stranded running invisibly.
+let hasTray = false
+let trayHintShown = false
+
+// Second launches (e.g. clicking the exe while the app lives in the tray) focus
+// the running instance instead of spawning a duplicate.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => showMainWindow())
+}
+
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
 
 // In-flight agent runs keyed by app session id, so we can stop them.
 const activeRuns = new Map<string, AbortController>()
@@ -132,6 +159,30 @@ function createWindow(): void {
   mainWindow.on('maximize', () => mainWindow?.webContents.send('window:maximized', true))
   mainWindow.on('unmaximize', () => mainWindow?.webContents.send('window:maximized', false))
 
+  // Close hides to the tray so scheduled routines and in-flight runs keep going.
+  // A real exit happens via the tray's Quit item or an OS-initiated quit.
+  mainWindow.on('close', (e) => {
+    if (isQuitting || !hasTray) return
+    e.preventDefault()
+    mainWindow?.hide()
+    if (!trayHintShown && Notification.isSupported()) {
+      trayHintShown = true
+      new Notification({
+        title: 'Claude GUI is still running',
+        body: 'The app keeps running in the system tray. Use the tray icon to reopen or quit.'
+      }).show()
+    }
+  })
+  mainWindow.on('closed', () => {
+    mainWindow = null
+    // Without a tray, a closed main window means exit (the hidden overlay window
+    // would otherwise keep the app alive and window-all-closed would never fire).
+    if (!hasTray && process.platform !== 'darwin') {
+      isQuitting = true
+      app.quit()
+    }
+  })
+
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -153,18 +204,76 @@ app.whenReady().then(() => {
   startScheduler()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
   createWindow()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+  createOverlayWindow()
+  const shortcut = registerOverlayShortcut()
+  hasTray = !!createTray(
+    {
+      onShowMain: showMainWindow,
+      onNewChat: () => {
+        showMainWindow()
+        sendToMainWindow('app:new-chat')
+      },
+      onToggleOverlay: toggleOverlay,
+      onQuit: () => {
+        isQuitting = true
+        app.quit()
+      }
+    },
+    shortcut
+  )
+  app.on('activate', () => showMainWindow())
 })
 
 app.on('window-all-closed', () => {
   killAllTerminals()
-  if (process.platform !== 'darwin') app.quit()
+  if (!hasTray && process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
   killAllTerminals()
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+})
+
+// ─── Quick-launcher overlay IPC ────────────────────────────────────────────────
+
+// Deliver an event to the main window, tolerating the (startup/reload) edge where
+// the renderer hasn't finished loading yet.
+function sendToMainWindow(channel: string, payload?: unknown): void {
+  const target = mainWindow
+  if (!target || target.isDestroyed()) return
+  if (target.webContents.isLoading()) {
+    target.webContents.once('did-finish-load', () => {
+      // Small grace period so the React app has mounted its IPC listeners.
+      setTimeout(() => {
+        if (!target.isDestroyed()) target.webContents.send(channel, payload)
+      }, 400)
+    })
+  } else {
+    target.webContents.send(channel, payload)
+  }
+}
+
+ipcMain.on('overlay:hide', () => hideOverlay())
+ipcMain.handle('overlay:shortcut', () => overlayShortcut())
+ipcMain.on('overlay:open-main', () => {
+  hideOverlay()
+  showMainWindow()
+})
+ipcMain.on('overlay:submit', (_, payload: { prompt: string; quick?: boolean }) => {
+  if (!payload || typeof payload.prompt !== 'string' || !payload.prompt.trim()) return
+  hideOverlay()
+  showMainWindow()
+  sendToMainWindow('app:overlay-prompt', { prompt: payload.prompt, quick: !!payload.quick })
+})
+ipcMain.on('overlay:open-session', (_, sessionId: string) => {
+  if (typeof sessionId !== 'string' || !sessionId) return
+  hideOverlay()
+  showMainWindow()
+  sendToMainWindow('app:open-session', sessionId)
 })
 
 // ─── Notifications ────────────────────────────────────────────────────────────

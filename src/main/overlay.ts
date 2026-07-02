@@ -1,0 +1,103 @@
+import { BrowserWindow, globalShortcut, screen } from 'electron'
+import { join } from 'path'
+import { is } from '@electron-toolkit/utils'
+
+// Quick-launcher overlay: a hidden, always-on-top acrylic window summoned with a
+// global shortcut from anywhere in the OS. It dismisses on blur/Esc like a native
+// flyout and hands prompts off to the main window (see overlay:* IPC in index.ts).
+
+const OVERLAY_WIDTH = 660
+const OVERLAY_HEIGHT = 440
+
+let overlayWindow: BrowserWindow | null = null
+let registeredShortcut = ''
+
+/** The accelerator that actually got registered ('' if none was available). */
+export function overlayShortcut(): string {
+  return registeredShortcut
+}
+
+export function createOverlayWindow(): BrowserWindow {
+  overlayWindow = new BrowserWindow({
+    width: OVERLAY_WIDTH,
+    height: OVERLAY_HEIGHT,
+    show: false,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    backgroundMaterial: 'acrylic',
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true
+    }
+  })
+  // 'screen-saver' level floats above fullscreen apps, not just normal windows.
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+
+  // Dismiss like a native flyout when focus moves elsewhere. Skipped while devtools
+  // are open, since opening them blurs the window and would instantly hide it.
+  overlayWindow.on('blur', () => {
+    if (!overlayWindow || overlayWindow.webContents.isDevToolsOpened()) return
+    overlayWindow.hide()
+  })
+  overlayWindow.on('closed', () => {
+    overlayWindow = null
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    overlayWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/overlay.html`)
+  } else {
+    overlayWindow.loadFile(join(__dirname, '../renderer/overlay.html'))
+  }
+  return overlayWindow
+}
+
+export function hideOverlay(): void {
+  if (overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible()) {
+    overlayWindow.hide()
+  }
+}
+
+export function toggleOverlay(): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) createOverlayWindow()
+  const win = overlayWindow!
+  if (win.isVisible()) {
+    win.hide()
+    return
+  }
+  // Launcher placement: horizontally centered in the upper third of whichever
+  // display the cursor is on (multi-monitor friendly).
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+  const { x, y, width, height } = display.workArea
+  win.setPosition(
+    Math.round(x + (width - OVERLAY_WIDTH) / 2),
+    Math.round(y + height * 0.18)
+  )
+  win.show()
+  win.focus()
+  // Tells the overlay renderer to reset + refocus its input and refresh data.
+  win.webContents.send('overlay:shown')
+}
+
+export function registerOverlayShortcut(): string {
+  // Alt+Space is the natural launcher key, but another launcher (e.g. PowerToys Run)
+  // may already own it — fall through to a less contested chord.
+  for (const accelerator of ['Alt+Space', 'Ctrl+Shift+Space']) {
+    try {
+      if (globalShortcut.register(accelerator, toggleOverlay)) {
+        registeredShortcut = accelerator
+        return accelerator
+      }
+    } catch {
+      // invalid/blocked accelerator — try the next one
+    }
+  }
+  registeredShortcut = ''
+  return ''
+}

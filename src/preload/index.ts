@@ -5,6 +5,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
   setZoom: (factor: number) => ipcRenderer.invoke('app:set-zoom', factor),
 
+  // Tray / quick-launcher overlay — events received by the MAIN window
+  onNewChat: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('app:new-chat', fn)
+    return () => ipcRenderer.removeListener('app:new-chat', fn)
+  },
+  onOverlayPrompt: (cb: (payload: { prompt: string; quick?: boolean }) => void) => {
+    const fn = (_: unknown, payload: { prompt: string; quick?: boolean }) => cb(payload)
+    ipcRenderer.on('app:overlay-prompt', fn)
+    return () => ipcRenderer.removeListener('app:overlay-prompt', fn)
+  },
+  onOpenSession: (cb: (sessionId: string) => void) => {
+    const fn = (_: unknown, sessionId: string) => cb(sessionId)
+    ipcRenderer.on('app:open-session', fn)
+    return () => ipcRenderer.removeListener('app:open-session', fn)
+  },
+
+  // Quick-launcher overlay — calls made by the OVERLAY window
+  overlaySubmit: (payload: { prompt: string; quick?: boolean }) =>
+    ipcRenderer.send('overlay:submit', payload),
+  overlayOpenSession: (sessionId: string) => ipcRenderer.send('overlay:open-session', sessionId),
+  overlayOpenMain: () => ipcRenderer.send('overlay:open-main'),
+  overlayHide: () => ipcRenderer.send('overlay:hide'),
+  overlayShortcut: () => ipcRenderer.invoke('overlay:shortcut'),
+  onOverlayShown: (cb: () => void) => {
+    const fn = () => cb()
+    ipcRenderer.on('overlay:shown', fn)
+    return () => ipcRenderer.removeListener('overlay:shown', fn)
+  },
+
   // Window controls (custom frameless title bar)
   windowMinimize: () => ipcRenderer.invoke('window:minimize'),
   windowMaximizeToggle: () => ipcRenderer.invoke('window:maximize-toggle'),
