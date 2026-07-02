@@ -234,6 +234,25 @@ export interface UsageReport {
   generatedAt: number
 }
 
+// Real plan usage from Anthropic's (undocumented) oauth/usage endpoint — the same
+// method community HUDs use. See src/main/plan-usage.ts.
+export interface PlanWindow {
+  key: string
+  label: string
+  /** 0–100. */
+  utilization: number
+  resetsAt?: string
+}
+
+export interface PlanUsage {
+  status: 'ok' | 'no-credentials' | 'unauthorized' | 'error'
+  error?: string
+  subscriptionType?: string
+  rateLimitTier?: string
+  fetchedAt: number
+  windows: PlanWindow[]
+}
+
 export interface McpServer {
   name: string
   scope: 'global' | 'project'
@@ -668,6 +687,7 @@ declare global {
         sessionId: string
       ) => Promise<CCTranscriptMessage[]>
       ccUsage: (force?: boolean) => Promise<UsageReport>
+      ccPlanUsage: (force?: boolean) => Promise<PlanUsage>
       ccSearch: (query: string) => Promise<SearchHit[]>
 
       // MCP

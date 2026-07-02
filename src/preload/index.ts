@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ccReadSession: (sourceId: string, encodedDir: string, sessionId: string) =>
     ipcRenderer.invoke('cc:read-session', sourceId, encodedDir, sessionId),
   ccUsage: (force?: boolean) => ipcRenderer.invoke('cc:usage', force),
+  ccPlanUsage: (force?: boolean) => ipcRenderer.invoke('cc:plan-usage', force),
   ccSearch: (query: string) => ipcRenderer.invoke('cc:search', query),
 
   // MCP

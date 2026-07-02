@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { UsageReport, UsageEntry, SourceInfo, UsageLimits } from '../types'
+import { UsageReport, UsageEntry, SourceInfo, UsageLimits, PlanUsage } from '../types'
 import './views.css'
 import './UsageView.css'
 
@@ -19,6 +19,37 @@ const RANGES: { key: RangeKey; label: string; days: number | null }[] = [
   { key: 'year', label: 'Last year', days: 365 },
   { key: 'all', label: 'All time', days: null }
 ]
+
+// "resets in 3h 12m" / "resets Mon 14:00" for plan-window reset timestamps.
+function fmtReset(iso?: string): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (!isFinite(t)) return ''
+  const mins = Math.round((t - Date.now()) / 60000)
+  if (mins <= 0) return 'resets soon'
+  if (mins < 60) return `resets in ${mins}m`
+  if (mins < 48 * 60) return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
+  const d = new Date(t)
+  return `resets ${d.toLocaleDateString([], { weekday: 'short' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+}
+
+function PlanRow({ label, utilization, resetsAt }: { label: string; utilization: number; resetsAt?: string }) {
+  const level = utilization >= 90 ? 'danger' : utilization >= 70 ? 'warn' : 'ok'
+  return (
+    <div className="limit-row">
+      <div className="limit-head">
+        <span className="limit-label">{label}</span>
+        <span className="limit-figs">
+          {resetsAt && <span className="limit-cap">{fmtReset(resetsAt)}</span>}
+          <span className={`limit-pct ${level}`}>{utilization.toFixed(0)}% used</span>
+        </span>
+      </div>
+      <div className="limit-track">
+        <div className={`limit-fill ${level}`} style={{ width: `${Math.min(100, utilization)}%` }} />
+      </div>
+    </div>
+  )
+}
 
 function WindowRow({
   label,
@@ -66,6 +97,7 @@ export default function UsageView() {
   const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 10, sessionUsd: 25, weekUsd: 150 })
   const [editingLimits, setEditingLimits] = useState(false)
   const [detailKey, setDetailKey] = useState<string | null>(null)
+  const [plan, setPlan] = useState<PlanUsage | null>(null)
 
   const apply = (rep: UsageReport, srcs: SourceInfo[], lim: UsageLimits) => {
     setReport(rep)
@@ -77,6 +109,7 @@ export default function UsageView() {
   // Recompute in the background (no full-screen spinner) and update in place.
   const refresh = async () => {
     setRefreshing(true)
+    window.electronAPI.ccPlanUsage(true).then(setPlan).catch(() => {})
     const [rep, srcs, cfg] = await Promise.all([
       window.electronAPI.ccUsage(true),
       window.electronAPI.ccSources(),
@@ -89,6 +122,7 @@ export default function UsageView() {
   useEffect(() => {
     let cancelled = false
     const init = async () => {
+      window.electronAPI.ccPlanUsage(false).then((p) => { if (!cancelled) setPlan(p) }).catch(() => {})
       // Paint instantly from cache…
       const [rep, srcs, cfg] = await Promise.all([
         window.electronAPI.ccUsage(false),
@@ -336,6 +370,46 @@ export default function UsageView() {
       </div>
 
       <div className="view-scroll">
+        {/* Real plan usage — live from Anthropic via the Claude Code OAuth token. */}
+        {plan && (
+          <div className="usage-section">
+            <h2>
+              Plan usage
+              {plan.subscriptionType && (
+                <span className="plan-pill">{plan.subscriptionType}{plan.rateLimitTier ? ` · ${plan.rateLimitTier}` : ''}</span>
+              )}
+            </h2>
+            {plan.status === 'ok' && plan.windows.length > 0 && (
+              <div className="limits-grid">
+                {plan.windows.map((w) => (
+                  <PlanRow key={w.key} label={w.label} utilization={w.utilization} resetsAt={w.resetsAt} />
+                ))}
+              </div>
+            )}
+            {plan.status === 'ok' && plan.windows.length === 0 && (
+              <p className="field-hint">The usage endpoint responded but reported no rate-limit windows (API keys and some plans don't expose them).</p>
+            )}
+            {plan.status === 'unauthorized' && (
+              <p className="field-hint">
+                The Claude Code token has expired — it refreshes automatically the next time a
+                Claude run executes (here or in the CLI). Then hit Refresh.
+              </p>
+            )}
+            {plan.status === 'no-credentials' && (
+              <p className="field-hint">No Claude Code login found — log in to see real plan usage.</p>
+            )}
+            {plan.status === 'error' && (
+              <p className="field-hint">Couldn't reach the usage endpoint ({plan.error ?? 'unknown error'}).</p>
+            )}
+            {plan.status === 'ok' && (
+              <p className="field-hint">
+                <strong>Live from Anthropic</strong> — the same numbers as Claude → Settings → Usage
+                (fetched via the Claude Code login; unofficial endpoint, cached 5 min).
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Recent activity windows */}
         <div className="usage-section">
           <h2>

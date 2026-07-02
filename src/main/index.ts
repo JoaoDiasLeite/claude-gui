@@ -79,6 +79,7 @@ import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from '
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow } from './updater'
+import { getPlanUsage } from './plan-usage'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -855,6 +856,7 @@ ipcMain.handle('cc:read-session', (_, sourceId: string, encodedDir: string, sess
   readSession(sourceId, encodedDir, sessionId)
 )
 ipcMain.handle('cc:usage', (_, force = false) => getUsage(force))
+ipcMain.handle('cc:plan-usage', (_, force = false) => getPlanUsage(!!force))
 ipcMain.handle('cc:search', (_, query: string) => searchSessions(query))
 
 // ─── MCP ────────────────────────────────────────────────────────────────────
