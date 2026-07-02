@@ -147,6 +147,12 @@ export function listAccountStatus(): { accounts: CCAccountStatus[]; defaultAccou
   }
 }
 
+/** All known Claude config dirs: the machine default (null) plus each managed
+ *  account's own dir. Used to hunt for a valid OAuth token (see plan-usage.ts). */
+export function listConfigDirs(): (string | null)[] {
+  return [null, ...state.accounts.map((a) => a.configDir).filter((d): d is string => !!d)]
+}
+
 /** Config dir to inject as CLAUDE_CONFIG_DIR for a run, or null for the machine default. */
 export function accountConfigDir(accountId?: string): string | null {
   if (!accountId) return null

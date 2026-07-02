@@ -1,6 +1,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { listConfigDirs } from './accounts'
 
 // Real plan usage straight from Anthropic, the way community HUDs (claude-hud,
 // claudeline, ccusage-style statuslines) do it: GET api.anthropic.com/api/oauth/usage
@@ -66,25 +67,47 @@ function failure(partial: Omit<PlanUsage, 'fetchedAt' | 'windows'>): PlanUsage {
 
 interface OauthCreds {
   accessToken: string
+  expiresAt?: number
   subscriptionType?: string
   rateLimitTier?: string
 }
 
-function readCredentials(): OauthCreds | null {
+function readCredentialsFile(dir: string): OauthCreds | null {
   try {
-    const p = path.join(os.homedir(), '.claude', '.credentials.json')
+    const p = path.join(dir, '.credentials.json')
     if (!fs.existsSync(p)) return null
     const raw = JSON.parse(fs.readFileSync(p, 'utf-8')) as Record<string, unknown>
     const o = (raw.claudeAiOauth ?? raw) as Record<string, unknown>
     if (typeof o?.accessToken !== 'string' || !o.accessToken) return null
     return {
       accessToken: o.accessToken,
+      expiresAt: typeof o.expiresAt === 'number' ? o.expiresAt : undefined,
       subscriptionType: typeof o.subscriptionType === 'string' ? o.subscriptionType : undefined,
       rateLimitTier: typeof o.rateLimitTier === 'string' ? o.rateLimitTier : undefined
     }
   } catch {
     return null
   }
+}
+
+/** Hunt across the machine default + every managed account's config dir for the
+ *  freshest token. Chats run under app-managed accounts refresh THEIR credentials,
+ *  not ~/.claude's — so only checking the default dir misses valid logins. */
+function bestCredentials(): { creds: OauthCreds; expired: boolean } | null {
+  const dirs = new Set(listConfigDirs().map((d) => d ?? path.join(os.homedir(), '.claude')))
+  const all: OauthCreds[] = []
+  for (const d of dirs) {
+    const c = readCredentialsFile(d)
+    if (c) all.push(c)
+  }
+  if (all.length === 0) return null
+  // 60s skew: a token about to lapse mid-request counts as expired.
+  const cutoff = Date.now() + 60_000
+  const freshest = (arr: OauthCreds[]) =>
+    [...arr].sort((a, b) => (b.expiresAt ?? 0) - (a.expiresAt ?? 0))[0]
+  const valid = all.filter((c) => !c.expiresAt || c.expiresAt > cutoff)
+  if (valid.length > 0) return { creds: freshest(valid), expired: false }
+  return { creds: freshest(all), expired: true }
 }
 
 function extractWindows(body: Record<string, unknown>): PlanWindow[] {
@@ -112,29 +135,44 @@ function extractWindows(body: Record<string, unknown>): PlanWindow[] {
   return windows
 }
 
+// When the endpoint said 429 with a Retry-After, don't touch it again before this.
+let retryAt = 0
+
 export async function getPlanUsage(force = false): Promise<PlanUsage> {
   if (cache) {
     const age = Date.now() - cache.fetchedAt
-    // Error backoff wins even over a forced refresh — the endpoint 429s readily,
-    // and hammering it just extends the lockout.
+    // Backoff wins even over a forced refresh — the endpoint 429s readily (and
+    // escalates: repeated bad calls earn multi-minute Retry-After lockouts).
+    if (cache.status === 'rate-limited' && Date.now() < retryAt) return cache
     if (cache.status !== 'ok' && age < ERROR_TTL_MS) return cache
     if (cache.status === 'ok' && !force && age < CACHE_TTL_MS) return cache
   }
 
-  const creds = readCredentials()
-  if (!creds) return failure({ status: 'no-credentials' })
+  const found = bestCredentials()
+  if (!found) return failure({ status: 'no-credentials' })
+  const { creds, expired } = found
+  if (expired) {
+    // Never spend a request on a token we can already see is dead — repeated
+    // expired-token calls are what trigger the edge-level 429 lockout.
+    return failure({
+      status: 'unauthorized',
+      subscriptionType: creds.subscriptionType,
+      rateLimitTier: creds.rateLimitTier
+    })
+  }
 
   try {
     const res = await fetch(ENDPOINT, {
       headers: {
         Authorization: `Bearer ${creds.accessToken}`,
-        'anthropic-beta': 'oauth-2025-04-20'
+        'anthropic-beta': 'oauth-2025-04-20',
+        'User-Agent': 'claude-gui'
       }
     })
     if (res.status === 401 || res.status === 403) {
-      // Token expired — Claude Code rotates it on its next run; nothing to do here.
-      // Deliberately NOT refreshing with the refresh token: rotating it out from
-      // under Claude Code could invalidate the CLI's session.
+      // Token rejected despite a future expiry — Claude Code rotates it on its next
+      // run; nothing to do here. Deliberately NOT refreshing with the refresh token:
+      // rotating it out from under Claude Code could invalidate the CLI's session.
       return failure({
         status: 'unauthorized',
         subscriptionType: creds.subscriptionType,
@@ -142,6 +180,9 @@ export async function getPlanUsage(force = false): Promise<PlanUsage> {
       })
     }
     if (res.status === 429) {
+      const ra = Number(res.headers.get('retry-after'))
+      retryAt =
+        Date.now() + Math.min(isFinite(ra) && ra > 0 ? ra * 1000 : ERROR_TTL_MS, 3600_000)
       return failure({ status: 'rate-limited', error: 'HTTP 429' })
     }
     if (!res.ok) {

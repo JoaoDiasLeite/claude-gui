@@ -391,8 +391,8 @@ export default function UsageView() {
             )}
             {plan.status === 'unauthorized' && (
               <p className="field-hint">
-                The Claude Code token has expired — it refreshes automatically the next time a
-                Claude run executes (here or in the CLI). Then hit Refresh.
+                No valid Claude Code token found across your logins — tokens refresh automatically
+                the next time a Claude run executes (a chat here or the CLI). Then hit Refresh.
               </p>
             )}
             {plan.status === 'no-credentials' && (
