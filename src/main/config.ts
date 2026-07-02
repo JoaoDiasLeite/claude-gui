@@ -40,10 +40,19 @@ export interface UiPrefs {
   onboarded: boolean
 }
 
+export interface SystemPrefs {
+  openAtLogin: boolean
+  startMinimized: boolean
+  closeToTray: boolean
+  /** Preferred quick-launcher accelerator. '' = automatic (Alt+Space with fallback). */
+  overlayShortcut: string
+}
+
 interface AppConfig {
   defaultModel: string
   limits: UsageLimits
   ui: UiPrefs
+  system: SystemPrefs
 }
 
 const configPath = path.join(app.getPath('userData'), 'config.json')
@@ -54,7 +63,8 @@ let config: AppConfig = {
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
-  ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false }
+  ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false },
+  system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '' }
 }
 
 export function loadConfig(): void {
@@ -65,7 +75,9 @@ export function loadConfig(): void {
         ...config,
         ...loaded,
         limits: { ...config.limits, ...(loaded.limits ?? {}) },
-        ui: { ...config.ui, ...(loaded.ui ?? {}) }
+        ui: { ...config.ui, ...(loaded.ui ?? {}) },
+        // Backfill for configs saved by older versions that predate `system`.
+        system: { ...config.system, ...(loaded.system ?? {}) }
       }
     }
   } catch {
@@ -96,6 +108,12 @@ export function setUiPrefs(prefs: Partial<UiPrefs>): UiPrefs {
   config.ui = { ...config.ui, ...prefs }
   saveConfig()
   return config.ui
+}
+
+export function setSystemPrefs(prefs: Partial<SystemPrefs>): SystemPrefs {
+  config.system = { ...config.system, ...prefs }
+  saveConfig()
+  return config.system
 }
 
 // ─── Claude Code's own settings.json (effort, model) ──────────────────────────

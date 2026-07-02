@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDefaultModel: (modelId: string) => ipcRenderer.invoke('config:set-default-model', modelId),
   setLimits: (limits: unknown) => ipcRenderer.invoke('config:set-limits', limits),
   setUiPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-ui', prefs),
+  setSystemPrefs: (prefs: unknown) => ipcRenderer.invoke('config:set-system', prefs),
 
   // Claude Code data
   ccSources: () => ipcRenderer.invoke('cc:sources'),

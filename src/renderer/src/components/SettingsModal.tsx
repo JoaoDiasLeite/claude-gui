@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { AuthStatus, AuthMode, ModelInfo, UiPrefs } from '../types'
+import { useEffect, useRef, useState } from 'react'
+import { AuthStatus, AuthMode, ModelInfo, UiPrefs, SystemPrefs } from '../types'
 import ModelPicker from './ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
 import PermissionsModal from './PermissionsModal'
@@ -38,6 +38,39 @@ export default function SettingsModal({
   const [showHooks, setShowHooks] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
+
+  // System integration prefs live in config.ts alongside `ui`, but App.tsx doesn't
+  // currently fetch/thread them through — fetch them here on mount instead, so
+  // App.tsx's props stay untouched. `registeredShortcut` reflects what the OS
+  // actually granted (may differ from the requested accelerator).
+  const [system, setSystem] = useState<SystemPrefs | null>(null)
+  const [registeredShortcut, setRegisteredShortcut] = useState('')
+  const [systemBusy, setSystemBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.getConfig().then((cfg) => {
+      if (cancelled) return
+      setSystem(cfg.system)
+    })
+    window.electronAPI.overlayShortcut().then((s) => {
+      if (!cancelled) setRegisteredShortcut(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const updateSystem = async (patch: Partial<SystemPrefs>) => {
+    setSystemBusy(true)
+    try {
+      const res = await window.electronAPI.setSystemPrefs(patch)
+      setSystem(res.system)
+      setRegisteredShortcut(res.registeredShortcut)
+    } finally {
+      setSystemBusy(false)
+    }
+  }
 
   const claudeDetected = auth?.claudeCodeDetected ?? false
   const hasApiKey = auth?.hasApiKey ?? false
@@ -286,6 +319,75 @@ export default function SettingsModal({
               </span>
             </div>
           </div>
+
+          {system && (
+            <div className="form-group">
+              <label>System</label>
+              <div className="appearance-grid">
+                <div className="seg-field">
+                  <span>Start with Windows</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={system.openAtLogin}
+                      disabled={systemBusy}
+                      onChange={(e) => updateSystem({ openAtLogin: e.target.checked })}
+                    />
+                    <span className="toggle-track"><span className="toggle-thumb" /></span>
+                  </label>
+                </div>
+                <div className="seg-field">
+                  <span>Start minimized to tray</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={system.startMinimized}
+                      disabled={systemBusy}
+                      onChange={(e) => updateSystem({ startMinimized: e.target.checked })}
+                    />
+                    <span className="toggle-track"><span className="toggle-thumb" /></span>
+                  </label>
+                </div>
+                <div className="seg-field">
+                  <span>Close button hides to tray</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={system.closeToTray}
+                      disabled={systemBusy}
+                      onChange={(e) => updateSystem({ closeToTray: e.target.checked })}
+                    />
+                    <span className="toggle-track"><span className="toggle-thumb" /></span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="shortcut-field">
+                <div className="seg-field">
+                  <span>Quick launcher shortcut</span>
+                  <select
+                    className="shortcut-select"
+                    value={system.overlayShortcut}
+                    disabled={systemBusy}
+                    onChange={(e) => updateSystem({ overlayShortcut: e.target.value })}
+                  >
+                    <option value="">Auto (Alt+Space)</option>
+                    <option value="Alt+Space">Alt+Space</option>
+                    <option value="Ctrl+Shift+Space">Ctrl+Shift+Space</option>
+                    <option value="Ctrl+Alt+Space">Ctrl+Alt+Space</option>
+                    <option value="Ctrl+Alt+K">Ctrl+Alt+K</option>
+                  </select>
+                </div>
+                {registeredShortcut ? (
+                  <p className="field-hint shortcut-status">Registered: {registeredShortcut}</p>
+                ) : (
+                  <p className="field-hint shortcut-status shortcut-status-error">
+                    Could not register a quick-launcher shortcut — it may be in use by another app.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">

@@ -15,7 +15,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, MODELS, UsageLimits, UiPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, MODELS, UsageLimits, UiPrefs, SystemPrefs } from './config'
 import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
 import {
   listMcpServers,
@@ -73,11 +73,11 @@ import {
   startClaudeInTerminal,
   killAllTerminals
 } from './terminal'
-import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, overlayShortcut } from './overlay'
+import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
 import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
 import { successBadge, errorBadge, approvalBadge } from './badges'
-import { createTray } from './tray'
+import { createTray, updateTrayShortcutLabel } from './tray'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -203,7 +203,16 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.on('ready-to-show', () => mainWindow!.show())
+  // Startup visibility: launched with --hidden (e.g. via the "start with Windows" login
+  // item) or the user's "start minimized to tray" preference skips the initial show().
+  // Guard on hasTray too, and fall back to showing after a grace period below, so the
+  // app can never end up stranded with no window and no tray to bring one back.
+  const startHidden =
+    (process.argv.includes('--hidden') || getConfig().system.startMinimized)
+  mainWindow.on('ready-to-show', () => {
+    if (startHidden && hasTray) return
+    mainWindow!.show()
+  })
   // Focusing the window means the user is here now: stop flashing and clear the
   // taskbar overlay badge that was cueing a background run's state change.
   mainWindow.on('focus', () => {
@@ -227,7 +236,14 @@ function createWindow(): void {
   // Close hides to the tray so scheduled routines and in-flight runs keep going.
   // A real exit happens via the tray's Quit item or an OS-initiated quit.
   mainWindow.on('close', (e) => {
-    if (isQuitting || !hasTray) return
+    if (isQuitting) return
+    // Close-to-tray only engages when a tray exists AND the user hasn't opted out via
+    // settings. Otherwise treat this like a real quit so the app fully exits instead
+    // of lingering invisibly with no way back in.
+    if (!hasTray || !getConfig().system.closeToTray) {
+      isQuitting = true
+      return
+    }
     e.preventDefault()
     mainWindow?.hide()
     if (!trayHintShown && Notification.isSupported()) {
@@ -240,9 +256,11 @@ function createWindow(): void {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
-    // Without a tray, a closed main window means exit (the hidden overlay window
-    // would otherwise keep the app alive and window-all-closed would never fire).
-    if (!hasTray && process.platform !== 'darwin') {
+    // A closed main window means exit when there's no tray (the hidden aux windows
+    // would otherwise keep the app alive and window-all-closed would never fire) or
+    // when the close handler above already decided this close is a real quit
+    // (close-to-tray disabled in settings).
+    if ((isQuitting || !hasTray) && process.platform !== 'darwin') {
       isQuitting = true
       app.quit()
     }
@@ -272,7 +290,7 @@ app.whenReady().then(() => {
   createOverlayWindow()
   createToastWindow()
   createPillWindow()
-  const shortcut = registerOverlayShortcut()
+  const shortcut = registerOverlayShortcut(getConfig().system.overlayShortcut)
   hasTray = !!createTray(
     {
       onShowMain: showMainWindow,
@@ -288,6 +306,24 @@ app.whenReady().then(() => {
     },
     shortcut
   )
+  // Keep the Windows registry "run at login" entry in sync with config on every
+  // startup (covers the case where it was changed outside this app, or the app
+  // was reinstalled). Skipped in dev — electron.exe as the login target would
+  // pollute the registry with a path that's meaningless outside this checkout.
+  if (!is.dev) {
+    app.setLoginItemSettings({
+      openAtLogin: getConfig().system.openAtLogin,
+      args: ['--hidden']
+    })
+  }
+  // Safety net: if startup visibility logic above skipped show() but the tray
+  // failed to materialize (or is still spinning up), never strand the user with
+  // no window and no tray to bring one back.
+  setTimeout(() => {
+    if (!hasTray && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+  }, 1500)
   app.on('activate', () => showMainWindow())
 })
 
@@ -773,6 +809,27 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
 })
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
 ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
+ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
+  const prevOpenAtLogin = getConfig().system.openAtLogin
+  const prevShortcut = getConfig().system.overlayShortcut
+  const system = setSystemPrefs(prefs)
+
+  // Only touch the registry when the pref actually changed, and never in dev (see
+  // the startup call for why: electron.exe isn't a meaningful login target there).
+  if (!is.dev && prefs.openAtLogin !== undefined && prefs.openAtLogin !== prevOpenAtLogin) {
+    app.setLoginItemSettings({ openAtLogin: system.openAtLogin, args: ['--hidden'] })
+  }
+
+  // Re-register the global shortcut only when it changed, and reflect the winner
+  // (which may differ from what was requested, e.g. if it's already taken) in
+  // both the tray menu label and the response so the UI can show the truth.
+  if (prefs.overlayShortcut !== undefined && prefs.overlayShortcut !== prevShortcut) {
+    const registered = reregisterOverlayShortcut(system.overlayShortcut)
+    updateTrayShortcutLabel(registered)
+  }
+
+  return { system, registeredShortcut: overlayShortcut() }
+})
 ipcMain.handle('config:get-permissions', () => getClaudePermissions())
 ipcMain.handle('config:set-permissions', (_, perms: unknown) => setClaudePermissions(perms))
 ipcMain.handle('config:get-hooks', () => getClaudeHooks())

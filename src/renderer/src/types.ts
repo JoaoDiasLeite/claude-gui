@@ -99,10 +99,19 @@ export interface UiPrefs {
   onboarded: boolean
 }
 
+export interface SystemPrefs {
+  openAtLogin: boolean
+  startMinimized: boolean
+  closeToTray: boolean
+  /** Preferred quick-launcher accelerator. '' = automatic (Alt+Space with fallback). */
+  overlayShortcut: string
+}
+
 export interface AppConfig {
   defaultModel: string
   limits: UsageLimits
   ui: UiPrefs
+  system: SystemPrefs
   claudeSettings: Record<string, unknown>
 }
 
@@ -622,6 +631,9 @@ declare global {
       setDefaultModel: (modelId: string) => Promise<{ defaultModel: string }>
       setLimits: (limits: Partial<UsageLimits>) => Promise<UsageLimits>
       setUiPrefs: (prefs: Partial<UiPrefs>) => Promise<UiPrefs>
+      setSystemPrefs: (
+        prefs: Partial<SystemPrefs>
+      ) => Promise<{ system: SystemPrefs; registeredShortcut: string }>
 
       // Claude Code data
       ccSources: () => Promise<SourceInfo[]>

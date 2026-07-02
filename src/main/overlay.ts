@@ -85,10 +85,18 @@ export function toggleOverlay(): void {
   win.webContents.send('overlay:shown')
 }
 
-export function registerOverlayShortcut(): string {
-  // Alt+Space is the natural launcher key, but another launcher (e.g. PowerToys Run)
-  // may already own it — fall through to a less contested chord.
-  for (const accelerator of ['Alt+Space', 'Ctrl+Shift+Space']) {
+/**
+ * Register the quick-launcher global shortcut. When `preferred` is a non-empty
+ * accelerator (from user settings), try it FIRST; otherwise (and as a fallback
+ * if the preferred one can't be registered) fall through the built-in defaults.
+ * Alt+Space is the natural launcher key, but another launcher (e.g. PowerToys
+ * Run) may already own it — fall through to a less contested chord.
+ */
+export function registerOverlayShortcut(preferred?: string): string {
+  const candidates = [preferred, 'Alt+Space', 'Ctrl+Shift+Space'].filter(
+    (a, i, arr): a is string => !!a && arr.indexOf(a) === i
+  )
+  for (const accelerator of candidates) {
     try {
       if (globalShortcut.register(accelerator, toggleOverlay)) {
         registeredShortcut = accelerator
@@ -100,4 +108,21 @@ export function registerOverlayShortcut(): string {
   }
   registeredShortcut = ''
   return ''
+}
+
+/**
+ * Re-register the overlay shortcut with a new preferred accelerator: unregister
+ * whatever is currently bound (only that one accelerator, so we never clobber
+ * shortcuts owned by other parts of the app), then run registration again.
+ */
+export function reregisterOverlayShortcut(preferred?: string): string {
+  if (registeredShortcut) {
+    try {
+      globalShortcut.unregister(registeredShortcut)
+    } catch {
+      // ignore — best effort
+    }
+    registeredShortcut = ''
+  }
+  return registerOverlayShortcut(preferred)
 }
