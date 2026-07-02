@@ -15,6 +15,11 @@
   border-radius: var(--radius);
   width: 420px;
   max-width: calc(100vw - 40px);
+  /* Clamp to the viewport and let .modal-body scroll — a modal taller than the
+     window (e.g. Settings on a small screen) must never overflow off-screen. */
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
@@ -24,6 +29,7 @@
   justify-content: space-between;
   padding: 18px 20px 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -36,6 +42,8 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .auth-option-group {
