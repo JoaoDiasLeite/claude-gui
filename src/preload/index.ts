@@ -5,6 +5,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notify: (title: string, body: string) => ipcRenderer.invoke('app:notify', { title, body }),
   setZoom: (factor: number) => ipcRenderer.invoke('app:set-zoom', factor),
 
+  // Auto-update
+  updaterState: () => ipcRenderer.invoke('updater:state'),
+  updaterCheck: () => ipcRenderer.invoke('updater:check'),
+  onUpdaterEvent: (cb: (data: unknown) => void) => {
+    const fn = (_: unknown, data: unknown) => cb(data)
+    ipcRenderer.on('updater:event', fn)
+    return () => ipcRenderer.removeListener('updater:event', fn)
+  },
+
   // Tray / quick-launcher overlay — events received by the MAIN window
   onNewChat: (cb: () => void) => {
     const fn = () => cb()

@@ -538,12 +538,35 @@ export interface TerminalExitEvent {
   exitCode: number
 }
 
+// ─── Auto-update ────────────────────────────────────────────────────────────
+
+export type UpdaterStateKind =
+  | 'disabled'
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloaded'
+  | 'error'
+
+export interface UpdaterState {
+  state: UpdaterStateKind
+  version?: string
+  error?: string
+  currentVersion: string
+}
+
 declare global {
   interface Window {
     electronAPI: {
       // Notifications
       notify: (title: string, body: string) => Promise<{ shown: boolean }>
       setZoom: (factor: number) => Promise<number>
+
+      // Auto-update
+      updaterState: () => Promise<UpdaterState>
+      updaterCheck: () => Promise<UpdaterState>
+      onUpdaterEvent: (cb: (data: UpdaterState) => void) => () => void
 
       // Tray / quick-launcher overlay — events received by the MAIN window
       onNewChat: (cb: () => void) => () => void

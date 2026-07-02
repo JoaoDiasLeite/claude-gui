@@ -78,6 +78,7 @@ import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
+import { initUpdater, getUpdaterState, checkNow } from './updater'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -290,6 +291,8 @@ app.whenReady().then(() => {
   createOverlayWindow()
   createToastWindow()
   createPillWindow()
+  // No-op in dev (see updater.ts) — schedules its own delayed first check + interval.
+  initUpdater(sendToMainWindow)
   const shortcut = registerOverlayShortcut(getConfig().system.overlayShortcut)
   hasTray = !!createTray(
     {
@@ -429,6 +432,11 @@ ipcMain.handle('app:notify', (_, payload: { title: string; body: string }) => {
   n.show()
   return { shown: true }
 })
+
+// ─── Auto-update ────────────────────────────────────────────────────────────
+
+ipcMain.handle('updater:state', () => getUpdaterState())
+ipcMain.handle('updater:check', () => checkNow())
 
 // ─── Auth IPC ───────────────────────────────────────────────────────────────
 

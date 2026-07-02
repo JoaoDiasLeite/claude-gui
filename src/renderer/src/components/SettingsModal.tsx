@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AuthStatus, AuthMode, ModelInfo, UiPrefs, SystemPrefs } from '../types'
+import { AuthStatus, AuthMode, ModelInfo, UiPrefs, SystemPrefs, UpdaterState } from '../types'
 import ModelPicker from './ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
 import PermissionsModal from './PermissionsModal'
@@ -69,6 +69,56 @@ export default function SettingsModal({
       setRegisteredShortcut(res.registeredShortcut)
     } finally {
       setSystemBusy(false)
+    }
+  }
+
+  // About / auto-update: fetch the current state on mount, then subscribe to
+  // 'updater:event' pushes for as long as the modal is open (checks can complete
+  // long after this modal was opened, e.g. the 4-hourly background check).
+  const [updater, setUpdater] = useState<UpdaterState | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.updaterState().then((s) => {
+      if (!cancelled) setUpdater(s)
+    })
+    const off = window.electronAPI.onUpdaterEvent((s) => {
+      if (!cancelled) setUpdater((prev) => ({ ...(prev ?? s), ...s }))
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+
+  const checkForUpdates = async () => {
+    setChecking(true)
+    try {
+      const s = await window.electronAPI.updaterCheck()
+      setUpdater(s)
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const updaterStatusText = (): string => {
+    if (!updater) return ''
+    switch (updater.state) {
+      case 'disabled':
+        return 'Updates are managed manually in dev builds.'
+      case 'checking':
+        return 'Checking…'
+      case 'available':
+        return `Downloading v${updater.version ?? ''}…`
+      case 'not-available':
+        return 'Up to date.'
+      case 'downloaded':
+        return `Update v${updater.version ?? ''} downloaded — restarts to apply.`
+      case 'error':
+        return updater.error || 'Update check failed.'
+      default:
+        return ''
     }
   }
 
@@ -386,6 +436,25 @@ export default function SettingsModal({
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {updater && (
+            <div className="form-group">
+              <label>About</label>
+              <div className="cc-settings-row">
+                <span className="field-hint inline">Claude GUI v{updater.currentVersion}</span>
+                <button
+                  className="btn-secondary small"
+                  onClick={checkForUpdates}
+                  disabled={checking || updater.state === 'disabled' || updater.state === 'checking'}
+                >
+                  Check for updates
+                </button>
+              </div>
+              <p className={`field-hint ${updater.state === 'error' ? 'shortcut-status-error' : ''}`}>
+                {updaterStatusText()}
+              </p>
             </div>
           )}
         </div>
