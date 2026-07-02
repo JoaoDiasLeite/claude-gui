@@ -7,6 +7,10 @@
   justify-content: center;
   z-index: 100;
   backdrop-filter: blur(4px);
+  /* The backdrop covers the frameless window's draggable title bar. Without an
+     explicit no-drag, clicks in that top strip (including a tall modal's header)
+     start a window drag instead of reaching the button/backdrop underneath. */
+  -webkit-app-region: no-drag;
 }
 
 .modal {
