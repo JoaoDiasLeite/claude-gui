@@ -3,15 +3,15 @@
   /* Translucent for the acrylic frost; opaque while maximized (see TitleBar). */
   background: color-mix(in srgb, var(--bg-1) 62%, transparent);
   border-right: 1px solid var(--border);
-}
-.app-shell.maximized .nav-rail {
-  background: linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 88%, var(--bg-0)));
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
   padding: 14px 0 12px;
   -webkit-app-region: drag;
+}
+.app-shell.maximized .nav-rail {
+  background: linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 88%, var(--bg-0)));
 }
 
 .nav-logo {
