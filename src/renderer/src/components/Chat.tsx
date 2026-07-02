@@ -198,7 +198,7 @@ export default function Chat({
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault()
         // Don't accept during IME composition (keyCode 229 is the IME sentinel)
-        if (e.isComposing || e.keyCode === 229) return
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return
         const item = pickerItems[pickerActive]
         if (item) acceptPickerItem(item)
         return
@@ -210,7 +210,7 @@ export default function Chat({
       }
     }
     // Don't send during IME composition
-    if (e.key === 'Enter' && !e.shiftKey && !streaming && !e.isComposing && e.keyCode !== 229) {
+    if (e.key === 'Enter' && !e.shiftKey && !streaming && !e.nativeEvent.isComposing && e.keyCode !== 229) {
       e.preventDefault()
       handleSend()
     }
