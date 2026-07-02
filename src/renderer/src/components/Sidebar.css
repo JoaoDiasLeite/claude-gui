@@ -1,11 +1,15 @@
 .sidebar {
   /* width is set via inline style; flex kept rigid so it doesn't grow/shrink */
-  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  /* Translucent for the acrylic frost; opaque while maximized (see TitleBar). */
+  background: color-mix(in srgb, var(--bg-2) 68%, transparent);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+}
+.app-shell.maximized .sidebar {
+  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
 }
 
 .sidebar-resize-handle {

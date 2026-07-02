@@ -1,6 +1,8 @@
-/* Frameless window shell: titlebar on top, app body below. The OS window is opaque
-   and Win11's DWM rounds it at ~8px; the shell's CSS radius matches that rounding
-   so the painted border hugs the real window edge with no visible slivers. */
+/* Frameless window shell: titlebar on top, app body below. The OS window paints the
+   Win11 acrylic material; the shell is transparent so the frosted glass shows through
+   the translucent chrome (titlebar / nav rail / sidebar) while .main-area stays
+   opaque for readability. DWM rounds material windows at ~8px — the CSS radius
+   matches so the painted border hugs the real window edge. */
 .app-shell {
   position: relative;
   display: flex;
@@ -8,7 +10,7 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: var(--bg-0);
+  background: transparent;
   border-radius: 8px;
   border: 1px solid var(--border-light);
 }

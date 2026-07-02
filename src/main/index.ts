@@ -180,12 +180,6 @@ function ensureDirs(): void {
   if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true })
 }
 
-// Opaque window background matching the current theme, so corner slivers outside
-// the shell's CSS radius (and the pre-paint flash) blend with the app surface.
-function themeBackgroundColor(): string {
-  return getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
-}
-
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -194,15 +188,15 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    // Frameless but OPAQUE: the shell is fully opaque anyway, and Win11's DWM rounds
-    // plain frameless windows reliably. backgroundMaterial is deliberately NOT used
-    // here — material windows permanently lose their rounding/material after a
-    // maximize→restore cycle on Electron 28 (electron/electron#42393, #46753).
-    // The acrylic look lives on in the aux windows (overlay/toast/pill), which
-    // never maximize and so never hit the bug.
+    // Frameless with the Win11 acrylic backdrop: the transparent backgroundColor lets
+    // the OS frosted-glass material show through the chrome surfaces (title bar /
+    // nav rail / sidebar), which paint translucent colors. Safe again on Electron 42 —
+    // the Electron 28 bug where material windows permanently lost their rounding and
+    // material after maximize→restore (electron/electron#42393) is fixed here.
     frame: false,
+    backgroundMaterial: 'acrylic',
     resizable: true,
-    backgroundColor: themeBackgroundColor(),
+    backgroundColor: '#00000000',
     icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -823,15 +817,7 @@ ipcMain.handle('config:set-default-model', (_, modelId: string) => {
   return getConfig()
 })
 ipcMain.handle('config:set-limits', (_, limits: Partial<UsageLimits>) => setLimits(limits))
-ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => {
-  const ui = setUiPrefs(prefs)
-  // Keep the native window background in step with the theme so the corner
-  // slivers outside the CSS radius (and resize pre-paint) stay invisible.
-  if (prefs.theme && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setBackgroundColor(themeBackgroundColor())
-  }
-  return ui
-})
+ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs))
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   const prevOpenAtLogin = getConfig().system.openAtLogin
   const prevShortcut = getConfig().system.overlayShortcut
