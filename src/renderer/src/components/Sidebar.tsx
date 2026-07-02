@@ -151,6 +151,11 @@ export default function Sidebar({
     ? activeAccount.name + (accountDetail ? ` · ${accountDetail}` : ready ? '' : ' · not logged in')
     : authLabel
 
+  // Blank "New chat" drafts (no messages yet) stay out of the list — the Sessions
+  // section only appears once at least one chat has real content. The active draft
+  // is already on screen in the main area, so listing it adds nothing.
+  const visibleSessions = sessions.filter((s) => s.messages.length > 0)
+
   const formatDate = (ts: number) => {
     const d = new Date(ts)
     const now = new Date()
@@ -205,6 +210,7 @@ export default function Sidebar({
 
       <div className="sidebar-content">
         {tab === 'sessions' ? (
+          visibleSessions.length > 0 && (
           <>
             <div className="sidebar-section-header">
               <span>Sessions</span>
@@ -230,7 +236,7 @@ export default function Sidebar({
               </div>
             </div>
             <div className="session-list">
-              {sessions.map((s) => (
+              {visibleSessions.map((s) => (
                 <div
                   key={s.id}
                   className={`session-item ${s.id === activeId ? 'active' : ''}`}
@@ -277,6 +283,7 @@ export default function Sidebar({
               ))}
             </div>
           </>
+          )
         ) : (
           <>
             <div className="sidebar-section-header">
