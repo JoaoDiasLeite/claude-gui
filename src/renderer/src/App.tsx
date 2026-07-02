@@ -151,19 +151,17 @@ export default function App() {
         window.electronAPI.getConfig()
       ])
       await refreshAuth()
-      const accountList = await refreshAccounts()
+      await refreshAccounts()
       setModels(models)
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
       setLimits(config.limits)
       applyUi(config.ui)
+      // No auto-created blank draft: with no saved chats the main area shows the
+      // welcome pane until the user explicitly starts one.
       if (saved.length > 0) {
         setSessions(saved)
         setActiveId(saved[0].id)
-      } else {
-        const s = newSession(undefined, config.defaultModel, accountList.defaultAccountId)
-        setSessions([s])
-        setActiveId(s.id)
       }
     }
     init()
@@ -580,12 +578,8 @@ export default function App() {
     await window.electronAPI.deleteSession(id)
     setSessions((prev) => {
       const next = prev.filter((s) => s.id !== id)
-      if (activeId === id && next.length > 0) setActiveId(next[0].id)
-      else if (next.length === 0) {
-        const s = newSession(undefined, defaultModel, defaultAccountId)
-        setActiveId(s.id)
-        return [s]
-      }
+      // Deleting the last chat lands back on the welcome pane — no auto-draft.
+      if (activeId === id) setActiveId(next.length > 0 ? next[0].id : '')
       return next
     })
   }
@@ -897,6 +891,23 @@ export default function App() {
             activeAccountId={activeSession?.accountId ?? defaultAccountId}
           />
           <div className="main-area">
+            {!activeSession ? (
+              /* No chat open yet: the composer/chat header only appear once the user
+                 explicitly starts or picks a chat. */
+              <div className="welcome-pane">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
+                  <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <h2>How can I help?</h2>
+                <p>Start a new chat, or pick one from the sidebar.</p>
+                <div className="welcome-actions">
+                  <button className="btn-primary" onClick={createSession}>New chat</button>
+                  <button className="welcome-quick" onClick={createQuickChat}>Quick chat (Haiku)</button>
+                </div>
+              </div>
+            ) : (
+            <>
             {budgetBanners.length > 0 && (
               <div className="budget-banner">
                 {budgetBanners.map((msg, i) => (
@@ -947,6 +958,8 @@ export default function App() {
               onToggle={() => setTerminalOpen((v) => !v)}
               onClear={() => setTerminalLines([])}
             />
+            </>
+            )}
           </div>
         </>
       )}
