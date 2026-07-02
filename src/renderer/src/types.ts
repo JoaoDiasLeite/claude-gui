@@ -245,8 +245,10 @@ export interface PlanWindow {
 }
 
 export interface PlanUsage {
-  status: 'ok' | 'no-credentials' | 'unauthorized' | 'error'
+  status: 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
   error?: string
+  /** True when `windows` is carried over from an older successful fetch. */
+  stale?: boolean
   subscriptionType?: string
   rateLimitTier?: string
   fetchedAt: number

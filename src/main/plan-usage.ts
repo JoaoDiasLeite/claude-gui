@@ -18,8 +18,10 @@ export interface PlanWindow {
 }
 
 export interface PlanUsage {
-  status: 'ok' | 'no-credentials' | 'unauthorized' | 'error'
+  status: 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
   error?: string
+  /** True when `windows` is carried over from an older successful fetch. */
+  stale?: boolean
   subscriptionType?: string
   rateLimitTier?: string
   fetchedAt: number
@@ -28,6 +30,11 @@ export interface PlanUsage {
 
 const ENDPOINT = 'https://api.anthropic.com/api/oauth/usage'
 const CACHE_TTL_MS = 5 * 60_000
+// Failed lookups retry sooner than the happy path, but never hammer the endpoint —
+// it 429s readily.
+const ERROR_TTL_MS = 90_000
+// How long a previous good result stays worth showing alongside an error.
+const STALE_OK_MS = 30 * 60_000
 
 // Known window spellings across endpoint revisions / community reports.
 const WINDOW_SHAPES: { key: string; label: string; alts: string[] }[] = [
@@ -38,6 +45,24 @@ const WINDOW_SHAPES: { key: string; label: string; alts: string[] }[] = [
 ]
 
 let cache: PlanUsage | null = null
+// Last successful fetch, kept so transient failures (429s especially) degrade to
+// slightly-old numbers instead of an empty error panel.
+let lastGood: PlanUsage | null = null
+
+// On failure, surface the last good windows (if recent) as stale data with the
+// failure status attached, so the UI can show bars + a hint instead of nothing.
+function failure(partial: Omit<PlanUsage, 'fetchedAt' | 'windows'>): PlanUsage {
+  const carryOver = lastGood && Date.now() - lastGood.fetchedAt < STALE_OK_MS
+  cache = {
+    ...partial,
+    fetchedAt: Date.now(),
+    windows: carryOver ? lastGood!.windows : [],
+    stale: carryOver || undefined,
+    subscriptionType: partial.subscriptionType ?? lastGood?.subscriptionType,
+    rateLimitTier: partial.rateLimitTier ?? lastGood?.rateLimitTier
+  }
+  return cache
+}
 
 interface OauthCreds {
   accessToken: string
@@ -88,13 +113,16 @@ function extractWindows(body: Record<string, unknown>): PlanWindow[] {
 }
 
 export async function getPlanUsage(force = false): Promise<PlanUsage> {
-  if (!force && cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) return cache
+  if (cache) {
+    const age = Date.now() - cache.fetchedAt
+    // Error backoff wins even over a forced refresh — the endpoint 429s readily,
+    // and hammering it just extends the lockout.
+    if (cache.status !== 'ok' && age < ERROR_TTL_MS) return cache
+    if (cache.status === 'ok' && !force && age < CACHE_TTL_MS) return cache
+  }
 
   const creds = readCredentials()
-  if (!creds) {
-    cache = { status: 'no-credentials', fetchedAt: Date.now(), windows: [] }
-    return cache
-  }
+  if (!creds) return failure({ status: 'no-credentials' })
 
   try {
     const res = await fetch(ENDPOINT, {
@@ -107,21 +135,20 @@ export async function getPlanUsage(force = false): Promise<PlanUsage> {
       // Token expired — Claude Code rotates it on its next run; nothing to do here.
       // Deliberately NOT refreshing with the refresh token: rotating it out from
       // under Claude Code could invalidate the CLI's session.
-      cache = {
+      return failure({
         status: 'unauthorized',
-        fetchedAt: Date.now(),
-        windows: [],
         subscriptionType: creds.subscriptionType,
         rateLimitTier: creds.rateLimitTier
-      }
-      return cache
+      })
+    }
+    if (res.status === 429) {
+      return failure({ status: 'rate-limited', error: 'HTTP 429' })
     }
     if (!res.ok) {
-      cache = { status: 'error', error: `HTTP ${res.status}`, fetchedAt: Date.now(), windows: [] }
-      return cache
+      return failure({ status: 'error', error: `HTTP ${res.status}` })
     }
     const body = (await res.json()) as Record<string, unknown>
-    cache = {
+    cache = lastGood = {
       status: 'ok',
       fetchedAt: Date.now(),
       windows: extractWindows(body),
@@ -130,12 +157,9 @@ export async function getPlanUsage(force = false): Promise<PlanUsage> {
     }
     return cache
   } catch (err) {
-    cache = {
+    return failure({
       status: 'error',
-      error: err instanceof Error ? err.message : String(err),
-      fetchedAt: Date.now(),
-      windows: []
-    }
-    return cache
+      error: err instanceof Error ? err.message : String(err)
+    })
   }
 }

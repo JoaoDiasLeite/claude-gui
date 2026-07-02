@@ -379,7 +379,7 @@ export default function UsageView() {
                 <span className="plan-pill">{plan.subscriptionType}{plan.rateLimitTier ? ` · ${plan.rateLimitTier}` : ''}</span>
               )}
             </h2>
-            {plan.status === 'ok' && plan.windows.length > 0 && (
+            {plan.windows.length > 0 && (
               <div className="limits-grid">
                 {plan.windows.map((w) => (
                   <PlanRow key={w.key} label={w.label} utilization={w.utilization} resetsAt={w.resetsAt} />
@@ -398,10 +398,19 @@ export default function UsageView() {
             {plan.status === 'no-credentials' && (
               <p className="field-hint">No Claude Code login found — log in to see real plan usage.</p>
             )}
-            {plan.status === 'error' && (
-              <p className="field-hint">Couldn't reach the usage endpoint ({plan.error ?? 'unknown error'}).</p>
+            {plan.status === 'rate-limited' && (
+              <p className="field-hint">
+                Anthropic is rate-limiting the usage endpoint right now
+                {plan.stale ? ' — showing the last fetched numbers.' : ' — it retries automatically in a couple of minutes.'}
+              </p>
             )}
-            {plan.status === 'ok' && (
+            {plan.status === 'error' && (
+              <p className="field-hint">
+                Couldn't reach the usage endpoint ({plan.error ?? 'unknown error'})
+                {plan.stale ? ' — showing the last fetched numbers.' : '.'}
+              </p>
+            )}
+            {plan.status === 'ok' && plan.windows.length > 0 && (
               <p className="field-hint">
                 <strong>Live from Anthropic</strong> — the same numbers as Claude → Settings → Usage
                 (fetched via the Claude Code login; unofficial endpoint, cached 5 min).
