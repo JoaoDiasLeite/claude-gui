@@ -20,16 +20,17 @@
 .model-picker.compact .model-picker-btn { padding: 4px 8px; font-size: 12px; }
 
 .model-picker-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  /* Positioning (fixed + viewport coords) comes inline from the component — the
+     menu is portaled to <body> so scrollable ancestors can't clip it. z-index
+     must beat the modal backdrop (100) since the portal escapes the modal DOM. */
   min-width: 240px;
   background: var(--bg-2);
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   padding: 4px;
-  z-index: 50;
+  z-index: 200;
+  -webkit-app-region: no-drag;
 }
 
 .model-picker-item {
