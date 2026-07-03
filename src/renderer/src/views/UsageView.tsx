@@ -66,7 +66,7 @@ function AccountPlanSection({ acc, showHeader }: { acc: AccountPlanUsage; showHe
               {acc.rateLimitTier ? ` · ${acc.rateLimitTier}` : ''}
             </span>
           )}
-          {acc.envs && acc.envs.length > 1 && (
+          {acc.envs && acc.envs.length > 0 && (
             <span className="plan-account-envs" title="Environments this account is logged into">
               {acc.envs.join(' · ')}
             </span>
@@ -252,14 +252,17 @@ export default function UsageView() {
     return chips
   }, [planReport, sources])
 
-  // Which usage sources belong to the selected account: email match first, env-name
-  // match as fallback for logins whose identity file couldn't be read.
+  // Which usage sources belong to the selected account: email match first. The env-name
+  // fallback only applies to sources WITHOUT their own identity — otherwise an account
+  // whose managed login lives locally would wrongly swallow another account's Local
+  // source (e.g. Personal grabbing Work's ~/.claude projects).
   const sourcesForAccount = (key: string): Set<string> => {
     const chip = accountChips.find((c) => c.key === key)
     const ids = new Set<string>()
     for (const s of sources) {
       if (chip?.email && s.account?.email === chip.email) ids.add(s.id)
-      else if (chip?.envs?.includes(s.kind === 'wsl' ? s.label : 'Local')) ids.add(s.id)
+      else if (!s.account?.email && chip?.envs?.includes(s.kind === 'wsl' ? s.label : 'Local'))
+        ids.add(s.id)
     }
     return ids
   }
@@ -521,10 +524,19 @@ export default function UsageView() {
             <div className="usage-section">
               <h2>
                 Plan usage
-                {single?.subscriptionType && (
-                  <span className="plan-pill">
-                    {single.subscriptionType}
-                    {single.rateLimitTier ? ` · ${single.rateLimitTier}` : ''}
+                {single && (
+                  <span className="plan-head-meta">
+                    {single.envs && single.envs.length > 0 && (
+                      <span className="plan-account-envs" title="Environments this account is logged into">
+                        {single.envs.join(' · ')}
+                      </span>
+                    )}
+                    {single.subscriptionType && (
+                      <span className="plan-pill">
+                        {single.subscriptionType}
+                        {single.rateLimitTier ? ` · ${single.rateLimitTier}` : ''}
+                      </span>
+                    )}
                   </span>
                 )}
               </h2>

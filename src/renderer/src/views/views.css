@@ -326,6 +326,15 @@
   flex-shrink: 0;
 }
 
+/* Env list + plan pill on the section heading (single-account mode). */
+.plan-head-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-head-meta .plan-account-envs { margin-left: 0; }
+.plan-head-meta .plan-pill { margin-left: 0; }
+
 /* Plan badge next to the "Plan usage" heading (subscription type · rate-limit tier). */
 .plan-pill {
   margin-left: 10px;
