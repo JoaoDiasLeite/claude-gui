@@ -91,7 +91,7 @@ function diffLines(a: string[], b: string[]): Row[] {
 }
 
 /** Infer hljs language from a file path extension. Returns undefined if not recognized. */
-function langFromPath(filePath?: string): string | undefined {
+export function langFromPath(filePath?: string): string | undefined {
   if (!filePath) return undefined
   const ext = filePath.split('.').pop()?.toLowerCase()
   if (!ext) return undefined
@@ -167,6 +167,22 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
+}
+
+/**
+ * Highlight a whole block of text (e.g. a file's contents) using hljs, keyed off a file
+ * path's extension. Returns an HTML string safe for dangerouslySetInnerHTML, or the plain
+ * escaped text if the language is unknown, too large to highlight, or hljs throws.
+ */
+export function highlightBlock(text: string, filePath?: string): string {
+  if (text.length > HIGHLIGHT_CHAR_LIMIT) return escapeHtml(text)
+  const lang = langFromPath(filePath)
+  if (!lang) return escapeHtml(text)
+  try {
+    return hljs.highlight(text, { language: lang, ignoreIllegals: true }).value
+  } catch {
+    return escapeHtml(text)
+  }
 }
 
 const SIGN: Record<Row['type'], string> = { context: ' ', add: '+', del: '-' }
