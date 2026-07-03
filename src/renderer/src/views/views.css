@@ -326,13 +326,19 @@
   flex-shrink: 0;
 }
 
-/* Env list + plan pill on the section heading (single-account mode). */
+/* Env list + plan pill on the section heading (single-account mode). The heading is
+   uppercase — undo that for the env/pill meta so it matches the per-account rows. */
 .plan-head-meta {
   display: inline-flex;
   align-items: center;
   gap: 10px;
 }
-.plan-head-meta .plan-account-envs { margin-left: 0; }
+.plan-head-meta .plan-account-envs {
+  margin-left: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
 .plan-head-meta .plan-pill { margin-left: 0; }
 
 /* Plan badge next to the "Plan usage" heading (subscription type · rate-limit tier). */

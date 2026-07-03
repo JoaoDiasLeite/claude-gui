@@ -268,8 +268,12 @@ export default function UsageView() {
   }
 
   // The source set the stats below actually use: manual chip toggles in "All accounts"
-  // mode, or the selected account's sources otherwise.
-  const effectiveSources = accountFilter === 'all' ? activeSources : sourcesForAccount(accountFilter)
+  // mode; with an account selected, its sources intersected with the toggles (so the
+  // chips remain individually toggleable within the account).
+  const effectiveSources =
+    accountFilter === 'all'
+      ? activeSources
+      : new Set([...sourcesForAccount(accountFilter)].filter((id) => activeSources.has(id)))
 
   // Does a plan entry belong to the selected account chip?
   const planMatchesFilter = (a: { accountKey: string; email?: string }): boolean => {
@@ -622,23 +626,30 @@ export default function UsageView() {
               </button>
             ))}
           </div>
-          {/* Manual per-source toggles only make sense in "All accounts" mode — a
-              selected account already implies its sources. */}
-          {accountFilter === 'all' && sources.length > 1 && (
-            <div className="source-chips">
-              {sources.map((s) => (
-                <button
-                  key={s.id}
-                  className={`source-chip ${activeSources.has(s.id) ? 'on' : ''} ${s.kind}`}
-                  onClick={() => toggleSource(s.id)}
-                  title={s.account?.email ? `${s.account.email}${s.account.plan ? ` · ${s.account.plan}` : ''}` : undefined}
-                >
-                  <span className="source-chip-name">{s.kind === 'wsl' ? `⊞ ${s.label}` : s.label}</span>
-                  {s.account?.email && <span className="source-chip-acct">{s.account.email}</span>}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Environment chips: always visible, scoped to the selected account (all
+              sources in "All accounts" mode), individually toggleable either way. */}
+          {(() => {
+            const shown =
+              accountFilter === 'all'
+                ? sources
+                : sources.filter((s) => sourcesForAccount(accountFilter).has(s.id))
+            if (shown.length === 0 || (accountFilter === 'all' && shown.length < 2)) return null
+            return (
+              <div className="source-chips">
+                {shown.map((s) => (
+                  <button
+                    key={s.id}
+                    className={`source-chip ${activeSources.has(s.id) ? 'on' : ''} ${s.kind}`}
+                    onClick={() => toggleSource(s.id)}
+                    title={s.account?.email ? `${s.account.email}${s.account.plan ? ` · ${s.account.plan}` : ''}` : undefined}
+                  >
+                    <span className="source-chip-name">{s.kind === 'wsl' ? `⊞ ${s.label}` : s.label}</span>
+                    {s.account?.email && <span className="source-chip-acct">{s.account.email}</span>}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
         </div>
 
         {(() => {
