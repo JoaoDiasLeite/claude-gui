@@ -37,6 +37,19 @@ interface Props {
   auth: AuthStatus | null
   accounts: CCAccountStatus[]
   activeAccountId?: string
+  /** Primary account's live plan session (5h) window, for the ambient badge. */
+  planSession?: { utilization: number; resetsAt?: string }
+}
+
+// "resets in 3h 12m" for the plan badge tooltip.
+function fmtReset(iso?: string): string {
+  if (!iso) return ''
+  const t = new Date(iso).getTime()
+  if (!isFinite(t)) return ''
+  const mins = Math.round((t - Date.now()) / 60000)
+  if (mins <= 0) return 'resets soon'
+  if (mins < 60) return `resets in ${mins}m`
+  return `resets in ${Math.floor(mins / 60)}h ${mins % 60}m`
 }
 
 const MIN_WIDTH = 200
@@ -58,7 +71,8 @@ export default function Sidebar({
   onOpenSettings,
   auth,
   accounts,
-  activeAccountId
+  activeAccountId,
+  planSession
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [width, setWidth] = useState<number>(() => {
@@ -190,6 +204,14 @@ export default function Sidebar({
       >
         <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
         <span className="auth-label">{statusLabel}</span>
+        {planSession && (
+          <span
+            className={`plan-badge ${planSession.utilization >= 90 ? 'danger' : planSession.utilization >= 70 ? 'warn' : 'ok'}`}
+            title={`Plan session window: ${planSession.utilization.toFixed(0)}% used${planSession.resetsAt ? ` · ${fmtReset(planSession.resetsAt)}` : ''}`}
+          >
+            {planSession.utilization.toFixed(0)}%
+          </span>
+        )}
         {!ready && <span className="auth-cta">Connect</span>}
       </button>
 

@@ -258,6 +258,33 @@
 .limit-fill.warn { background: #e2b341; }
 .limit-fill.danger { background: var(--error); }
 
+/* Per-account subsections inside "Plan usage" (headers only shown with 2+ accounts). */
+.plan-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.plan-account-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.plan-account-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+.plan-account-email {
+  font-size: 11.5px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-account-head .plan-pill { margin-left: 0; }
+
 /* Plan badge next to the "Plan usage" heading (subscription type · rate-limit tier). */
 .plan-pill {
   margin-left: 10px;

@@ -1,19 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { UsageReport, UsageEntry, SourceInfo, UsageLimits, PlanUsage, PlanUsageReport } from '../types'
+import { UsageReport, UsageEntry, SourceInfo, UsageLimits, AccountPlanUsage, PlanUsageReport } from '../types'
 import './views.css'
 import './UsageView.css'
-
-// Batch A compat: getPlanUsage now returns a multi-account report, but this view still
-// renders a single account. Pick the primary account (or the first with windows) until
-// batch B migrates the view to render every account.
-function primaryAccount(report: PlanUsageReport): PlanUsage | null {
-  return (
-    report.accounts.find((a) => a.accountKey === report.primary) ??
-    report.accounts[0] ??
-    null
-  )
-}
 
 function fmtNum(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B'
@@ -58,6 +47,58 @@ function PlanRow({ label, utilization, resetsAt }: { label: string; utilization:
       <div className="limit-track">
         <div className={`limit-fill ${level}`} style={{ width: `${Math.min(100, utilization)}%` }} />
       </div>
+    </div>
+  )
+}
+
+// One account's plan windows + status hints. The header row (name/email/plan pill)
+// only appears when several accounts are listed.
+function AccountPlanSection({ acc, showHeader }: { acc: AccountPlanUsage; showHeader: boolean }) {
+  return (
+    <div className="plan-account">
+      {showHeader && (
+        <div className="plan-account-head">
+          <span className="plan-account-name">{acc.accountName}</span>
+          {acc.email && <span className="plan-account-email">{acc.email}</span>}
+          {acc.subscriptionType && (
+            <span className="plan-pill">
+              {acc.subscriptionType}
+              {acc.rateLimitTier ? ` · ${acc.rateLimitTier}` : ''}
+            </span>
+          )}
+        </div>
+      )}
+      {acc.windows.length > 0 && (
+        <div className="limits-grid">
+          {acc.windows.map((w) => (
+            <PlanRow key={w.key} label={w.label} utilization={w.utilization} resetsAt={w.resetsAt} />
+          ))}
+        </div>
+      )}
+      {acc.status === 'ok' && acc.windows.length === 0 && (
+        <p className="field-hint">The usage endpoint responded but reported no rate-limit windows (API keys and some plans don't expose them).</p>
+      )}
+      {acc.status === 'unauthorized' && (
+        <p className="field-hint">
+          No valid Claude Code token for this login — tokens refresh automatically the next
+          time a Claude run executes (a chat here or the CLI). Then hit Refresh.
+        </p>
+      )}
+      {acc.status === 'no-credentials' && (
+        <p className="field-hint">No Claude Code login found for this account.</p>
+      )}
+      {acc.status === 'rate-limited' && (
+        <p className="field-hint">
+          Anthropic is rate-limiting the usage endpoint right now
+          {acc.stale ? ' — showing the last fetched numbers.' : ' — it retries automatically in a couple of minutes.'}
+        </p>
+      )}
+      {acc.status === 'error' && (
+        <p className="field-hint">
+          Couldn't reach the usage endpoint ({acc.error ?? 'unknown error'})
+          {acc.stale ? ' — showing the last fetched numbers.' : '.'}
+        </p>
+      )}
     </div>
   )
 }
@@ -108,7 +149,7 @@ export default function UsageView() {
   const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 10, sessionUsd: 25, weekUsd: 150 })
   const [editingLimits, setEditingLimits] = useState(false)
   const [detailKey, setDetailKey] = useState<string | null>(null)
-  const [plan, setPlan] = useState<PlanUsage | null>(null)
+  const [planReport, setPlanReport] = useState<PlanUsageReport | null>(null)
 
   const apply = (rep: UsageReport, srcs: SourceInfo[], lim: UsageLimits) => {
     setReport(rep)
@@ -120,7 +161,7 @@ export default function UsageView() {
   // Recompute in the background (no full-screen spinner) and update in place.
   const refresh = async () => {
     setRefreshing(true)
-    window.electronAPI.ccPlanUsage(true).then((r) => setPlan(primaryAccount(r))).catch(() => {})
+    window.electronAPI.ccPlanUsage(true).then(setPlanReport).catch(() => {})
     const [rep, srcs, cfg] = await Promise.all([
       window.electronAPI.ccUsage(true),
       window.electronAPI.ccSources(),
@@ -133,7 +174,7 @@ export default function UsageView() {
   useEffect(() => {
     let cancelled = false
     const init = async () => {
-      window.electronAPI.ccPlanUsage(false).then((r) => { if (!cancelled) setPlan(primaryAccount(r)) }).catch(() => {})
+      window.electronAPI.ccPlanUsage(false).then((r) => { if (!cancelled) setPlanReport(r) }).catch(() => {})
       // Paint instantly from cache…
       const [rep, srcs, cfg] = await Promise.all([
         window.electronAPI.ccUsage(false),
@@ -151,6 +192,9 @@ export default function UsageView() {
       cancelled = true
     }
   }, [])
+
+  // Live-update from the main-process watcher (every ~10 min and after IPC fetches).
+  useEffect(() => window.electronAPI.onPlanUsage(setPlanReport), [])
 
   const relTime = (ts: number) => {
     const m = Math.floor((Date.now() - ts) / 60000)
@@ -381,54 +425,42 @@ export default function UsageView() {
       </div>
 
       <div className="view-scroll">
-        {/* Real plan usage — live from Anthropic via the Claude Code OAuth token. */}
-        {plan && (
-          <div className="usage-section">
-            <h2>
-              Plan usage
-              {plan.subscriptionType && (
-                <span className="plan-pill">{plan.subscriptionType}{plan.rateLimitTier ? ` · ${plan.rateLimitTier}` : ''}</span>
-              )}
-            </h2>
-            {plan.windows.length > 0 && (
-              <div className="limits-grid">
-                {plan.windows.map((w) => (
-                  <PlanRow key={w.key} label={w.label} utilization={w.utilization} resetsAt={w.resetsAt} />
+        {/* Real plan usage — live from Anthropic via each login's OAuth token. One
+            subsection per account, primary first; header rows only with 2+ accounts. */}
+        {planReport && (() => {
+          const visible = planReport.accounts
+            .filter((a) => !(a.status === 'no-credentials' && a.windows.length === 0))
+            .sort((a, b) =>
+              a.accountKey === planReport.primary ? -1 : b.accountKey === planReport.primary ? 1 : 0
+            )
+          if (visible.length === 0) return null
+          const single = visible.length === 1 ? visible[0] : null
+          const anyLive = visible.some((a) => a.status === 'ok' && a.windows.length > 0)
+          return (
+            <div className="usage-section">
+              <h2>
+                Plan usage
+                {single?.subscriptionType && (
+                  <span className="plan-pill">
+                    {single.subscriptionType}
+                    {single.rateLimitTier ? ` · ${single.rateLimitTier}` : ''}
+                  </span>
+                )}
+              </h2>
+              <div className="plan-accounts">
+                {visible.map((a) => (
+                  <AccountPlanSection key={a.accountKey} acc={a} showHeader={!single} />
                 ))}
               </div>
-            )}
-            {plan.status === 'ok' && plan.windows.length === 0 && (
-              <p className="field-hint">The usage endpoint responded but reported no rate-limit windows (API keys and some plans don't expose them).</p>
-            )}
-            {plan.status === 'unauthorized' && (
-              <p className="field-hint">
-                No valid Claude Code token found across your logins — tokens refresh automatically
-                the next time a Claude run executes (a chat here or the CLI). Then hit Refresh.
-              </p>
-            )}
-            {plan.status === 'no-credentials' && (
-              <p className="field-hint">No Claude Code login found — log in to see real plan usage.</p>
-            )}
-            {plan.status === 'rate-limited' && (
-              <p className="field-hint">
-                Anthropic is rate-limiting the usage endpoint right now
-                {plan.stale ? ' — showing the last fetched numbers.' : ' — it retries automatically in a couple of minutes.'}
-              </p>
-            )}
-            {plan.status === 'error' && (
-              <p className="field-hint">
-                Couldn't reach the usage endpoint ({plan.error ?? 'unknown error'})
-                {plan.stale ? ' — showing the last fetched numbers.' : '.'}
-              </p>
-            )}
-            {plan.status === 'ok' && plan.windows.length > 0 && (
-              <p className="field-hint">
-                <strong>Live from Anthropic</strong> — the same numbers as Claude → Settings → Usage
-                (fetched via the Claude Code login; unofficial endpoint, cached 5 min).
-              </p>
-            )}
-          </div>
-        )}
+              {anyLive && (
+                <p className="field-hint">
+                  <strong>Live from Anthropic</strong> — the same numbers as Claude → Settings → Usage
+                  (fetched via the Claude Code login; unofficial endpoint, cached 5 min).
+                </p>
+              )}
+            </div>
+          )
+        })()}
 
         {/* Recent activity windows */}
         <div className="usage-section">

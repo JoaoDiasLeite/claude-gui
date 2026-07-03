@@ -14,7 +14,8 @@ import {
   ApprovalRequest,
   CCAccountStatus,
   PlannerTask,
-  UsageLimits
+  UsageLimits,
+  PlanUsageReport
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -99,6 +100,8 @@ export default function App() {
   const overLimitRef = useRef<{ hour: boolean; session: boolean; week: boolean }>({ hour: false, session: false, week: false })
   // Inline banner: null = no banner, or a message string.
   const [budgetBanners, setBudgetBanners] = useState<string[]>([])
+  // Live plan usage pushed by the main-process watcher — feeds the sidebar badge.
+  const [planReport, setPlanReport] = useState<PlanUsageReport | null>(null)
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -545,12 +548,30 @@ export default function App() {
         setView('chat')
       }
     })
+    const offPlan = window.electronAPI.onPlanUsage(setPlanReport)
+    // Plan-limit notification clicks navigate here; validate against real views.
+    const VIEWS: View[] = ['chat', 'projects', 'agents', 'planner', 'scheduled', 'usage', 'mcp', 'remote']
+    const offView = window.electronAPI.onOpenView((v) => {
+      if ((VIEWS as string[]).includes(v)) setView(v as View)
+    })
+    // Prime the badge without waiting for the watcher's first (~30s) tick.
+    window.electronAPI.ccPlanUsage(false).then(setPlanReport).catch(() => {})
     return () => {
       offNewChat()
       offPrompt()
       offOpen()
+      offPlan()
+      offView()
     }
   }, [])
+
+  // The primary account's session (5h) window, surfaced ambiently in the sidebar chip.
+  const planSession = useMemo(() => {
+    if (!planReport?.primary) return undefined
+    const acc = planReport.accounts.find((a) => a.accountKey === planReport.primary)
+    const w = acc?.windows.find((win) => win.key === 'five_hour')
+    return w ? { utilization: w.utilization, resetsAt: w.resetsAt } : undefined
+  }, [planReport])
 
   const stopMessage = useCallback(async () => {
     await window.electronAPI.stopAgent(activeIdRef.current)
@@ -889,6 +910,7 @@ export default function App() {
             auth={auth}
             accounts={accounts}
             activeAccountId={activeSession?.accountId ?? defaultAccountId}
+            planSession={planSession}
           />
           <div className="main-area">
             {!activeSession ? (

@@ -272,7 +272,6 @@ export interface PlanUsageReport {
 
 // Compatibility alias for the pre-multi-account renderer (UsageView still consumes a
 // single account's shape). Batch B migrates the renderer to PlanUsageReport directly.
-export type PlanUsage = AccountPlanUsage
 
 export interface McpServer {
   name: string
