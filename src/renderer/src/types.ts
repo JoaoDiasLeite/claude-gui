@@ -308,6 +308,22 @@ export interface AgentDef {
   updatedAt: number
 }
 
+/** A candidate agent proposed by `agentsSuggest`, from history analysis. Not yet a real AgentDef. */
+export interface AgentSuggestion {
+  name: string
+  icon: string
+  systemPrompt: string
+  allowedTools: string[]
+  reason: string
+}
+
+export interface AgentsSuggestResult {
+  ok: boolean
+  data?: { suggestions: AgentSuggestion[] }
+  error?: string
+  costUsd: number
+}
+
 export interface ClaudeMdFile {
   scope: string
   path: string
@@ -727,6 +743,7 @@ declare global {
       agentsList: () => Promise<AgentDef[]>
       agentsSave: (agent: AgentDef) => Promise<AgentDef>
       agentsDelete: (id: string) => Promise<AgentDef[]>
+      agentsSuggest: (accountId?: string) => Promise<AgentsSuggestResult>
 
       // Chat compaction
       summarizeChat: (payload: {

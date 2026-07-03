@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   agentsList: () => ipcRenderer.invoke('agents:list'),
   agentsSave: (agent: unknown) => ipcRenderer.invoke('agents:save', agent),
   agentsDelete: (id: string) => ipcRenderer.invoke('agents:delete', id),
+  agentsSuggest: (accountId?: string) => ipcRenderer.invoke('agents:suggest', { accountId }),
 
   // Chat compaction
   summarizeChat: (payload: unknown) => ipcRenderer.invoke('chat:summarize', payload),

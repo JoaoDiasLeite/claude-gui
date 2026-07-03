@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AgentDef, ModelInfo, PermissionMode } from '../types'
+import { AgentDef, AgentSuggestion, ModelInfo, PermissionMode } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import { useModalA11y } from '../hooks/useModalA11y'
 import './views.css'
@@ -38,9 +38,53 @@ function emptyAgent(defaultModel: string): AgentDef {
   }
 }
 
+const DEFAULT_SUGGESTION_TOOLS = ['Read', 'Edit', 'Write', 'Bash', 'Glob', 'Grep']
+
+/** Defensively sanitize one raw suggestion from the LLM before it ever touches state. */
+function sanitizeSuggestion(raw: unknown): AgentSuggestion | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+
+  const name = typeof r.name === 'string' ? r.name.trim().slice(0, 40) : ''
+  const systemPrompt = typeof r.systemPrompt === 'string' ? r.systemPrompt.trim() : ''
+  if (!name || !systemPrompt) return null
+
+  const icon = typeof r.icon === 'string' && ICON_OPTIONS.includes(r.icon) ? r.icon : '🤖'
+
+  const rawTools = Array.isArray(r.allowedTools) ? r.allowedTools : []
+  const allowedTools = rawTools.filter((t): t is string => typeof t === 'string' && TOOL_OPTIONS.includes(t))
+
+  const reason = typeof r.reason === 'string' ? r.reason.trim() : ''
+
+  return {
+    name,
+    icon,
+    systemPrompt,
+    allowedTools: allowedTools.length > 0 ? allowedTools : DEFAULT_SUGGESTION_TOOLS,
+    reason
+  }
+}
+
+function sanitizeSuggestions(data: unknown): AgentSuggestion[] {
+  if (!data || typeof data !== 'object') return []
+  const list = (data as Record<string, unknown>).suggestions
+  if (!Array.isArray(list)) return []
+  const out: AgentSuggestion[] = []
+  for (const item of list) {
+    const s = sanitizeSuggestion(item)
+    if (s) out.push(s)
+    if (out.length >= 5) break
+  }
+  return out
+}
+
 export default function AgentsView({ models, defaultModel, onRun }: Props) {
   const [agents, setAgents] = useState<AgentDef[]>([])
   const [editing, setEditing] = useState<AgentDef | null>(null)
+
+  const [suggestions, setSuggestions] = useState<AgentSuggestion[] | null>(null)
+  const [suggestBusy, setSuggestBusy] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
 
   const load = async () => setAgents(await window.electronAPI.agentsList())
   useEffect(() => {
@@ -58,6 +102,51 @@ export default function AgentsView({ models, defaultModel, onRun }: Props) {
     setAgents(await window.electronAPI.agentsDelete(id))
   }
 
+  const runSuggest = async () => {
+    setSuggestBusy(true)
+    setSuggestError(null)
+    const res = await window.electronAPI.agentsSuggest()
+    setSuggestBusy(false)
+    if (!res.ok) {
+      setSuggestError(res.error || 'Something went wrong.')
+      setSuggestions(null)
+      return
+    }
+    const clean = sanitizeSuggestions(res.data)
+    if (clean.length === 0) {
+      setSuggestError('Claude didn’t return any usable suggestions. Try again.')
+      setSuggestions(null)
+      return
+    }
+    setSuggestions(clean)
+  }
+
+  const useSuggestion = (s: AgentSuggestion) => {
+    setEditing({
+      ...emptyAgent(defaultModel),
+      name: s.name,
+      icon: s.icon,
+      systemPrompt: s.systemPrompt,
+      allowedTools: s.allowedTools
+    })
+  }
+
+  const dismissSuggestion = (index: number) => {
+    setSuggestions((prev) => (prev ? prev.filter((_, i) => i !== index) : prev))
+  }
+
+  const suggestButton = (
+    <button className="btn-ghost" onClick={runSuggest} disabled={suggestBusy}>
+      {suggestBusy ? (
+        <>
+          <span className="btn-spinner" /> Analyzing your history…
+        </>
+      ) : (
+        '✨ Suggest from my history'
+      )}
+    </button>
+  )
+
   return (
     <div className="view">
       <div className="view-header">
@@ -65,14 +154,71 @@ export default function AgentsView({ models, defaultModel, onRun }: Props) {
           <h1>Agents</h1>
           <p className="view-sub">Custom agents with their own prompt, model, and tools.</p>
         </div>
-        <button className="btn-primary" onClick={() => setEditing(emptyAgent(defaultModel))}>
-          + New agent
-        </button>
+        <div className="header-actions">
+          {suggestButton}
+          <button className="btn-primary" onClick={() => setEditing(emptyAgent(defaultModel))}>
+            + New agent
+          </button>
+        </div>
       </div>
 
       <div className="view-scroll">
+        {(suggestions || suggestError) && (
+          <div className="suggestions-section">
+            <div className="suggestions-header">
+              <div className="suggestions-title">Suggested for you</div>
+              <button
+                className="icon-btn"
+                onClick={() => {
+                  setSuggestions(null)
+                  setSuggestError(null)
+                }}
+                aria-label="Clear suggestions"
+                title="Clear suggestions"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            {suggestError ? (
+              <div className="suggestions-error">{suggestError}</div>
+            ) : (
+              <div className="suggestions-grid">
+                {suggestions!.map((s, i) => (
+                  <div key={`${s.name}-${i}`} className="agent-card suggestion-card">
+                    <div className="agent-card-header">
+                      <div className="agent-card-icon-chip">
+                        <span className="agent-card-icon">{s.icon}</span>
+                      </div>
+                      <div className="agent-card-meta">
+                        <div className="agent-card-name">{s.name}</div>
+                      </div>
+                    </div>
+                    {s.reason && <div className="suggestion-reason">{s.reason}</div>}
+                    <div className="agent-card-prompt">{s.systemPrompt}</div>
+                    <div className="agent-card-tools">
+                      {s.allowedTools.slice(0, 5).map((t) => (
+                        <span key={t} className="tool-chip">{t}</span>
+                      ))}
+                      {s.allowedTools.length > 5 && <span className="tool-chip">+{s.allowedTools.length - 5}</span>}
+                    </div>
+                    <div className="agent-card-actions">
+                      <button className="btn-primary small" onClick={() => useSuggestion(s)}>Use</button>
+                      <button className="btn-text" onClick={() => dismissSuggestion(i)}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {agents.length === 0 ? (
-          <div className="view-empty">No agents yet. Create one to get started.</div>
+          <div className="view-empty">
+            <div>No agents yet. Create one to get started.</div>
+            {!suggestions && !suggestError && suggestButton}
+          </div>
         ) : (
           <div className="agents-grid">
             {agents.map((a) => (

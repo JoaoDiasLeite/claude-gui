@@ -202,3 +202,72 @@
     0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent),
     0 3px 10px color-mix(in srgb, var(--accent) 22%, transparent);
 }
+
+/* ── "Suggest from my history" button spinner ── */
+.btn-spinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid color-mix(in srgb, var(--text-1) 35%, transparent);
+  border-top-color: var(--text-0);
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: -1.5px;
+  animation: spin 0.75s linear infinite;
+}
+
+.btn-ghost:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Suggested-for-you section ── */
+.suggestions-section {
+  margin-bottom: 24px;
+}
+
+.suggestions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.suggestions-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.suggestions-error {
+  font-size: 13px;
+  color: var(--text-2);
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--error) 6%, transparent);
+}
+
+.suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+/* Suggestion cards borrow .agent-card's layout but read as "not yet real" */
+.suggestion-card {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-1));
+}
+
+.suggestion-reason {
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-2);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
