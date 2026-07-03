@@ -319,6 +319,12 @@
   white-space: nowrap;
 }
 .plan-account-head .plan-pill { margin-left: 0; }
+.plan-account-envs {
+  font-size: 11px;
+  color: var(--text-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
 
 /* Plan badge next to the "Plan usage" heading (subscription type · rate-limit tier). */
 .plan-pill {

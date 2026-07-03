@@ -31,11 +31,16 @@ export interface PlanWindow {
 export type PlanStatus = 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limited' | 'error'
 
 export interface AccountPlanUsage {
-  /** 'default' | account id | 'wsl:<distro>' */
+  /** Stable identity key: 'acct:<email>' when the login's identity is known,
+   *  else 'path:<credentials path>'. One entry per ACCOUNT, not per environment. */
   accountKey: string
-  /** Display name: the account name, or the distro name for WSL sources. */
+  /** Display name: the managed account's name, else the email local-part / env. */
   accountName: string
   email?: string
+  /** Environments this login is present in (e.g. ['Local', 'Ubuntu-DevOps']). */
+  envs?: string[]
+  /** True when this identity includes the machine-default login. */
+  isDefault?: boolean
   status: PlanStatus
   error?: string
   /** True when `windows` is carried over from an older successful fetch. */
@@ -100,12 +105,17 @@ function stateFor(key: string): AccountState {
   return s
 }
 
-// A credential source to poll. `credsPath` is the .credentials.json to read.
+// One ACCOUNT (identity) to poll, possibly logged in from several environments.
+// `credsPaths` are its candidate credential files, best-first (local before WSL) —
+// the fetch uses whichever holds the freshest non-expired token, since any valid
+// token of the same account reports the same server-side limits.
 interface Source {
   accountKey: string
   accountName: string
   email?: string
-  credsPath: string
+  envs: string[]
+  isDefault: boolean
+  credsPaths: string[]
 }
 
 function readCredentialsFile(credsPath: string): OauthCreds | null {
@@ -125,76 +135,116 @@ function readCredentialsFile(credsPath: string): OauthCreds | null {
   }
 }
 
-/** Resolve a managed account's config dir to its .credentials.json path (null = ~/.claude). */
-function credentialsPathForDir(configDir: string | null): string {
-  const dir = configDir ?? path.join(os.homedir(), '.claude')
-  return path.join(dir, '.credentials.json')
+/** Read the login identity (email) from a .claude.json sitting next to a config dir. */
+function readIdentityEmail(claudeJsonPath: string): string | undefined {
+  try {
+    const raw = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8')) as {
+      oauthAccount?: { emailAddress?: string }
+    }
+    const email = raw.oauthAccount?.emailAddress
+    return typeof email === 'string' && email ? email : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// A credential file found in some environment, before identity grouping.
+interface Candidate {
+  env: string
+  credsPath: string
+  claudeJsonPath: string
+  /** Managed-account display name, when this candidate comes from accounts.ts. */
+  name?: string
+  emailHint?: string
+  isDefault?: boolean
+  /** Lower = preferred within an identity group (local logins before WSL copies). */
+  priority: number
 }
 
 /**
- * Enumerate every credential source to poll: each managed account (keyed by its id, or
- * 'default' for the machine-default account), plus each WSL distro that has its own login.
- * Dedupe:
- *  - two accounts resolving to the same credentials file share one fetch (first wins);
- *  - a WSL distro whose token matches a local account's token is skipped (same login).
+ * Enumerate ACCOUNTS to poll. Every credential file (managed accounts, the machine
+ * default, WSL distros) is a candidate; candidates are grouped by login IDENTITY —
+ * the email in the neighbouring .claude.json — because the same account logged in
+ * from several environments (e.g. Work on Local AND a WSL distro) has different
+ * tokens but identical server-side limits. One fetch per account, not per env.
  */
 async function enumerateSources(): Promise<Source[]> {
-  const sources: Source[] = []
-  const seenPaths = new Set<string>()
-  const seenTokens = new Set<string>()
+  const candidates: Candidate[] = []
 
   const { accounts } = listAccountStatus()
   for (const acc of accounts) {
-    const credsPath = credentialsPathForDir(acc.configDir)
-    const norm = credsPath.toLowerCase()
-    if (seenPaths.has(norm)) continue
-    seenPaths.add(norm)
-    const creds = readCredentialsFile(credsPath)
-    if (creds) seenTokens.add(creds.accessToken)
-    sources.push({
-      accountKey: acc.isDefault ? 'default' : acc.id,
-      accountName: acc.name,
-      email: acc.email,
-      credsPath
+    const dir = acc.configDir
+    candidates.push({
+      env: 'Local',
+      credsPath: dir
+        ? path.join(dir, '.credentials.json')
+        : path.join(os.homedir(), '.claude', '.credentials.json'),
+      claudeJsonPath: dir ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json'),
+      name: acc.name,
+      emailHint: acc.email,
+      isDefault: acc.isDefault,
+      priority: 0
     })
   }
 
-  // Safety net: any config dir known to accounts.ts that wasn't covered above (should
-  // already be covered, but listConfigDirs is the historical source of truth).
+  // Safety net: any config dir known to accounts.ts not covered above.
   for (const dir of listConfigDirs()) {
-    const credsPath = credentialsPathForDir(dir)
-    const norm = credsPath.toLowerCase()
-    if (seenPaths.has(norm)) continue
-    seenPaths.add(norm)
-    const creds = readCredentialsFile(credsPath)
-    if (creds) seenTokens.add(creds.accessToken)
-    sources.push({
-      accountKey: dir ? `dir:${dir}` : 'default',
-      accountName: dir ? path.basename(dir) : 'Default',
-      credsPath
+    candidates.push({
+      env: 'Local',
+      credsPath: dir
+        ? path.join(dir, '.credentials.json')
+        : path.join(os.homedir(), '.claude', '.credentials.json'),
+      claudeJsonPath: dir ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json'),
+      priority: 1
     })
   }
 
-  // WSL distros — best-effort. Skip a distro whose token matches a local login (same
-  // account logged in from both sides), and skip silently on any read failure.
+  // WSL distros — best-effort; skipped silently when unreachable.
   try {
     for (const w of await getWslCredentialsPaths()) {
-      const norm = w.credentialsPath.toLowerCase()
-      if (seenPaths.has(norm)) continue
-      seenPaths.add(norm)
-      const creds = readCredentialsFile(w.credentialsPath)
-      if (creds && seenTokens.has(creds.accessToken)) continue // dup of a local account
-      if (creds) seenTokens.add(creds.accessToken)
-      sources.push({
-        accountKey: `wsl:${w.distro}`,
-        accountName: w.distro,
-        credsPath: w.credentialsPath
+      // <home>/.claude/.credentials.json → <home>/.claude.json
+      const home = path.dirname(path.dirname(w.credentialsPath))
+      candidates.push({
+        env: w.distro,
+        credsPath: w.credentialsPath,
+        claudeJsonPath: path.join(home, '.claude.json'),
+        priority: 2
       })
     }
   } catch {
     // WSL unavailable — local accounts only.
   }
 
+  // Dedupe by credentials file, then group by identity. Identity key preference:
+  // email (same account anywhere) → access token (same login copied around) → path.
+  const seenPaths = new Set<string>()
+  const groups = new Map<string, Candidate[]>()
+  for (const c of candidates.sort((a, b) => a.priority - b.priority)) {
+    const norm = c.credsPath.toLowerCase()
+    if (seenPaths.has(norm)) continue
+    seenPaths.add(norm)
+    const email = c.emailHint ?? readIdentityEmail(c.claudeJsonPath)
+    if (email) c.emailHint = email
+    const token = email ? undefined : readCredentialsFile(c.credsPath)?.accessToken
+    const key = email ? `acct:${email.toLowerCase()}` : token ? `tok:${token.slice(0, 24)}` : `path:${norm}`
+    const g = groups.get(key)
+    if (g) g.push(c)
+    else groups.set(key, [c])
+  }
+
+  const sources: Source[] = []
+  for (const [key, group] of groups) {
+    const email = group.find((c) => c.emailHint)?.emailHint
+    const named = group.find((c) => c.name)
+    sources.push({
+      accountKey: email ? `acct:${email.toLowerCase()}` : key,
+      accountName: named?.name ?? (email ? email.split('@')[0] : group[0].env),
+      email,
+      envs: [...new Set(group.map((c) => c.env))],
+      isDefault: group.some((c) => c.isDefault),
+      credsPaths: group.map((c) => c.credsPath)
+    })
+  }
   return sources
 }
 
@@ -211,6 +261,8 @@ function failure(
     accountKey: src.accountKey,
     accountName: src.accountName,
     email: src.email,
+    envs: src.envs,
+    isDefault: src.isDefault,
     status: partial.status,
     error: partial.error,
     fetchedAt: Date.now(),
@@ -267,11 +319,18 @@ async function fetchAccount(
       return { entry: st.cache, hitNetwork: false }
   }
 
-  const creds = readCredentialsFile(src.credsPath)
-  if (!creds) return { entry: failure(src, st, { status: 'no-credentials' }), hitNetwork: false }
-
-  // 60s skew: a token about to lapse mid-request counts as expired.
-  const expired = !!creds.expiresAt && creds.expiresAt <= Date.now() + 60_000
+  // Any valid token of this account works — pick the freshest non-expired one across
+  // its environments (60s skew: a token about to lapse mid-request counts as expired).
+  const cutoff = Date.now() + 60_000
+  const all = src.credsPaths
+    .map(readCredentialsFile)
+    .filter((c): c is OauthCreds => !!c)
+  if (all.length === 0) return { entry: failure(src, st, { status: 'no-credentials' }), hitNetwork: false }
+  const freshest = (arr: OauthCreds[]) =>
+    [...arr].sort((a, b) => (b.expiresAt ?? 0) - (a.expiresAt ?? 0))[0]
+  const valid = all.filter((c) => !c.expiresAt || c.expiresAt > cutoff)
+  const creds = valid.length > 0 ? freshest(valid) : freshest(all)
+  const expired = valid.length === 0
   if (expired) {
     // Never spend a request on a token we can already see is dead — repeated
     // expired-token calls are what trigger the edge-level 429 lockout.
@@ -320,6 +379,8 @@ async function fetchAccount(
       accountKey: src.accountKey,
       accountName: src.accountName,
       email: src.email,
+      envs: src.envs,
+      isDefault: src.isDefault,
       status: 'ok',
       fetchedAt: Date.now(),
       windows: extractWindows(body),
@@ -341,10 +402,10 @@ async function fetchAccount(
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
-/** Pick the accountKey the ambient UI (tray, notifications) should feature: the default
- *  account if it has windows, else the first entry with windows. */
+/** Pick the accountKey the ambient UI (tray, notifications) should feature: the account
+ *  holding the machine-default login if it has windows, else the first with windows. */
 function pickPrimary(accounts: AccountPlanUsage[]): string | undefined {
-  const def = accounts.find((a) => a.accountKey === 'default' && a.windows.length > 0)
+  const def = accounts.find((a) => a.isDefault && a.windows.length > 0)
   if (def) return def.accountKey
   const first = accounts.find((a) => a.windows.length > 0)
   return first?.accountKey

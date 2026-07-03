@@ -66,6 +66,11 @@ function AccountPlanSection({ acc, showHeader }: { acc: AccountPlanUsage; showHe
               {acc.rateLimitTier ? ` · ${acc.rateLimitTier}` : ''}
             </span>
           )}
+          {acc.envs && acc.envs.length > 1 && (
+            <span className="plan-account-envs" title="Environments this account is logged into">
+              {acc.envs.join(' · ')}
+            </span>
+          )}
         </div>
       )}
       {acc.windows.length > 0 && (
@@ -230,20 +235,14 @@ export default function UsageView() {
     await window.electronAPI.setLimits(next)
   }
 
-  // Account chips shown at the top: one per login, unioned from plan-usage entries
-  // (managed accounts + WSL logins) and any source accounts without plan data.
+  // Account chips shown at the top: one per ACCOUNT (identity) — the backend already
+  // groups environments (local + WSL) sharing a login. Source accounts without plan
+  // data (e.g. a distro login the poller can't read) get a fallback chip by email.
   const accountChips = useMemo(() => {
-    const chips: { key: string; label: string; email?: string }[] = []
+    const chips: { key: string; label: string; email?: string; envs?: string[] }[] = []
     for (const a of planReport?.accounts ?? []) {
       if (a.status === 'no-credentials' && a.windows.length === 0) continue
-      // WSL plan entries carry no email in their credentials — borrow it from the
-      // matching usage source so the chip can group that distro's local stats too.
-      const email =
-        a.email ??
-        (a.accountKey.startsWith('wsl:')
-          ? sources.find((s) => s.kind === 'wsl' && `wsl:${s.label}` === a.accountKey)?.account?.email
-          : undefined)
-      chips.push({ key: a.accountKey, label: a.accountName, email })
+      chips.push({ key: a.accountKey, label: a.accountName, email: a.email, envs: a.envs })
     }
     for (const s of sources) {
       const email = s.account?.email
@@ -253,14 +252,14 @@ export default function UsageView() {
     return chips
   }, [planReport, sources])
 
-  // Which usage sources belong to the selected account (email match, plus the
-  // distro itself for WSL logins without an email).
+  // Which usage sources belong to the selected account: email match first, env-name
+  // match as fallback for logins whose identity file couldn't be read.
   const sourcesForAccount = (key: string): Set<string> => {
     const chip = accountChips.find((c) => c.key === key)
     const ids = new Set<string>()
     for (const s of sources) {
       if (chip?.email && s.account?.email === chip.email) ids.add(s.id)
-      else if (key.startsWith('wsl:') && s.kind === 'wsl' && `wsl:${s.label}` === key) ids.add(s.id)
+      else if (chip?.envs?.includes(s.kind === 'wsl' ? s.label : 'Local')) ids.add(s.id)
     }
     return ids
   }

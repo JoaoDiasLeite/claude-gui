@@ -248,6 +248,10 @@ export type PlanStatus = 'ok' | 'no-credentials' | 'unauthorized' | 'rate-limite
 
 /** Real plan usage for a single account/login (see src/main/plan-usage.ts). */
 export interface AccountPlanUsage {
+  /** Environments this login is present in (e.g. ['Local', 'Ubuntu-DevOps']). */
+  envs?: string[]
+  /** True when this identity includes the machine-default login. */
+  isDefault?: boolean
   /** 'default' | account id | 'wsl:<distro>' */
   accountKey: string
   /** Display name: the account name, or the distro name for WSL sources. */
