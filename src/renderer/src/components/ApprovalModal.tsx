@@ -7,13 +7,16 @@ import './ApprovalModal.css'
 interface Props {
   request: ApprovalRequest
   onDecide: (allow: boolean) => void
+  // Optional session label, shown small in the header — used by the Rooms inline flow
+  // where more than one session may have pending approvals.
+  sessionName?: string
 }
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
 
-export default function ApprovalModal({ request, onDecide }: Props) {
+export default function ApprovalModal({ request, onDecide, sessionName }: Props) {
   const { tool, input } = request
   const dialogRef = useRef<HTMLDivElement>(null)
   // Esc is handled by the existing keydown handler (deny), so we pass escapeToClose: false
@@ -80,6 +83,7 @@ export default function ApprovalModal({ request, onDecide }: Props) {
           <h3 id="approval-modal-title">
             <span className="approval-tool">{tool}</span> wants to {verb}
           </h3>
+          {sessionName && <div className="approval-session">{sessionName}</div>}
         </div>
         {filePath && <div className="approval-path">{filePath}</div>}
         <div className="approval-body">{renderBody()}</div>

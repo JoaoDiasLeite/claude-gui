@@ -401,15 +401,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Answer a specific queued approval by id: send the response, prune it from the
+  // queue, and log against its own session. Used both by the inline Rooms flow and
+  // (via respondApproval) the head-of-queue global modal.
+  const respondApprovalById = (approvalId: string, allow: boolean) => {
+    const req = approvalQueue.find((r) => r.approvalId === approvalId)
+    if (!req) return
+    window.electronAPI.respondApproval({ approvalId, allow })
+    addTermFor(req.appSessionId, { kind: allow ? 'info' : 'error', text: `${allow ? 'allowed' : 'denied'} ${req.tool}` })
+    setApprovalQueue((prev) => prev.filter((r) => r.approvalId !== approvalId))
+  }
+
+  // Global modal answers the HEAD of the queue — delegates to respondApprovalById.
   const respondApproval = (allow: boolean) => {
-    setApprovalQueue((prev) => {
-      const [head, ...rest] = prev
-      if (head) {
-        window.electronAPI.respondApproval({ approvalId: head.approvalId, allow })
-        addTerm({ kind: allow ? 'info' : 'error', text: `${allow ? 'allowed' : 'denied'} ${head.tool}` })
-      }
-      return rest
-    })
+    const head = approvalQueue[0]
+    if (head) respondApprovalById(head.approvalId, allow)
   }
 
   // Shared helper — builds the sendAgent payload from a session + prompt.
@@ -1096,6 +1102,8 @@ export default function App() {
           sessions={sessions}
           runningIds={runningIds}
           attentionIds={attentionIds}
+          approvals={approvalQueue}
+          onRespondApproval={respondApprovalById}
           onOpenSession={(id) => {
             setActiveId(id)
             setView('chat')
@@ -1152,7 +1160,7 @@ export default function App() {
       {claudeMdOpen && (
         <ClaudeMdModal projectPath={activeSession?.projectPath} onClose={() => setClaudeMdOpen(false)} />
       )}
-      {approvalQueue.length > 0 && (
+      {view !== 'rooms' && approvalQueue.length > 0 && (
         <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
       )}
       {checkpointsOpen && activeSession && (

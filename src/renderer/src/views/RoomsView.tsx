@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AgentDef, Session } from '../types'
+import { AgentDef, ApprovalRequest, Session } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
+import ApprovalModal from '../components/ApprovalModal'
 import './views.css'
 import './RoomsView.css'
 
@@ -8,6 +9,8 @@ interface Props {
   sessions: Session[]
   runningIds: Set<string>
   attentionIds: Set<string>
+  approvals: ApprovalRequest[]
+  onRespondApproval: (approvalId: string, allow: boolean) => void
   onOpenSession: (id: string) => void
   onOpenAgentsView: () => void
   onDeploy: (agent: AgentDef, projectPath: string | undefined, prompt: string) => void
@@ -28,8 +31,10 @@ function folderBasename(p: string): string {
   return parts[parts.length - 1] || trimmed || p
 }
 
-export default function RoomsView({ sessions, runningIds, attentionIds, onOpenAgentsView, onOpenSession, onDeploy }: Props) {
+export default function RoomsView({ sessions, runningIds, attentionIds, approvals, onRespondApproval, onOpenAgentsView, onOpenSession, onDeploy }: Props) {
   const [agents, setAgents] = useState<AgentDef[]>([])
+  // Session whose pending approvals are being reviewed inline (opened from an amber chip).
+  const [reviewSessionId, setReviewSessionId] = useState<string | null>(null)
   const [dragAgentId, setDragAgentId] = useState<string | null>(null)
   const [dragOverRoom, setDragOverRoom] = useState<string | null>(null)
   // Mission popover: which room it targets (undefined path = Unassigned / new), which agent,
@@ -47,6 +52,26 @@ export default function RoomsView({ sessions, runningIds, attentionIds, onOpenAg
   }, [])
 
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
+
+  // Pending-approval count per session — feeds the chip's multi-approval badge.
+  const approvalCounts = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of approvals) m.set(r.appSessionId, (m.get(r.appSessionId) ?? 0) + 1)
+    return m
+  }, [approvals])
+
+  // The FIRST queued request for the reviewed session, derived at render time (never
+  // snapshotted in state) so that external resolution — e.g. the always-on-top toast —
+  // auto-advances to the next request and closes the modal when none remain.
+  const reviewRequest = reviewSessionId
+    ? approvals.find((r) => r.appSessionId === reviewSessionId) ?? null
+    : null
+  const reviewSession = reviewSessionId ? sessions.find((s) => s.id === reviewSessionId) : undefined
+
+  // If the reviewed session's requests all disappear (resolved elsewhere), close the modal.
+  useEffect(() => {
+    if (reviewSessionId && !reviewRequest) setReviewSessionId(null)
+  }, [reviewSessionId, reviewRequest])
 
   // Only sessions with at least one message "live" in a room.
   const occupied = useMemo(() => sessions.filter((s) => s.messages.length > 0), [sessions])
@@ -150,6 +175,8 @@ export default function RoomsView({ sessions, runningIds, attentionIds, onOpenAg
                 agentById={agentById}
                 runningIds={runningIds}
                 attentionIds={attentionIds}
+                approvalCounts={approvalCounts}
+                onReviewSession={setReviewSessionId}
                 isDropTarget={dragOverRoom === room.key}
                 expanded={expandedRoom === room.key}
                 onToggleExpand={() => setExpandedRoom((k) => (k === room.key ? null : room.key))}
@@ -177,6 +204,14 @@ export default function RoomsView({ sessions, runningIds, attentionIds, onOpenAg
           onPickNewRoom={pickNewRoom}
           onCancel={() => setMission(null)}
           onDeploy={deployFromMission}
+        />
+      )}
+
+      {reviewRequest && (
+        <ApprovalModal
+          request={reviewRequest}
+          sessionName={reviewSession?.name || 'New chat'}
+          onDecide={(allow) => onRespondApproval(reviewRequest.approvalId, allow)}
         />
       )}
     </div>
@@ -234,6 +269,8 @@ function RoomCard({
   agentById,
   runningIds,
   attentionIds,
+  approvalCounts,
+  onReviewSession,
   isDropTarget,
   expanded,
   onToggleExpand,
@@ -247,6 +284,8 @@ function RoomCard({
   agentById: Map<string, AgentDef>
   runningIds: Set<string>
   attentionIds: Set<string>
+  approvalCounts: Map<string, number>
+  onReviewSession: (id: string) => void
   isDropTarget: boolean
   expanded: boolean
   onToggleExpand: () => void
@@ -286,16 +325,22 @@ function RoomCard({
           <div className="room-floor-empty">Empty room</div>
         ) : (
           <>
-            {visible.map((s) => (
-              <OccupantChip
-                key={s.id}
-                session={s}
-                agent={s.agentId ? agentById.get(s.agentId) : undefined}
-                running={runningIds.has(s.id)}
-                attention={attentionIds.has(s.id)}
-                onClick={() => onOpenSession(s.id)}
-              />
-            ))}
+            {visible.map((s) => {
+              const attention = attentionIds.has(s.id)
+              return (
+                <OccupantChip
+                  key={s.id}
+                  session={s}
+                  agent={s.agentId ? agentById.get(s.agentId) : undefined}
+                  running={runningIds.has(s.id)}
+                  attention={attention}
+                  approvalCount={approvalCounts.get(s.id) ?? 0}
+                  // Attention wins over running: an amber chip opens the inline approval
+                  // flow; every other chip jumps to its chat.
+                  onClick={() => (attention ? onReviewSession(s.id) : onOpenSession(s.id))}
+                />
+              )
+            })}
             {overflow > 0 && (
               <button className="occupant-chip overflow-chip" onClick={onToggleExpand} title="Show all occupants">
                 +{overflow} more
@@ -319,19 +364,23 @@ function OccupantChip({
   agent,
   running,
   attention,
+  approvalCount,
   onClick
 }: {
   session: Session
   agent?: AgentDef
   running: boolean
   attention: boolean
+  approvalCount: number
   onClick: () => void
 }) {
   const lastMsg = session.messages[session.messages.length - 1]
   const status = attention ? 'attention' : running ? 'running' : lastMsg?.error ? 'error' : 'idle'
   const statusTitle =
     status === 'attention'
-      ? 'Waiting for approval'
+      ? approvalCount > 1
+        ? `${approvalCount} approvals waiting — click to review`
+        : 'Waiting for approval — click to review'
       : status === 'running'
         ? 'Running'
         : status === 'error'
@@ -340,13 +389,14 @@ function OccupantChip({
   const icon = agent?.icon ?? '✳'
   return (
     <button
-      className="occupant-chip"
+      className={`occupant-chip ${attention ? 'attention' : ''}`}
       onClick={onClick}
       title={`${session.name || 'New chat'} — ${statusTitle}`}
     >
       <span className="occupant-avatar">
         {icon}
         <span className={`occupant-dot ${status}`} />
+        {attention && approvalCount > 1 && <span className="occupant-badge">{approvalCount}</span>}
       </span>
       <span className="occupant-name">{session.name || 'New chat'}</span>
     </button>
