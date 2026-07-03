@@ -806,6 +806,7 @@ declare global {
       saveSession: (session: Session) => Promise<{ success: boolean }>
       deleteSession: (id: string) => Promise<{ success: boolean }>
       exportSession: (session: Session, format: 'md' | 'html') => Promise<{ saved: boolean; filePath?: string }>
+      exportMarkdown: (defaultFileName: string, content: string) => Promise<{ saved: boolean; path?: string }>
 
       // Commands & skills
       commandsList: (projectPath?: string) => Promise<SlashCommand[]>

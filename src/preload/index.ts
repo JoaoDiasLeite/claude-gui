@@ -227,6 +227,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteSession: (id: string) => ipcRenderer.invoke('session:delete', id),
   exportSession: (session: unknown, format: 'md' | 'html') =>
     ipcRenderer.invoke('session:export', session, format),
+  exportMarkdown: (defaultFileName: string, content: string) =>
+    ipcRenderer.invoke('app:export-markdown', defaultFileName, content),
 
   // Commands & skills
   commandsList: (projectPath?: string) => ipcRenderer.invoke('commands:list', projectPath),

@@ -4,6 +4,7 @@ import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import AccountPicker from './AccountPicker'
 import ChatTerminal from './ChatTerminal'
+import { sessionToMarkdown } from '../lib/markdown-export'
 import './Chat.css'
 
 interface Props {
@@ -64,6 +65,8 @@ export default function Chat({
   onExportSession
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [markdownCopied, setMarkdownCopied] = useState(false)
+  const [markdownSaved, setMarkdownSaved] = useState(false)
   // Per-chat terminal toggle, keyed by session id so each chat remembers its own state.
   const [termOpenById, setTermOpenById] = useState<Record<string, boolean>>({})
   const termOpen = !!(session && termOpenById[session.id])
@@ -144,6 +147,29 @@ export default function Chat({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [session?.messages])
+
+  const handleCopyMarkdown = () => {
+    if (!session) return
+    navigator.clipboard.writeText(sessionToMarkdown(session)).then(() => {
+      // Keep the dropdown open long enough for the "Copied ✓" label to be seen,
+      // then close it (closing immediately would hide the only feedback).
+      setMarkdownCopied(true)
+      setTimeout(() => {
+        setMarkdownCopied(false)
+        setExportMenuOpen(false)
+      }, 1200)
+    })
+  }
+
+  const handleSaveMarkdown = async () => {
+    if (!session) return
+    const md = sessionToMarkdown(session)
+    const result = await window.electronAPI.exportMarkdown(session.name || 'chat', md)
+    if (result.saved) {
+      setMarkdownSaved(true)
+      setTimeout(() => setMarkdownSaved(false), 1500)
+    }
+  }
 
   const handleSend = () => {
     if (streaming) {
@@ -342,7 +368,12 @@ export default function Chat({
             </button>
             {exportMenuOpen && (
               <div className="export-dropdown" onMouseLeave={() => setExportMenuOpen(false)}>
-                <button onClick={() => { setExportMenuOpen(false); onExportSession('md') }}>Export as Markdown</button>
+                <button onClick={() => { setExportMenuOpen(false); handleSaveMarkdown() }}>
+                  {markdownSaved ? 'Saved ✓' : 'Export as .md'}
+                </button>
+                <button onClick={handleCopyMarkdown}>
+                  {markdownCopied ? 'Copied ✓' : 'Copy as Markdown'}
+                </button>
                 <button onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
               </div>
             )}

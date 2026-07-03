@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Session, AuthStatus, CCAccountStatus } from '../types'
 import FileTree from './FileTree'
 import './Sidebar.css'
@@ -170,6 +170,37 @@ export default function Sidebar({
   // is already on screen in the main area, so listing it adds nothing.
   const visibleSessions = sessions.filter((s) => s.messages.length > 0)
 
+  // ── Session search ──────────────────────────────────────────────────────
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // Debounce so typing doesn't re-filter (and re-scan every message) on every keystroke
+  // for people with a lot of history.
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQuery(searchInput), 150)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
+  const clearSearch = () => {
+    setSearchInput('')
+    setSearchQuery('')
+  }
+
+  const filteredSessions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return visibleSessions
+    return visibleSessions.filter((s) => {
+      if (s.name?.toLowerCase().includes(q)) return true
+      const base = s.projectPath?.split(/[\\/]/).filter(Boolean).pop()
+      if (base?.toLowerCase().includes(q)) return true
+      return s.messages.some(
+        (m) => (m.role === 'user' || m.role === 'assistant') && m.content?.toLowerCase().includes(q)
+      )
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleSessions, searchQuery])
+
   const formatDate = (ts: number) => {
     const d = new Date(ts)
     const now = new Date()
@@ -256,13 +287,53 @@ export default function Sidebar({
                 </button>
               </div>
             </div>
+            {(visibleSessions.length >= 5 || searchQuery) && (
+              <div className="session-search">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="session-search-icon">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  className="session-search-input"
+                  placeholder="Search chats…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation()
+                      clearSearch()
+                      searchInputRef.current?.blur()
+                    }
+                  }}
+                  aria-label="Search chats"
+                />
+                {searchInput && (
+                  <button
+                    className="session-search-clear"
+                    onClick={clearSearch}
+                    title="Clear search"
+                    aria-label="Clear search"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
             <div className="session-list">
               {visibleSessions.length === 0 && (
                 <div className="empty-state session-empty">
                   No chats yet — send your first message and it will show up here.
                 </div>
               )}
-              {visibleSessions.map((s) => (
+              {visibleSessions.length > 0 && filteredSessions.length === 0 && (
+                <div className="empty-state session-empty">No sessions match.</div>
+              )}
+              {filteredSessions.map((s) => (
                 <div
                   key={s.id}
                   className={`session-item ${s.id === activeId ? 'active' : ''}`}

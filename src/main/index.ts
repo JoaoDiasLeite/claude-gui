@@ -1517,3 +1517,26 @@ ${msgHtml}
     return { saved: true, filePath: result.filePath }
   }
 )
+
+// Strip characters illegal in Windows file names (also fine on macOS/Linux).
+function sanitizeFileName(name: string): string {
+  const cleaned = name.replace(/[/\\?%*:|"<>]/g, '-').trim()
+  return cleaned || 'chat'
+}
+
+ipcMain.handle('app:export-markdown', async (_, defaultFileName: string, content: string) => {
+  if (!mainWindow) return { saved: false }
+  const fileName = sanitizeFileName(defaultFileName).replace(/\.md$/i, '') + '.md'
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Export chat as Markdown',
+    defaultPath: path.join(app.getPath('documents'), fileName),
+    filters: [{ name: 'Markdown', extensions: ['md'] }, { name: 'All files', extensions: ['*'] }]
+  })
+  if (result.canceled || !result.filePath) return { saved: false }
+  try {
+    fs.writeFileSync(result.filePath, content, 'utf-8')
+  } catch {
+    return { saved: false }
+  }
+  return { saved: true, path: result.filePath }
+})
