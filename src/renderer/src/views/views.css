@@ -258,6 +258,41 @@
 .limit-fill.warn { background: #e2b341; }
 .limit-fill.danger { background: var(--error); }
 
+/* Account switcher at the top of the Usage view — same segmented look as .range-tabs. */
+.account-tabs {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  width: fit-content;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  margin-bottom: 4px;
+}
+
+/* Collapsible section header (Recent activity / local estimates). */
+.collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.collapse-toggle:hover { color: var(--text-0); }
+.collapse-chevron { transition: transform 0.15s; flex-shrink: 0; }
+.collapse-chevron.open { transform: rotate(90deg); }
+.collapse-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* Per-account subsections inside "Plan usage" (headers only shown with 2+ accounts). */
 .plan-accounts {
   display: flex;

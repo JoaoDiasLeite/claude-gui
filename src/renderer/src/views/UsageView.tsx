@@ -150,6 +150,17 @@ export default function UsageView() {
   const [editingLimits, setEditingLimits] = useState(false)
   const [detailKey, setDetailKey] = useState<string | null>(null)
   const [planReport, setPlanReport] = useState<PlanUsageReport | null>(null)
+  // 'all' or an account-chip key: filters the plan section AND the local stats below.
+  const [accountFilter, setAccountFilter] = useState<string>('all')
+  // Local estimates are secondary now that real plan numbers exist — collapsed by default.
+  const [showLocal, setShowLocal] = useState<boolean>(
+    () => localStorage.getItem('usage-local-open') === '1'
+  )
+  const toggleLocal = () =>
+    setShowLocal((v) => {
+      localStorage.setItem('usage-local-open', v ? '0' : '1')
+      return !v
+    })
 
   const apply = (rep: UsageReport, srcs: SourceInfo[], lim: UsageLimits) => {
     setReport(rep)
@@ -219,6 +230,53 @@ export default function UsageView() {
     await window.electronAPI.setLimits(next)
   }
 
+  // Account chips shown at the top: one per login, unioned from plan-usage entries
+  // (managed accounts + WSL logins) and any source accounts without plan data.
+  const accountChips = useMemo(() => {
+    const chips: { key: string; label: string; email?: string }[] = []
+    for (const a of planReport?.accounts ?? []) {
+      if (a.status === 'no-credentials' && a.windows.length === 0) continue
+      // WSL plan entries carry no email in their credentials — borrow it from the
+      // matching usage source so the chip can group that distro's local stats too.
+      const email =
+        a.email ??
+        (a.accountKey.startsWith('wsl:')
+          ? sources.find((s) => s.kind === 'wsl' && `wsl:${s.label}` === a.accountKey)?.account?.email
+          : undefined)
+      chips.push({ key: a.accountKey, label: a.accountName, email })
+    }
+    for (const s of sources) {
+      const email = s.account?.email
+      if (!email || chips.some((c) => c.email === email)) continue
+      chips.push({ key: `email:${email}`, label: email.split('@')[0], email })
+    }
+    return chips
+  }, [planReport, sources])
+
+  // Which usage sources belong to the selected account (email match, plus the
+  // distro itself for WSL logins without an email).
+  const sourcesForAccount = (key: string): Set<string> => {
+    const chip = accountChips.find((c) => c.key === key)
+    const ids = new Set<string>()
+    for (const s of sources) {
+      if (chip?.email && s.account?.email === chip.email) ids.add(s.id)
+      else if (key.startsWith('wsl:') && s.kind === 'wsl' && `wsl:${s.label}` === key) ids.add(s.id)
+    }
+    return ids
+  }
+
+  // The source set the stats below actually use: manual chip toggles in "All accounts"
+  // mode, or the selected account's sources otherwise.
+  const effectiveSources = accountFilter === 'all' ? activeSources : sourcesForAccount(accountFilter)
+
+  // Does a plan entry belong to the selected account chip?
+  const planMatchesFilter = (a: { accountKey: string; email?: string }): boolean => {
+    if (accountFilter === 'all') return true
+    if (a.accountKey === accountFilter) return true
+    const chip = accountChips.find((c) => c.key === accountFilter)
+    return !!chip?.email && a.email === chip.email
+  }
+
   // Filter entries by range + active sources, then aggregate.
   const view = useMemo(() => {
     if (!report) return null
@@ -226,7 +284,7 @@ export default function UsageView() {
     const cutoff = days ? new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10) : null
     const entries = report.entries.filter(
       (e: UsageEntry) =>
-        activeSources.has(e.source) && e.day !== 'unknown' && (!cutoff || e.day >= cutoff)
+        effectiveSources.has(e.source) && e.day !== 'unknown' && (!cutoff || e.day >= cutoff)
     )
 
     // source id -> account email/label, for grouping by account.
@@ -276,7 +334,8 @@ export default function UsageView() {
         .map((a) => ({ ...a, sources: [...a.sources] }))
         .sort((a, b) => b.costUsd - a.costUsd)
     }
-  }, [report, range, activeSources, sources])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report, range, activeSources, sources, accountFilter, accountChips])
 
   // Build a CONTINUOUS timeline (fills empty days with $0) over the selected range,
   // so gaps in activity read correctly. Long ranges bucket by week to keep it legible.
@@ -425,11 +484,34 @@ export default function UsageView() {
       </div>
 
       <div className="view-scroll">
+        {/* Account switcher: filters the plan section and every stat below. */}
+        {accountChips.length > 1 && (
+          <div className="account-tabs">
+            <button
+              className={`range-tab ${accountFilter === 'all' ? 'active' : ''}`}
+              onClick={() => setAccountFilter('all')}
+            >
+              All accounts
+            </button>
+            {accountChips.map((c) => (
+              <button
+                key={c.key}
+                className={`range-tab ${accountFilter === c.key ? 'active' : ''}`}
+                onClick={() => setAccountFilter(c.key)}
+                title={c.email}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Real plan usage — live from Anthropic via each login's OAuth token. One
             subsection per account, primary first; header rows only with 2+ accounts. */}
         {planReport && (() => {
           const visible = planReport.accounts
             .filter((a) => !(a.status === 'no-credentials' && a.windows.length === 0))
+            .filter(planMatchesFilter)
             .sort((a, b) =>
               a.accountKey === planReport.primary ? -1 : b.accountKey === planReport.primary ? 1 : 0
             )
@@ -462,14 +544,33 @@ export default function UsageView() {
           )
         })()}
 
-        {/* Recent activity windows */}
+        {/* Recent activity (local estimates) — secondary to the real plan numbers,
+            so it ships collapsed and expands on demand. */}
         <div className="usage-section">
           <h2>
-            Recent activity
-            <button className="btn-text limit-edit" onClick={() => setEditingLimits((v) => !v)}>
-              {editingLimits ? 'Done' : 'Set budgets'}
+            <button
+              className="collapse-toggle"
+              onClick={toggleLocal}
+              aria-expanded={showLocal}
+            >
+              <svg
+                width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                className={`collapse-chevron ${showLocal ? 'open' : ''}`} aria-hidden="true"
+              >
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+              Recent activity
+              <span className="collapse-sub">local estimates</span>
             </button>
+            {showLocal && (
+              <button className="btn-text limit-edit" onClick={() => setEditingLimits((v) => !v)}>
+                {editingLimits ? 'Done' : 'Set budgets'}
+              </button>
+            )}
           </h2>
+          {showLocal && (
+          <>
           {editingLimits && (
             <div className="limit-edit-row">
               {(['hourUsd', 'sessionUsd', 'weekUsd'] as const).map((k) => (
@@ -493,10 +594,12 @@ export default function UsageView() {
           </div>
           <p className="field-hint">
             These are <strong>local estimates</strong> of your own activity (tokens; cost at public
-            API rates — not your subscription bill). Your real plan limits and reset times live in
-            Claude → Settings → Usage; they're metered server-side and can't be read locally. Set a
-            personal budget above to show a progress bar against it.
+            API rates — not your subscription bill). The Plan usage section above has your real
+            plan limits and reset times. Set a personal budget above to show a progress bar
+            against it.
           </p>
+          </>
+          )}
         </div>
 
         {/* Controls */}
@@ -508,7 +611,9 @@ export default function UsageView() {
               </button>
             ))}
           </div>
-          {sources.length > 1 && (
+          {/* Manual per-source toggles only make sense in "All accounts" mode — a
+              selected account already implies its sources. */}
+          {accountFilter === 'all' && sources.length > 1 && (
             <div className="source-chips">
               {sources.map((s) => (
                 <button
@@ -527,11 +632,11 @@ export default function UsageView() {
 
         {(() => {
           const emails = new Set(
-            sources.filter((s) => activeSources.has(s.id) && s.account?.email).map((s) => s.account!.email!)
+            sources.filter((s) => effectiveSources.has(s.id) && s.account?.email).map((s) => s.account!.email!)
           )
           return emails.size > 1 ? (
             <div className="acct-warn">
-              Combining {emails.size} different accounts: {[...emails].join(', ')}. Toggle sources above to view one at a time.
+              Combining {emails.size} different accounts: {[...emails].join(', ')}. Pick an account above to view one at a time.
             </div>
           ) : null
         })()}
