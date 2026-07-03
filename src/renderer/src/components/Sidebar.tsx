@@ -25,6 +25,10 @@ function shortModelLabel(id: string): string {
 interface Props {
   sessions: Session[]
   activeId: string
+  /** Session ids with an agent run currently in flight — pulsing accent dot. */
+  runningIds: Set<string>
+  /** Session ids with a pending approval waiting — amber dot. */
+  attentionIds: Set<string>
   tab: 'files' | 'sessions'
   onTabChange: (tab: 'files' | 'sessions') => void
   onSelectSession: (id: string) => void
@@ -60,6 +64,8 @@ const STORAGE_KEY = 'sidebar-width'
 export default function Sidebar({
   sessions,
   activeId,
+  runningIds,
+  attentionIds,
   tab,
   onTabChange,
   onSelectSession,
@@ -333,7 +339,21 @@ export default function Sidebar({
               {visibleSessions.length > 0 && filteredSessions.length === 0 && (
                 <div className="empty-state session-empty">No sessions match.</div>
               )}
-              {filteredSessions.map((s) => (
+              {filteredSessions.map((s) => {
+                // Status dot: approval waiting > running > last-message error. At most one.
+                const lastMsg = s.messages[s.messages.length - 1]
+                const status = attentionIds.has(s.id)
+                  ? 'attention'
+                  : runningIds.has(s.id)
+                    ? 'running'
+                    : lastMsg?.error
+                      ? 'error'
+                      : null
+                const statusTitle =
+                  status === 'attention' ? 'Waiting for approval'
+                    : status === 'running' ? 'Running'
+                      : status === 'error' ? 'Ended with an error' : ''
+                return (
                 <div
                   key={s.id}
                   className={`session-item ${s.id === activeId ? 'active' : ''}`}
@@ -341,7 +361,10 @@ export default function Sidebar({
                   onMouseEnter={() => setHoveredId(s.id)}
                   onMouseLeave={() => setHoveredId(null)}
                 >
-                  <div className="session-name">{s.name || 'New chat'}</div>
+                  <div className="session-name">
+                    {status && <span className={`session-dot ${status}`} title={statusTitle} />}
+                    {s.name || 'New chat'}
+                  </div>
                   <div className="session-meta">
                     {s.projectPath && (
                       <span className="session-project" title={s.projectPath}>
@@ -377,7 +400,8 @@ export default function Sidebar({
                     )
                   })()}
                 </div>
-              ))}
+                )
+              })}
             </div>
           </>
         ) : (

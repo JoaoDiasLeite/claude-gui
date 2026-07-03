@@ -76,7 +76,11 @@ export default function App() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [compacting, setCompacting] = useState(false)
-  const [streaming, setStreaming] = useState(false)
+  // Per-session run state: each id in the set has an agent run in flight. The main
+  // process already routes concurrent runs by appSessionId, so the renderer only
+  // needs to track which sessions are busy (no global mutex). Always update
+  // immutably via `new Set(prev)`.
+  const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -109,6 +113,27 @@ export default function App() {
   sessionsRef.current = sessions
   const limitsRef = useRef(limits)
   limitsRef.current = limits
+  // Mirror of runningIds for listener callbacks registered once (same pattern as
+  // sessionsRef/activeIdRef). Kept in sync on every render.
+  const runningIdsRef = useRef(runningIds)
+  runningIdsRef.current = runningIds
+
+  // Add/remove a session id from the running set (immutable Set updates).
+  const startRun = useCallback((sid: string) => {
+    setRunningIds((prev) => {
+      const next = new Set(prev)
+      next.add(sid)
+      return next
+    })
+  }, [])
+  const endRun = useCallback((sid: string) => {
+    setRunningIds((prev) => {
+      if (!prev.has(sid)) return prev
+      const next = new Set(prev)
+      next.delete(sid)
+      return next
+    })
+  }, [])
   // Latest createSession, so the global ⌘N handler never calls a stale closure.
   // An optional projectPath overrides the inherited folder (used by --folder launches).
   const createSessionRef = useRef<(projectPath?: string) => void>(() => {})
@@ -127,9 +152,28 @@ export default function App() {
   const trackedFiles = (sessionId: string) => [...(modifiedFilesRef.current.get(sessionId) ?? [])]
 
   const activeSession = sessions.find((s) => s.id === activeId)
+  // "Is the currently-focused session streaming?" — replaces the old global `streaming`
+  // boolean wherever it gated the active chat's UI.
+  const activeStreaming = activeSession ? runningIds.has(activeSession.id) : false
+  // Sessions with a pending approval — drives the amber sidebar dot.
+  const attentionIds = useMemo(
+    () => new Set(approvalQueue.map((r) => r.appSessionId)),
+    [approvalQueue]
+  )
   const ready = auth ? (auth.mode === 'api-key' ? auth.hasApiKey : auth.claudeCodeDetected || auth.hasApiKey) : false
 
   const addTerm = useCallback((line: TermLine) => {
+    setTerminalLines((prev) => [...prev.slice(-499), line])
+  }, [])
+
+  // With concurrent runs, terminal lines from different sessions interleave. When
+  // more than one run is active, prefix each entry with the producing session's short
+  // name so lines are attributable. Cheap: just prepends to the text at the call site.
+  const addTermFor = useCallback((sid: string, line: TermLine) => {
+    if (runningIdsRef.current.size > 1) {
+      const name = sessionsRef.current.find((s) => s.id === sid)?.name || 'chat'
+      line = { ...line, text: `[${name.slice(0, 14)}] ${line.text}` }
+    }
     setTerminalLines((prev) => [...prev.slice(-499), line])
   }, [])
 
@@ -193,7 +237,7 @@ export default function App() {
             prev.map((s) => (s.id === sid ? { ...s, claudeSessionId: data.claudeSessionId } : s))
           )
         }
-        addTerm({ kind: 'info', text: `session started · ${data.tools.length} tools available` })
+        addTermFor(sid, { kind: 'info', text: `session started · ${data.tools.length} tools available` })
         return
       }
       if (data.kind === 'text') {
@@ -201,13 +245,13 @@ export default function App() {
         return
       }
       if (data.kind === 'thinking') {
-        addTerm({ kind: 'thinking', text: data.content })
+        addTermFor(sid, { kind: 'thinking', text: data.content })
         appendToLastAssistant(sid, (m) => ({ ...m, thinking: (m.thinking ?? '') + data.content }))
         return
       }
       if (data.kind === 'tool-use') {
         const inputStr = typeof data.input === 'object' ? JSON.stringify(data.input) : String(data.input)
-        addTerm({ kind: 'tool', text: `${data.tool}(${inputStr.slice(0, 200)})` })
+        addTermFor(sid, { kind: 'tool', text: `${data.tool}(${inputStr.slice(0, 200)})` })
         const call: ToolCall = { id: data.toolId, tool: data.tool, input: data.input }
         appendToLastAssistant(sid, (m) => ({ ...m, toolCalls: [...(m.toolCalls ?? []), call] }))
         if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(data.tool)) {
@@ -218,7 +262,7 @@ export default function App() {
         return
       }
       if (data.kind === 'tool-result') {
-        addTerm({ kind: data.isError ? 'error' : 'result', text: data.content.slice(0, 300) || '(no output)' })
+        addTermFor(sid, { kind: data.isError ? 'error' : 'result', text: data.content.slice(0, 300) || '(no output)' })
         appendToLastAssistant(sid, (m) => ({
           ...m,
           toolCalls: (m.toolCalls ?? []).map((c) =>
@@ -230,9 +274,9 @@ export default function App() {
     })
 
     const offDone = window.electronAPI.onAgentDone((data: AgentDone) => {
-      setStreaming(false)
-      if (data.isError && data.errorText) addTerm({ kind: 'error', text: data.errorText })
-      addTerm({ kind: 'info', text: `done · $${data.costUsd.toFixed(4)}` })
+      endRun(data.appSessionId)
+      if (data.isError && data.errorText) addTermFor(data.appSessionId, { kind: 'error', text: data.errorText })
+      addTermFor(data.appSessionId, { kind: 'info', text: `done · $${data.costUsd.toFixed(4)}` })
 
       // Budget alerting — fetch fresh config + usage windows and check against limits.
       // Fire-and-forget; non-blocking on the run flow. Any failure is swallowed so
@@ -326,8 +370,8 @@ export default function App() {
     })
 
     const offErr = window.electronAPI.onAgentError((data: AgentError) => {
-      setStreaming(false)
-      addTerm({ kind: 'error', text: data.error })
+      endRun(data.appSessionId)
+      addTermFor(data.appSessionId, { kind: 'error', text: data.error })
       appendToLastAssistant(data.appSessionId, (m) => ({
         ...m,
         content: m.content || `Error: ${data.error}`,
@@ -393,7 +437,7 @@ export default function App() {
   const sendMessage = useCallback(
     (text: string, images?: { mediaType: string; data: string }[]) => {
       const session = sessions.find((s) => s.id === activeIdRef.current)
-      if (!session || streaming) return
+      if (!session || runningIds.has(session.id)) return
 
       // Auto-checkpoint the pre-turn state of files Claude has already touched, so this
       // turn's changes can be rolled back.
@@ -418,13 +462,13 @@ export default function App() {
       }
 
       setSessions((prev) => prev.map((s) => (s.id === session.id ? updated : s)))
-      setStreaming(true)
+      startRun(session.id)
       setTerminalOpen(true)
-      addTerm({ kind: 'user', text: text.slice(0, 120) })
+      addTermFor(session.id, { kind: 'user', text: text.slice(0, 120) })
 
       window.electronAPI.sendAgent(buildAgentPayload(session, text, images))
     },
-    [sessions, streaming, addTerm, buildAgentPayload]
+    [sessions, runningIds, startRun, addTermFor, buildAgentPayload]
   )
 
   // Retry the last failed turn: reset the trailing assistant message and re-send
@@ -434,7 +478,7 @@ export default function App() {
   const retryTurn = useCallback(() => {
     const sid = activeIdRef.current
     const session = sessionsRef.current.find((s) => s.id === sid)
-    if (!session || streaming) return
+    if (!session || runningIdsRef.current.has(sid)) return
 
     // Find the last user message that precedes the failed assistant message.
     const msgs = session.messages
@@ -455,23 +499,23 @@ export default function App() {
       prev.map((s) => (s.id === sid ? { ...s, messages: nextMsgs } : s))
     )
 
-    setStreaming(true)
+    startRun(sid)
     setTerminalOpen(true)
-    addTerm({ kind: 'info', text: 'retrying…' })
+    addTermFor(sid, { kind: 'info', text: 'retrying…' })
 
     // Re-run sends text only — original images are not persisted on Message.
     window.electronAPI.sendAgent(buildAgentPayload(session, lastUserMsg.content))
-  }, [streaming, addTerm, buildAgentPayload])
+  }, [startRun, addTermFor, buildAgentPayload])
   retryTurnRef.current = retryTurn
 
   // Edit a user message and resend: truncates history to before that message,
   // then appends a fresh user + assistant pair with the new text.
   const editAndResend = useCallback(
     (messageId: string, newText: string) => {
-      if (streaming || !newText.trim()) return
+      if (!newText.trim()) return
       const sid = activeIdRef.current
       const session = sessionsRef.current.find((s) => s.id === sid)
-      if (!session) return
+      if (!session || runningIdsRef.current.has(sid)) return
 
       const idx = session.messages.findIndex((m) => m.id === messageId)
       if (idx === -1) return
@@ -484,14 +528,14 @@ export default function App() {
         prev.map((s) => (s.id === sid ? { ...s, messages: nextMsgs, updatedAt: Date.now() } : s))
       )
 
-      setStreaming(true)
+      startRun(sid)
       setTerminalOpen(true)
-      addTerm({ kind: 'user', text: newText.trim().slice(0, 120) })
+      addTermFor(sid, { kind: 'user', text: newText.trim().slice(0, 120) })
 
       // Re-run sends text only — original images are not persisted on Message.
       window.electronAPI.sendAgent(buildAgentPayload(session, newText.trim()))
     },
-    [streaming, addTerm, buildAgentPayload]
+    [startRun, addTermFor, buildAgentPayload]
   )
 
   // Launch a new chat from the quick-launcher overlay (global shortcut) or tray.
@@ -512,11 +556,11 @@ export default function App() {
       const userMsg: Message = { id: generateId(), role: 'user', content: prompt, timestamp: Date.now() }
       const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
 
+      // Each overlay prompt starts a FRESH session, so other in-flight runs no longer
+      // block it — concurrent runs are supported. Only missing auth blocks.
       const blocked = !ready
         ? 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.'
-        : streaming
-          ? 'Another run was in progress — press Retry to send this prompt.'
-          : null
+        : null
 
       s.messages = blocked
         ? [userMsg, { ...assistantMsg, content: blocked, error: true }]
@@ -528,12 +572,12 @@ export default function App() {
         window.electronAPI.saveSession(s)
         return
       }
-      setStreaming(true)
+      startRun(s.id)
       setTerminalOpen(true)
-      addTerm({ kind: 'user', text: prompt.slice(0, 120) })
+      addTermFor(s.id, { kind: 'user', text: prompt.slice(0, 120) })
       window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
     },
-    [defaultModel, defaultAccountId, ready, streaming, addTerm, buildAgentPayload]
+    [defaultModel, defaultAccountId, ready, startRun, addTermFor, buildAgentPayload]
   )
   const startOverlayPromptRef = useRef(startOverlayPrompt)
   startOverlayPromptRef.current = startOverlayPrompt
@@ -574,11 +618,14 @@ export default function App() {
     return w ? { utilization: w.utilization, resetsAt: w.resetsAt } : undefined
   }, [planReport])
 
+  // Stop only the ACTIVE session's run. agent:stop takes the appSessionId and aborts
+  // just that run's AbortController in the main process, leaving other runs untouched.
   const stopMessage = useCallback(async () => {
-    await window.electronAPI.stopAgent(activeIdRef.current)
-    setStreaming(false)
-    addTerm({ kind: 'info', text: 'stopped' })
-  }, [addTerm])
+    const sid = activeIdRef.current
+    await window.electronAPI.stopAgent(sid)
+    endRun(sid)
+    addTermFor(sid, { kind: 'info', text: 'stopped' })
+  }, [endRun, addTermFor])
 
   // projectPath, when a string, overrides the folder normally inherited from the
   // active session (e.g. an Explorer "Open with Claude GUI" or Jump List launch).
@@ -773,16 +820,10 @@ export default function App() {
   }
 
   const runPlannerTask = (task: PlannerTask) => {
-    // Guard: no auth → nothing can run.
+    // Guard: no auth → nothing can run. A planner task spawns a FRESH session, so
+    // concurrent runs are fine — no global streaming refusal.
     if (!ready) {
       addTerm({ kind: 'error', text: 'Not authenticated — cannot run planner task.' })
-      return
-    }
-    // Guard: one global streaming state — refuse concurrent runs so the streaming
-    // flag and onAgentDone don't get confused by two overlapping sessions.
-    if (streaming) {
-      addTerm({ kind: 'error', text: 'A run is already in progress — wait for it to finish before starting a planner task.' })
-      setView('chat')
       return
     }
 
@@ -806,9 +847,9 @@ export default function App() {
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
-    setStreaming(true)
+    startRun(s.id)
     setTerminalOpen(true)
-    addTerm({ kind: 'user', text: prompt.slice(0, 120) })
+    addTermFor(s.id, { kind: 'user', text: prompt.slice(0, 120) })
 
     window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
   }
@@ -908,6 +949,8 @@ export default function App() {
           <Sidebar
             sessions={sessions}
             activeId={activeId}
+            runningIds={runningIds}
+            attentionIds={attentionIds}
             tab={sidebarTab}
             onTabChange={setSidebarTab}
             onSelectSession={setActiveId}
@@ -956,7 +999,7 @@ export default function App() {
             )}
             <Chat
               session={activeSession}
-              streaming={streaming}
+              streaming={activeStreaming}
               onSendMessage={sendMessage}
               onStop={stopMessage}
               onOpenSettings={() => setSettingsOpen(true)}
@@ -1005,7 +1048,6 @@ export default function App() {
           defaultModel={defaultModel}
           defaultAccountId={defaultAccountId}
           onRunTask={runPlannerTask}
-          streaming={streaming}
         />
       )}
       {view === 'scheduled' && (
