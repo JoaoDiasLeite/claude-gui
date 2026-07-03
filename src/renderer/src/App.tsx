@@ -34,6 +34,7 @@ import AccountsModal from './components/AccountsModal'
 import { UiPrefs } from './types'
 import ProjectsView from './views/ProjectsView'
 import AgentsView from './views/AgentsView'
+import RoomsView from './views/RoomsView'
 import UsageView from './views/UsageView'
 import McpView from './views/McpView'
 import PlannerView from './views/PlannerView'
@@ -595,7 +596,7 @@ export default function App() {
     })
     const offPlan = window.electronAPI.onPlanUsage(setPlanReport)
     // Plan-limit notification clicks navigate here; validate against real views.
-    const VIEWS: View[] = ['chat', 'projects', 'agents', 'planner', 'scheduled', 'usage', 'mcp', 'remote']
+    const VIEWS: View[] = ['chat', 'projects', 'agents', 'rooms', 'planner', 'scheduled', 'usage', 'mcp', 'remote']
     const offView = window.electronAPI.onOpenView((v) => {
       if ((VIEWS as string[]).includes(v)) setView(v as View)
     })
@@ -854,6 +855,54 @@ export default function App() {
     window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
   }
 
+  // Rooms view: deploy an agent into a room (project folder) with a first prompt.
+  // Builds the session exactly like runAgent does (agent's run options carried onto the
+  // session) but — unlike runAgent — immediately fires the prompt, and stays on the Rooms
+  // view instead of switching to chat, so the user watches the chip appear and pulse.
+  const deployAgent = (agent: AgentDef, projectPath: string | undefined, prompt: string) => {
+    const text = prompt.trim()
+    if (!text) return
+
+    const s: Session = {
+      id: generateId(),
+      name: text.slice(0, 40),
+      messages: [],
+      projectPath,
+      model: agent.model,
+      agentId: agent.id,
+      agentName: agent.name,
+      accountId: defaultAccountId,
+      systemPrompt: agent.systemPrompt,
+      permissionMode: agent.permissionMode,
+      allowedTools: agent.allowedTools,
+      useMcp: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+
+    const userMsg: Message = { id: generateId(), role: 'user', content: text, timestamp: Date.now() }
+    const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
+
+    // Guard: no auth → same treatment as startOverlayPrompt's blocked path — keep the
+    // prompt visible as a failed turn (error + Retry from chat) instead of dropping it.
+    if (!ready) {
+      s.messages = [userMsg, { ...assistantMsg, content: 'Not signed in — connect Claude Code or an API key in Settings, then press Retry.', error: true }]
+      setSessions((prev) => [s, ...prev])
+      window.electronAPI.saveSession(s)
+      return
+    }
+
+    s.messages = [userMsg, assistantMsg]
+    setSessions((prev) => [s, ...prev])
+    // Deliberately no setActiveId/setView('chat') here — stay in Rooms so the new
+    // occupant chip appears and starts pulsing in place.
+    startRun(s.id)
+    setTerminalOpen(true)
+    addTermFor(s.id, { kind: 'user', text: text.slice(0, 120) })
+
+    window.electronAPI.sendAgent(buildAgentPayload(s, text))
+  }
+
   const handleSetDefaultModel = async (modelId: string) => {
     setDefaultModel(modelId)
     await window.electronAPI.setDefaultModel(modelId)
@@ -894,6 +943,7 @@ export default function App() {
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
       { v: 'agents', label: 'Agents' },
+      { v: 'rooms', label: 'Rooms' },
       { v: 'planner', label: 'Planner' },
       { v: 'scheduled', label: 'Routines' },
       { v: 'usage', label: 'Usage' },
@@ -1041,6 +1091,19 @@ export default function App() {
 
       {view === 'projects' && <ProjectsView onResume={resumeCCSession} />}
       {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
+      {view === 'rooms' && (
+        <RoomsView
+          sessions={sessions}
+          runningIds={runningIds}
+          attentionIds={attentionIds}
+          onOpenSession={(id) => {
+            setActiveId(id)
+            setView('chat')
+          }}
+          onOpenAgentsView={() => setView('agents')}
+          onDeploy={deployAgent}
+        />
+      )}
       {view === 'planner' && (
         <PlannerView
           accounts={accounts}
