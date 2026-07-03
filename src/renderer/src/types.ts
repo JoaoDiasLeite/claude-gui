@@ -105,6 +105,8 @@ export interface SystemPrefs {
   closeToTray: boolean
   /** Preferred quick-launcher accelerator. '' = automatic (Alt+Space with fallback). */
   overlayShortcut: string
+  /** Add an "Open with Claude GUI" entry to the Explorer folder right-click menu (HKCU). */
+  explorerContextMenu: boolean
 }
 
 export interface AppConfig {
@@ -612,7 +614,7 @@ declare global {
       onUpdaterEvent: (cb: (data: UpdaterState) => void) => () => void
 
       // Tray / quick-launcher overlay — events received by the MAIN window
-      onNewChat: (cb: () => void) => () => void
+      onNewChat: (cb: (folderPath?: string) => void) => () => void
       onOverlayPrompt: (cb: (payload: { prompt: string; quick?: boolean }) => void) => () => void
       onOpenSession: (cb: (sessionId: string) => void) => () => void
 

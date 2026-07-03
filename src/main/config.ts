@@ -46,6 +46,8 @@ export interface SystemPrefs {
   closeToTray: boolean
   /** Preferred quick-launcher accelerator. '' = automatic (Alt+Space with fallback). */
   overlayShortcut: string
+  /** Add an "Open with Claude GUI" entry to the Explorer folder right-click menu (HKCU). */
+  explorerContextMenu: boolean
 }
 
 interface AppConfig {
@@ -64,7 +66,7 @@ let config: AppConfig = {
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
   ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false },
-  system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '' }
+  system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '', explorerContextMenu: false }
 }
 
 export function loadConfig(): void {

@@ -110,7 +110,8 @@ export default function App() {
   const limitsRef = useRef(limits)
   limitsRef.current = limits
   // Latest createSession, so the global ⌘N handler never calls a stale closure.
-  const createSessionRef = useRef<() => void>(() => {})
+  // An optional projectPath overrides the inherited folder (used by --folder launches).
+  const createSessionRef = useRef<(projectPath?: string) => void>(() => {})
 
   // Files Claude has edited/written per session — used for checkpoint snapshots.
   const modifiedFilesRef = useRef<Map<string, Set<string>>>(new Map())
@@ -540,7 +541,7 @@ export default function App() {
   // Tray & overlay events from the main process. Registered once; refs keep the
   // handlers seeing fresh state (same pattern as createSessionRef).
   useEffect(() => {
-    const offNewChat = window.electronAPI.onNewChat(() => createSessionRef.current())
+    const offNewChat = window.electronAPI.onNewChat((folderPath) => createSessionRef.current(folderPath))
     const offPrompt = window.electronAPI.onOverlayPrompt((p) => startOverlayPromptRef.current(p))
     const offOpen = window.electronAPI.onOpenSession((id) => {
       if (sessionsRef.current.some((s) => s.id === id)) {
@@ -579,8 +580,17 @@ export default function App() {
     addTerm({ kind: 'info', text: 'stopped' })
   }, [addTerm])
 
-  const createSession = () => {
-    const s = newSession(activeSession?.projectPath, defaultModel, activeSession?.accountId ?? defaultAccountId)
+  // projectPath, when a string, overrides the folder normally inherited from the
+  // active session (e.g. an Explorer "Open with Claude GUI" or Jump List launch).
+  // The `typeof` guard lets this double as a plain onClick handler — a click event
+  // arg is ignored rather than mistaken for a folder path.
+  const createSession = (projectPath?: unknown) => {
+    const folder = typeof projectPath === 'string' ? projectPath : undefined
+    const s = newSession(
+      folder ?? activeSession?.projectPath,
+      defaultModel,
+      activeSession?.accountId ?? defaultAccountId
+    )
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')

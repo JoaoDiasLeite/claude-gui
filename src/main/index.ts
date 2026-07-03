@@ -80,6 +80,8 @@ import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
+import { setExplorerContextMenu, extractLaunchAction, LaunchAction } from './shell-integration'
+import { refreshJumpList } from './jumplist'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -95,7 +97,10 @@ let trayHintShown = false
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => showMainWindow())
+  app.on('second-instance', (_e, commandLine) => {
+    showMainWindow()
+    routeLaunchAction(extractLaunchAction(commandLine))
+  })
 }
 
 function showMainWindow(): void {
@@ -106,6 +111,20 @@ function showMainWindow(): void {
   if (mainWindow.isMinimized()) mainWindow.restore()
   mainWindow.show()
   mainWindow.focus()
+}
+
+// Turn a --folder / --new-chat launch (from the Explorer menu, Jump List, or CLI)
+// into a new chat in the renderer. A folder path only rides along if it still exists;
+// otherwise fall through to a plain new chat. sendToMainWindow tolerates a still-
+// loading renderer, so this is safe to call before the window has finished loading.
+function routeLaunchAction(action: LaunchAction | null): void {
+  if (!action) return
+  showMainWindow()
+  if (action.type === 'folder' && fs.existsSync(action.path)) {
+    sendToMainWindow('app:new-chat', action.path)
+  } else {
+    sendToMainWindow('app:new-chat')
+  }
 }
 
 // In-flight agent runs keyed by app session id, so we can stop them.
@@ -340,6 +359,21 @@ app.whenReady().then(() => {
     }
   }, 1500)
   app.on('activate', () => showMainWindow())
+
+  // Explorer context menu: re-register on every launch when enabled so the stored
+  // exe path stays fresh across updates. Skip in dev — electron.exe as the target
+  // would leave a checkout-specific command in the user's registry.
+  if (!is.dev && getConfig().system.explorerContextMenu) {
+    void setExplorerContextMenu(true)
+  }
+
+  // Windows Jump List (recent projects + New chat), refreshed on save below.
+  refreshJumpList()
+
+  // A --folder / --new-chat first launch (Explorer menu or Jump List while the app
+  // wasn't already running): route it once the window exists. sendToMainWindow defers
+  // until the renderer has loaded.
+  routeLaunchAction(extractLaunchAction(process.argv))
 })
 
 app.on('window-all-closed', () => {
@@ -832,7 +866,18 @@ ipcMain.handle('config:set-ui', (_, prefs: Partial<UiPrefs>) => setUiPrefs(prefs
 ipcMain.handle('config:set-system', (_, prefs: Partial<SystemPrefs>) => {
   const prevOpenAtLogin = getConfig().system.openAtLogin
   const prevShortcut = getConfig().system.overlayShortcut
+  const prevExplorerMenu = getConfig().system.explorerContextMenu
   const system = setSystemPrefs(prefs)
+
+  // Add/remove the Explorer folder context-menu entries when the toggle changed.
+  // Skipped in dev (electron.exe path is meaningless outside this checkout).
+  if (
+    !is.dev &&
+    prefs.explorerContextMenu !== undefined &&
+    prefs.explorerContextMenu !== prevExplorerMenu
+  ) {
+    void setExplorerContextMenu(system.explorerContextMenu)
+  }
 
   // Only touch the registry when the pref actually changed, and never in dev (see
   // the startup call for why: electron.exe isn't a meaningful login target there).
@@ -1315,6 +1360,9 @@ ipcMain.handle('session:save', (_, session: unknown) => {
     return { success: false, reason: 'invalid-id' }
   }
   fs.writeFileSync(path.join(sessionsDir, `${s.id}.json`), JSON.stringify(session, null, 2))
+  // Keep the "Recent projects" Jump List current. Debounced inside refreshJumpList,
+  // so the burst of saves during a streaming turn only rebuilds once.
+  refreshJumpList()
   return { success: true }
 })
 

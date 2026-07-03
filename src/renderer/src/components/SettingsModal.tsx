@@ -410,6 +410,18 @@ export default function SettingsModal({
                     <span className="toggle-track"><span className="toggle-thumb" /></span>
                   </label>
                 </div>
+                <div className="seg-field">
+                  <span>Show &lsquo;Open with Claude GUI&rsquo; in the Explorer folder menu</span>
+                  <label className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={system.explorerContextMenu}
+                      disabled={systemBusy}
+                      onChange={(e) => updateSystem({ explorerContextMenu: e.target.checked })}
+                    />
+                    <span className="toggle-track"><span className="toggle-thumb" /></span>
+                  </label>
+                </div>
               </div>
 
               <div className="shortcut-field">

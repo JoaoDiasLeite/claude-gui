@@ -15,8 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // Tray / quick-launcher overlay — events received by the MAIN window
-  onNewChat: (cb: () => void) => {
-    const fn = () => cb()
+  onNewChat: (cb: (folderPath?: string) => void) => {
+    const fn = (_: unknown, folderPath?: string) => cb(folderPath)
     ipcRenderer.on('app:new-chat', fn)
     return () => ipcRenderer.removeListener('app:new-chat', fn)
   },
