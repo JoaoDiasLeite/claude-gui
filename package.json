@@ -45,7 +45,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Claude-GUI-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
