@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut } fro
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
+import { sdkExecutable } from './sdk-exe'
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -692,6 +693,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     const stream = query({
       prompt: buildPrompt(prompt, payload.images, claudeSessionId ?? '') as string,
       options: {
+        ...sdkExecutable(),
         model,
         cwd,
         env,
@@ -979,6 +981,7 @@ ipcMain.handle(
       const stream = query({
         prompt,
         options: {
+          ...sdkExecutable(),
           model,
           cwd: os.homedir(),
           env,
@@ -1186,6 +1189,7 @@ ipcMain.handle(
       const stream = query({
         prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, '') as string,
         options: {
+          ...sdkExecutable(),
           model,
           cwd: os.homedir(),
           env,
@@ -1353,6 +1357,7 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
     const stream = query({
       prompt: buildAgentSuggestPrompt(digest),
       options: {
+        ...sdkExecutable(),
         model: 'claude-haiku-4-5',
         cwd: os.homedir(),
         env,

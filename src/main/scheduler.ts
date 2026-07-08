@@ -6,6 +6,7 @@ import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import { buildSubprocessEnv } from './auth'
 import { getConfig } from './config'
 import { accountConfigDir } from './accounts'
+import { sdkExecutable } from './sdk-exe'
 
 // ─── Data model ────────────────────────────────────────────────────────────
 
@@ -310,6 +311,7 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
 
   try {
     const streamOptions: Parameters<typeof query>[0]['options'] = {
+      ...sdkExecutable(),
       model,
       cwd,
       env,
