@@ -19,7 +19,8 @@
       {
         "provider": "github",
         "owner": "JoaoDiasLeite",
-        "repo": "claude-gui"
+        "repo": "claude-gui",
+        "releaseType": "release"
       }
     ],
     "directories": {

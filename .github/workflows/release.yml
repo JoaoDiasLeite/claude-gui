@@ -1,0 +1,30 @@
+# Builds the Windows installer and publishes it to GitHub Releases whenever a
+# version tag (v0.3.0, v1.0.0, …) is pushed. The tag must match the "version"
+# in package.json — electron-builder names the release after package.json.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build and publish
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
