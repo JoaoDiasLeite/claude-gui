@@ -1,6 +1,7 @@
 import { BrowserWindow, globalShortcut, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import { hardenWebContents } from './window-security'
 
 // Quick-launcher overlay: a hidden, always-on-top acrylic window summoned with a
 // global shortcut from anywhere in the OS. It dismisses on blur/Esc like a native
@@ -49,6 +50,8 @@ export function createOverlayWindow(): BrowserWindow {
   overlayWindow.on('closed', () => {
     overlayWindow = null
   })
+
+  hardenWebContents(overlayWindow)
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     overlayWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/overlay.html`)

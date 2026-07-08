@@ -1,6 +1,7 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import { hardenWebContents } from './window-security'
 
 // Approval toast: a small, always-on-top acrylic flyout shown in the bottom-right
 // corner when an agent run needs tool approval while the main window is hidden or
@@ -43,6 +44,8 @@ export function createToastWindow(): BrowserWindow {
   toastWindow.on('closed', () => {
     toastWindow = null
   })
+
+  hardenWebContents(toastWindow)
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     toastWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/toast.html`)

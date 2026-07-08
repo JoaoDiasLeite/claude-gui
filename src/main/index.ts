@@ -1,6 +1,7 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, Notification, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { hardenWebContents } from './window-security'
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -288,10 +289,7 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
+  hardenWebContents(mainWindow)
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])

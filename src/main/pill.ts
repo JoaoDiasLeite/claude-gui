@@ -1,6 +1,7 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import { hardenWebContents } from './window-security'
 
 // Agent status pill: a tiny always-on-top "picture-in-picture" flyout shown while
 // an agent run is in flight AND the main window is hidden/minimized, so background
@@ -63,6 +64,8 @@ export function createPillWindow(): BrowserWindow {
   pillWindow.on('closed', () => {
     pillWindow = null
   })
+
+  hardenWebContents(pillWindow)
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     pillWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/pill.html`)
