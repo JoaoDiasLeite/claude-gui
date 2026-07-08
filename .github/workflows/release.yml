@@ -1,6 +1,10 @@
 # Builds the Windows installer and publishes it to GitHub Releases whenever a
 # version tag (v0.3.0, v1.0.0, …) is pushed. The tag must match the "version"
-# in package.json — electron-builder names the release after package.json.
+# in package.json — latest.yml is generated from package.json.
+#
+# electron-builder runs with --publish never: its own GitHub publisher races
+# parallel asset uploads and creates duplicate releases. A single
+# action-gh-release step uploads everything to one release instead.
 name: Release
 
 on:
@@ -24,7 +28,13 @@ jobs:
 
       - run: npm ci
 
-      - name: Build and publish
-        run: npm run release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build installer
+        run: npm run package -- --publish never
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
