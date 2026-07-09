@@ -459,6 +459,13 @@ export interface WslDistro {
   isDefault: boolean
 }
 
+export interface RoomsLayout {
+  /** Room keys (project path, or '__unassigned__') in the user's preferred order. */
+  order: string[]
+  /** Room key -> custom display name, overriding the default folder-name label. */
+  names: Record<string, string>
+}
+
 export type AuthMode = 'claude-code' | 'api-key'
 
 export interface AuthStatus {
@@ -817,6 +824,10 @@ declare global {
       wslTest: (distro: string) => Promise<{ ok: boolean; message: string }>
       wslHidden: () => Promise<string[]>
       wslSetHidden: (distro: string, hidden: boolean) => Promise<string[]>
+
+      // Rooms (persisted board layout: room order + custom names)
+      roomsGetLayout: () => Promise<RoomsLayout>
+      roomsSetLayout: (layout: RoomsLayout) => Promise<boolean>
 
       // Git
       gitStatus: (cwd: string) => Promise<GitStatus>

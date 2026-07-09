@@ -47,7 +47,7 @@ import {
   SshHost
 } from './ssh'
 import { listDistros, testDistro, runWsl, stopWsl } from './wsl'
-import { getHiddenDistros, setDistroHidden } from './store'
+import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
   loadAccounts,
   listAccountStatus,
@@ -886,6 +886,14 @@ ipcMain.handle('wsl:list', () => listDistros())
 ipcMain.handle('wsl:test', (_, distro: string) => testDistro(distro))
 ipcMain.handle('wsl:hidden', () => getHiddenDistros())
 ipcMain.handle('wsl:set-hidden', (_, distro: string, hidden: boolean) => setDistroHidden(distro, hidden))
+
+// ─── Rooms (persisted board layout) ───────────────────────────────────────────
+
+ipcMain.handle('rooms:get-layout', () => getRoomsLayout())
+ipcMain.handle('rooms:set-layout', (_, layout: RoomsLayout) => {
+  setRoomsLayout(layout)
+  return true
+})
 
 // ─── Config / Models ──────────────────────────────────────────────────────────
 

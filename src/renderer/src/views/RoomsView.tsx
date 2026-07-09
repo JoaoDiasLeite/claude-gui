@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AgentDef, ApprovalRequest, Session } from '../types'
+import { AgentDef, ApprovalRequest, RoomsLayout, Session } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
 import ApprovalModal from '../components/ApprovalModal'
 import './views.css'
@@ -47,9 +47,56 @@ export default function RoomsView({ sessions, runningIds, attentionIds, approval
   } | null>(null)
   const [expandedRoom, setExpandedRoom] = useState<string | null>(null)
 
+  // Persisted room order + custom names (main-process store, debounced writes).
+  const [layout, setLayout] = useState<RoomsLayout>({ order: [], names: {} })
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     window.electronAPI.agentsList().then(setAgents)
   }, [])
+
+  useEffect(() => {
+    window.electronAPI
+      .roomsGetLayout()
+      .then((l) => {
+        setLayout({
+          order: Array.isArray(l?.order) ? l.order : [],
+          names: l?.names && typeof l.names === 'object' ? l.names : {}
+        })
+      })
+      .catch(() => {
+        // Fall back to the empty default already in state.
+      })
+    return () => {
+      if (saveTimeout.current) clearTimeout(saveTimeout.current)
+    }
+  }, [])
+
+  // Applies a layout change to state and debounces the write to the main-process store
+  // so drags/renames don't hammer IPC. `updater` is only ever invoked for user-driven
+  // changes (the initial load above calls setLayout directly and never persists).
+  const updateLayout = (updater: (prev: RoomsLayout) => RoomsLayout) => {
+    setLayout((prev) => {
+      const next = updater(prev)
+      if (saveTimeout.current) clearTimeout(saveTimeout.current)
+      saveTimeout.current = setTimeout(() => {
+        window.electronAPI.roomsSetLayout(next).catch(() => {
+          // Best-effort persistence; a failed write just means it retries next change.
+        })
+      }, 500)
+      return next
+    })
+  }
+
+  const renameRoom = (key: string, rawName: string) => {
+    const name = rawName.trim()
+    updateLayout((prev) => {
+      const names = { ...prev.names }
+      if (name) names[key] = name
+      else delete names[key]
+      return { ...prev, names }
+    })
+  }
 
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
 
@@ -76,7 +123,7 @@ export default function RoomsView({ sessions, runningIds, attentionIds, approval
   // Only sessions with at least one message "live" in a room.
   const occupied = useMemo(() => sessions.filter((s) => s.messages.length > 0), [sessions])
 
-  const rooms: Room[] = useMemo(() => {
+  const baseRooms: Room[] = useMemo(() => {
     const byPath = new Map<string, Session[]>()
     const unassigned: Session[] = []
     for (const s of occupied) {
@@ -104,6 +151,37 @@ export default function RoomsView({ sessions, runningIds, attentionIds, approval
     }
     return result
   }, [occupied])
+
+  // Apply the custom name (if any) and the persisted order on top of the derived rooms.
+  // "Unassigned" (a synthetic room, not a real folder) always stays pinned last and isn't
+  // reorderable — only real project rooms participate in the persisted order.
+  const rooms: Room[] = useMemo(() => {
+    const named = baseRooms.map((r) => {
+      const custom = layout.names[r.key]?.trim()
+      return custom ? { ...r, label: custom } : r
+    })
+    const unassigned = named.find((r) => r.key === '__unassigned__')
+    const projectRooms = named.filter((r) => r.key !== '__unassigned__')
+    const orderIndex = new Map(layout.order.map((k, i) => [k, i]))
+    projectRooms.sort((a, b) => {
+      const ia = orderIndex.has(a.key) ? (orderIndex.get(a.key) as number) : Number.MAX_SAFE_INTEGER
+      const ib = orderIndex.has(b.key) ? (orderIndex.get(b.key) as number) : Number.MAX_SAFE_INTEGER
+      if (ia !== ib) return ia - ib
+      return a.label.localeCompare(b.label)
+    })
+    return unassigned ? [...projectRooms, unassigned] : projectRooms
+  }, [baseRooms, layout])
+
+  const moveRoom = (key: string, direction: -1 | 1) => {
+    const keys = rooms.filter((r) => r.key !== '__unassigned__').map((r) => r.key)
+    const idx = keys.indexOf(key)
+    if (idx < 0) return
+    const swapIdx = idx + direction
+    if (swapIdx < 0 || swapIdx >= keys.length) return
+    const nextKeys = [...keys]
+    ;[nextKeys[idx], nextKeys[swapIdx]] = [nextKeys[swapIdx], nextKeys[idx]]
+    updateLayout((prev) => ({ ...prev, order: nextKeys }))
+  }
 
   const workingCount = occupied.filter((s) => runningIds.has(s.id)).length
   const waitingCount = occupied.filter((s) => attentionIds.has(s.id)).length
@@ -168,25 +246,34 @@ export default function RoomsView({ sessions, runningIds, attentionIds, approval
           </div>
         ) : (
           <div className="rooms-grid">
-            {rooms.map((room) => (
-              <RoomCard
-                key={room.key}
-                room={room}
-                agentById={agentById}
-                runningIds={runningIds}
-                attentionIds={attentionIds}
-                approvalCounts={approvalCounts}
-                onReviewSession={setReviewSessionId}
-                isDropTarget={dragOverRoom === room.key}
-                expanded={expandedRoom === room.key}
-                onToggleExpand={() => setExpandedRoom((k) => (k === room.key ? null : room.key))}
-                onDragOver={() => dragAgentId && setDragOverRoom(room.key)}
-                onDragLeave={() => setDragOverRoom((k) => (k === room.key ? null : k))}
-                onDrop={() => handleDrop(room)}
-                onOpenSession={onOpenSession}
-                onAddClick={() => openMissionForRoom(room)}
-              />
-            ))}
+            {rooms.map((room, i) => {
+              const reorderable = room.key !== '__unassigned__'
+              const projectCount = rooms.filter((r) => r.key !== '__unassigned__').length
+              return (
+                <RoomCard
+                  key={room.key}
+                  room={room}
+                  agentById={agentById}
+                  runningIds={runningIds}
+                  attentionIds={attentionIds}
+                  approvalCounts={approvalCounts}
+                  onReviewSession={setReviewSessionId}
+                  isDropTarget={dragOverRoom === room.key}
+                  expanded={expandedRoom === room.key}
+                  onToggleExpand={() => setExpandedRoom((k) => (k === room.key ? null : room.key))}
+                  onDragOver={() => dragAgentId && setDragOverRoom(room.key)}
+                  onDragLeave={() => setDragOverRoom((k) => (k === room.key ? null : k))}
+                  onDrop={() => handleDrop(room)}
+                  onOpenSession={onOpenSession}
+                  onAddClick={() => openMissionForRoom(room)}
+                  onRename={renameRoom}
+                  canMoveUp={reorderable && i > 0}
+                  canMoveDown={reorderable && i < projectCount - 1}
+                  onMoveUp={() => moveRoom(room.key, -1)}
+                  onMoveDown={() => moveRoom(room.key, 1)}
+                />
+              )
+            })}
           </div>
         )}
       </div>
@@ -278,7 +365,12 @@ function RoomCard({
   onDragLeave,
   onDrop,
   onOpenSession,
-  onAddClick
+  onAddClick,
+  onRename,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown
 }: {
   room: Room
   agentById: Map<string, AgentDef>
@@ -294,9 +386,35 @@ function RoomCard({
   onDrop: () => void
   onOpenSession: (id: string) => void
   onAddClick: () => void
+  onRename: (key: string, name: string) => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
 }) {
   const visible = expanded ? room.sessions : room.sessions.slice(0, MAX_VISIBLE_CHIPS)
   const overflow = room.sessions.length - visible.length
+
+  const [editingName, setEditingName] = useState(false)
+  const [draftName, setDraftName] = useState(room.label)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+
+  const startEditing = () => {
+    setDraftName(room.label)
+    setEditingName(true)
+  }
+
+  useEffect(() => {
+    if (editingName) {
+      nameInputRef.current?.focus()
+      nameInputRef.current?.select()
+    }
+  }, [editingName])
+
+  const commitRename = () => {
+    setEditingName(false)
+    onRename(room.key, draftName)
+  }
 
   return (
     <div
@@ -312,8 +430,59 @@ function RoomCard({
       }}
     >
       <div className="room-card-head">
-        <div className="room-card-title" title={room.path ?? 'Sessions with no project folder'}>
-          {room.label}
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            className="room-card-title-input"
+            value={draftName}
+            onChange={(e) => setDraftName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                commitRename()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                setEditingName(false)
+              }
+            }}
+          />
+        ) : (
+          <div
+            className="room-card-title"
+            title={room.path ?? 'Sessions with no project folder'}
+            onDoubleClick={startEditing}
+          >
+            {room.label}
+          </div>
+        )}
+        <button
+          className="room-rename-btn"
+          onClick={startEditing}
+          title="Rename room"
+          aria-label="Rename room"
+        >
+          ✎
+        </button>
+        <div className="room-reorder">
+          <button
+            className="room-reorder-btn"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            title="Move room up"
+            aria-label="Move room up"
+          >
+            ▲
+          </button>
+          <button
+            className="room-reorder-btn"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            title="Move room down"
+            aria-label="Move room down"
+          >
+            ▼
+          </button>
         </div>
         <span className="room-card-count">{room.sessions.length}</span>
         <button className="room-add-btn" onClick={onAddClick} title="Deploy an agent into this room">

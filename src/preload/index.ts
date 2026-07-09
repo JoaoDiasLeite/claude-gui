@@ -209,6 +209,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   wslHidden: () => ipcRenderer.invoke('wsl:hidden'),
   wslSetHidden: (distro: string, hidden: boolean) => ipcRenderer.invoke('wsl:set-hidden', distro, hidden),
 
+  // Rooms (persisted board layout: room order + custom names)
+  roomsGetLayout: () => ipcRenderer.invoke('rooms:get-layout'),
+  roomsSetLayout: (layout: unknown) => ipcRenderer.invoke('rooms:set-layout', layout),
+
   // Git
   gitStatus: (cwd: string) => ipcRenderer.invoke('git:status', cwd),
   gitDiff: (cwd: string, filePath: string, staged: boolean) =>

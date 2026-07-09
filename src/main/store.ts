@@ -56,3 +56,31 @@ export function setDistroHidden(distro: string, hidden: boolean): string[] {
   storeSet('hiddenDistros', next)
   return next
 }
+
+// ─── Rooms layout (room order + custom names) ─────────────────────────────────
+
+export interface RoomsLayout {
+  /** Room keys (project path, or '__unassigned__') in the user's preferred order. */
+  order: string[]
+  /** Room key -> custom display name, overriding the default folder-name label. */
+  names: Record<string, string>
+}
+
+const DEFAULT_ROOMS_LAYOUT: RoomsLayout = { order: [], names: {} }
+
+export function getRoomsLayout(): RoomsLayout {
+  const raw = storeGet<Partial<RoomsLayout>>('rooms-layout', DEFAULT_ROOMS_LAYOUT)
+  return {
+    order: Array.isArray(raw?.order) ? raw.order.filter((k): k is string => typeof k === 'string') : [],
+    names:
+      raw && typeof raw.names === 'object' && raw.names !== null
+        ? Object.fromEntries(
+            Object.entries(raw.names).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+          )
+        : {}
+  }
+}
+
+export function setRoomsLayout(layout: RoomsLayout): void {
+  storeSet('rooms-layout', layout)
+}
