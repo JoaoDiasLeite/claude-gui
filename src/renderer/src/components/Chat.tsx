@@ -268,9 +268,11 @@ export default function Chat({
     return String(n)
   }
 
-  const totalTokens = (session?.inputTokens ?? 0) + (session?.outputTokens ?? 0) +
-    (session?.cacheReadTokens ?? 0) + (session?.cacheCreationTokens ?? 0)
-  const showUsageChip = !!session && ((session.costUsd ?? 0) > 0 || totalTokens > 0)
+  // Headline counts only input+output — cache traffic dwarfs them and reads as
+  // "tokens spent" when it's mostly cheap re-reads; the tooltip keeps the breakdown.
+  const ioTokens = (session?.inputTokens ?? 0) + (session?.outputTokens ?? 0)
+  const cacheTokens = (session?.cacheReadTokens ?? 0) + (session?.cacheCreationTokens ?? 0)
+  const showUsageChip = !!session && ((session.costUsd ?? 0) > 0 || ioTokens + cacheTokens > 0)
 
   return (
     <div className="chat">
@@ -297,7 +299,7 @@ export default function Chat({
                 `Cache write: ${formatTokens(session!.cacheCreationTokens ?? 0)} tok`
               ].join('\n')}
             >
-              ${(session!.costUsd ?? 0).toFixed(4)} · {formatTokens(totalTokens)} tok
+              ${(session!.costUsd ?? 0).toFixed(4)} · {formatTokens(ioTokens)} tok
             </span>
           )}
         </div>
