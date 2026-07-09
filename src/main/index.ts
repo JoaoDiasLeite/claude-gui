@@ -46,6 +46,7 @@ import {
   stopRemote,
   SshHost
 } from './ssh'
+import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
 import { listDistros, testDistro, runWsl, stopWsl } from './wsl'
 import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
@@ -879,6 +880,9 @@ ipcMain.handle('ssh:list', () => listHosts())
 ipcMain.handle('ssh:save', (_, host: SshHost) => saveHost(host))
 ipcMain.handle('ssh:delete', (_, id: string) => deleteHost(id))
 ipcMain.handle('ssh:test', (_, id: string) => testConnection(id))
+ipcMain.handle('ssh:keys-list', () => listSshKeys())
+ipcMain.handle('ssh:keys-generate', (_, name: string, comment?: string) => generateKey(name, comment))
+ipcMain.handle('ssh:keys-public', (_, privatePath: string) => readPublicKey(privatePath))
 
 // ─── WSL ──────────────────────────────────────────────────────────────────
 

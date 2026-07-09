@@ -454,6 +454,17 @@ export interface SshHostInput {
   claudePath?: string
 }
 
+export interface SshKeyInfo {
+  name: string
+  privatePath: string
+  publicPath?: string
+  type?: string
+  comment?: string
+  publicKey?: string
+}
+
+export type GenerateKeyResult = { ok: true; key: SshKeyInfo } | { ok: false; error: string }
+
 export interface WslDistro {
   name: string
   isDefault: boolean
@@ -818,6 +829,9 @@ declare global {
       sshSave: (host: SshHostInput) => Promise<SshHostPublic[]>
       sshDelete: (id: string) => Promise<SshHostPublic[]>
       sshTest: (id: string) => Promise<{ ok: boolean; message: string }>
+      sshKeysList: () => Promise<SshKeyInfo[]>
+      sshKeysGenerate: (name: string, comment?: string) => Promise<GenerateKeyResult>
+      sshKeysPublic: (privatePath: string) => Promise<string | null>
 
       // WSL
       wslList: () => Promise<WslDistro[]>

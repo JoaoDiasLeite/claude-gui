@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SshHostPublic, SshHostInput, SshAuthType, WslDistro, SourceInfo } from '../types'
+import { SshHostPublic, SshHostInput, SshAuthType, SshKeyInfo, WslDistro, SourceInfo } from '../types'
 import './views.css'
 import './RemoteView.css'
 
@@ -23,13 +23,47 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
   const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({})
   const [wslTest, setWslTest] = useState<Record<string, { ok: boolean; message: string }>>({})
   const [wslTesting, setWslTesting] = useState<string | null>(null)
+  const [keys, setKeys] = useState<SshKeyInfo[]>([])
+  const [copied, setCopied] = useState<string | null>(null)
+  const [newKeyName, setNewKeyName] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
 
   const load = async () => {
     setHosts(await window.electronAPI.sshList())
     setDistros(await window.electronAPI.wslList())
     setHidden(await window.electronAPI.wslHidden())
     setSources(await window.electronAPI.ccSources())
+    setKeys(await window.electronAPI.sshKeysList())
   }
+
+  const copy = async (text: string, tag: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(tag)
+      setTimeout(() => setCopied((c) => (c === tag ? null : c)), 1600)
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  const generate = async () => {
+    const name = newKeyName.trim()
+    if (!name || generating) return
+    setGenerating(true)
+    setGenError(null)
+    const res = await window.electronAPI.sshKeysGenerate(name)
+    setGenerating(false)
+    if (res.ok) {
+      setNewKeyName('')
+      setKeys(await window.electronAPI.sshKeysList())
+    } else {
+      setGenError(res.error)
+    }
+  }
+
+  const keyLabel = (k: SshKeyInfo) =>
+    `${k.name}${k.type ? ` · ${k.type.replace(/^ssh-/, '')}` : ''}${k.comment ? ` · ${k.comment}` : ''}`
   const accountFor = (distro: string) => sources.find((s) => s.id === `wsl:${distro}`)?.account
   const setDistroHidden = async (name: string, hide: boolean) => {
     setHidden(await window.electronAPI.wslSetHidden(name, hide))
@@ -154,6 +188,11 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
                     <span className="badge scope">{host.authType}</span>
                   </div>
                   {host.remotePath && <div className="ssh-card-path">{host.remotePath}</div>}
+                  {host.authType === 'key' && host.privateKeyPath && (
+                    <div className="ssh-card-path">
+                      key: {host.privateKeyPath.split(/[\\/]/).pop()}
+                    </div>
+                  )}
                   {testResult[host.id] && (
                     <div className={`ssh-test ${testResult[host.id].ok ? 'ok' : 'err'}`}>
                       {testResult[host.id].message}
@@ -189,6 +228,89 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
             ))}
           </div>
         )}
+
+        <div className="remote-section-title" style={{ marginTop: 28 }}>
+          SSH keys
+          {keys.length > 0 && <span className="remote-count">{keys.length}</span>}
+        </div>
+        <p className="view-sub keys-intro">
+          Keys found in <code>~/.ssh</code>. Copy a public key into a server&apos;s{' '}
+          <code>authorized_keys</code> to enable key auth. Private keys never leave your machine.
+        </p>
+
+        <div className="ssh-list">
+          {keys.map((k) => {
+            const oneLiner = k.publicKey
+              ? `echo '${k.publicKey}' >> ~/.ssh/authorized_keys`
+              : null
+            return (
+              <div key={k.privatePath} className="ssh-card">
+                <div className="ssh-icon-chip key">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="7.5" cy="15.5" r="4.5" /><path d="m10.7 12.3 8.3-8.3" /><path d="m17 5 3 3" /><path d="m15 7 2 2" />
+                  </svg>
+                </div>
+                <div className="ssh-card-main">
+                  <div className="ssh-card-name">
+                    {k.name}
+                    {k.type && <span className="badge scope">{k.type.replace(/^ssh-/, '')}</span>}
+                  </div>
+                  {k.comment && <div className="ssh-card-target">{k.comment}</div>}
+                  {!k.publicKey && (
+                    <div className="ssh-card-path">no public key (.pub) alongside this key</div>
+                  )}
+                  {oneLiner && (
+                    <div className="key-oneliner">
+                      <code>{oneLiner}</code>
+                      <button
+                        className="btn-ghost small"
+                        onClick={() => copy(oneLiner, `cmd:${k.privatePath}`)}
+                      >
+                        {copied === `cmd:${k.privatePath}` ? '✓ Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="ssh-card-actions">
+                  {k.publicKey && (
+                    <button
+                      className="btn-primary small"
+                      onClick={() => copy(k.publicKey!, `pub:${k.privatePath}`)}
+                    >
+                      {copied === `pub:${k.privatePath}` ? '✓ Copied' : 'Copy public key'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          <div className="ssh-card key-generate">
+            <div className="ssh-icon-chip key">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </div>
+            <div className="ssh-card-main">
+              <div className="ssh-card-name">Generate new key</div>
+              <div className="ssh-card-target">Creates an ed25519 key pair in ~/.ssh</div>
+              {genError && <div className="ssh-test err">{genError}</div>}
+            </div>
+            <div className="ssh-card-actions">
+              <input
+                className="text-input mono"
+                style={{ width: 180 }}
+                placeholder="id_ed25519_new"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && generate()}
+              />
+              <button className="btn-primary small" onClick={generate} disabled={!newKeyName.trim() || generating}>
+                {generating ? 'Generating…' : 'Generate'}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {editing && (
@@ -241,6 +363,21 @@ export default function RemoteView({ onConnect, onConnectWsl }: Props) {
               )}
               {editing.authType === 'key' && (
                 <>
+                  {keys.length > 0 && (
+                    <div className="form-group">
+                      <label>Discovered key</label>
+                      <select
+                        className="text-input"
+                        value={keys.some((k) => k.privatePath === editing.privateKeyPath) ? editing.privateKeyPath : ''}
+                        onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })}
+                      >
+                        <option value="">Default (agent / ssh config) or custom path below</option>
+                        {keys.map((k) => (
+                          <option key={k.privatePath} value={k.privatePath}>{keyLabel(k)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="form-group">
                     <label>Private key path</label>
                     <input className="text-input mono" value={editing.privateKeyPath ?? ''} placeholder="C:\Users\you\.ssh\id_ed25519" onChange={(e) => setEditing({ ...editing, privateKeyPath: e.target.value })} />

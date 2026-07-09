@@ -202,6 +202,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sshSave: (host: unknown) => ipcRenderer.invoke('ssh:save', host),
   sshDelete: (id: string) => ipcRenderer.invoke('ssh:delete', id),
   sshTest: (id: string) => ipcRenderer.invoke('ssh:test', id),
+  sshKeysList: () => ipcRenderer.invoke('ssh:keys-list'),
+  sshKeysGenerate: (name: string, comment?: string) =>
+    ipcRenderer.invoke('ssh:keys-generate', name, comment),
+  sshKeysPublic: (privatePath: string) => ipcRenderer.invoke('ssh:keys-public', privatePath),
 
   // WSL
   wslList: () => ipcRenderer.invoke('wsl:list'),
