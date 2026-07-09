@@ -455,6 +455,7 @@ export default function Chat({
       )}
 
       <div className="chat-input-area" style={termOpen ? { display: 'none' } : undefined}>
+      <div className="chat-input-column">
         {session && session.messages.length >= 40 && (
           <div className="long-session-banner">
             <span className="long-session-text">
@@ -575,6 +576,7 @@ export default function Chat({
           </button>
         </div>
         <div className="input-hint">Enter to send · Shift+Enter for newline</div>
+      </div>
       </div>
     </div>
   )
