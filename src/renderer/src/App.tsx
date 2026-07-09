@@ -441,9 +441,11 @@ export default function App() {
       model: session.model || defaultModel,
       systemPrompt: session.systemPrompt,
       permissionMode: session.permissionMode,
-      // Light mode = no tools at all (drops tool schemas from every turn).
+      // Light mode = no tools at all (drops tool schemas from every turn) and full
+      // settings isolation in the main process (drops global plugins/skills too).
       allowedTools: session.lightMode ? [] : session.allowedTools,
       useMcp: session.lightMode ? false : session.useMcp ?? false,
+      lightMode: session.lightMode ?? false,
       approvalMode: (session.autoApprove ? 'auto' : 'ask') as 'auto' | 'ask',
       images,
       remoteHostId: session.remoteHostId,

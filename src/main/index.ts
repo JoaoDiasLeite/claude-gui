@@ -522,6 +522,12 @@ interface SendPayload {
   permissionMode?: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
   allowedTools?: string[]
   useMcp?: boolean
+  /**
+   * Light mode = full SDK isolation: no tools, no MCP, and no filesystem settings
+   * (so global plugin/skill marketplaces like superpowers never load). Normal chats
+   * still skip the `user` settings tier to avoid dragging those plugins into context.
+   */
+  lightMode?: boolean
   /** 'ask' = prompt before mutating tools; 'auto' = current auto-accept behavior. */
   approvalMode?: 'ask' | 'auto'
   /** Pasted/attached images to include with this turn. */
@@ -648,6 +654,11 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     delete env.ANTHROPIC_API_KEY
   }
   const mcpServers = payload.useMcp ? mcpServersForProject(projectPath) : undefined
+  // Control which settings tiers load. Omitting this loads user+project+local
+  // (CLI default), which pulls global plugin/skill marketplaces into every turn's
+  // context. Light mode = full isolation ([]); normal chats keep this project's
+  // settings/CLAUDE.md but drop the user tier where those plugins live.
+  const settingSources: ('user' | 'project' | 'local')[] = payload.lightMode ? [] : ['project']
   const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
 
   // In 'ask' mode, prompt the renderer before any mutating tool runs.
@@ -697,6 +708,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
         env,
         abortController: abort,
         includePartialMessages: true,
+        settingSources,
         permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',
         ...(canUseTool ? { canUseTool } : {}),
         ...(payload.systemPrompt ? { systemPrompt: payload.systemPrompt } : {}),
