@@ -6,6 +6,21 @@ import ChatTerminal from './ChatTerminal'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import './Chat.css'
 
+/**
+ * Approximate the context footprint currently re-sent on every turn: walk back to
+ * the last assistant message that carries usage and sum its input + cache tokens
+ * (that turn's input + cacheRead + cacheCreation ≈ the whole conversation re-sent).
+ * Returns null for old sessions where no message has usage.
+ */
+function contextTokens(session?: Session): number | null {
+  if (!session) return null
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    const u = session.messages[i].usage
+    if (u) return u.inputTokens + u.cacheReadTokens + u.cacheCreationTokens
+  }
+  return null
+}
+
 interface Props {
   session?: Session
   streaming: boolean
@@ -268,6 +283,19 @@ export default function Chat({
   const cacheTokens = (session?.cacheReadTokens ?? 0) + (session?.cacheCreationTokens ?? 0)
   const showUsageChip = !!session && ((session.costUsd ?? 0) > 0 || ioTokens + cacheTokens > 0)
 
+  // Real context footprint (last-turn input + cache). null on old sessions w/o usage.
+  const ctxTokens = contextTokens(session)
+  const showContextIndicator = ctxTokens != null && ctxTokens >= 20_000
+  const ctxColor =
+    ctxTokens != null && ctxTokens >= 150_000
+      ? 'var(--error)'
+      : ctxTokens != null && ctxTokens >= 100_000
+        ? '#e2b341'
+        : undefined
+  // Warn on real context when we have it; fall back to message count for old sessions.
+  const showLongSessionBanner =
+    ctxTokens != null ? ctxTokens >= 120_000 : !!session && session.messages.length >= 40
+
   return (
     <div className="chat">
       <div className="chat-header">
@@ -446,11 +474,20 @@ export default function Chat({
 
       <div className="chat-input-area" style={termOpen ? { display: 'none' } : undefined}>
       <div className="chat-input-column">
-        {session && session.messages.length >= 40 && (
+        {session && showLongSessionBanner && (
           <div className="long-session-banner">
             <span className="long-session-text">
-              This chat has {session.messages.length} messages — the whole history is re-sent every
-              turn, which burns tokens. Compact it or start fresh.
+              {ctxTokens != null ? (
+                <>
+                  This chat's context is ~{formatTokens(ctxTokens)} tokens — the whole history is
+                  re-sent every turn, which burns quota. Compact it or start fresh.
+                </>
+              ) : (
+                <>
+                  This chat has {session.messages.length} messages — the whole history is re-sent
+                  every turn, which burns tokens. Compact it or start fresh.
+                </>
+              )}
             </span>
             <div className="long-session-actions">
               <button onClick={onCompact} disabled={compacting}>
@@ -566,6 +603,15 @@ export default function Chat({
           </button>
         </div>
         {isEmpty && <div className="input-hint">Enter to send · Shift+Enter for newline</div>}
+        {showContextIndicator && (
+          <div
+            className="context-indicator"
+            style={ctxColor ? { color: ctxColor } : undefined}
+            title="Approximate context re-sent on each turn (last turn's input + cache tokens). Compact the chat to shrink it."
+          >
+            context ~{formatTokens(ctxTokens!)} tok
+          </div>
+        )}
       </div>
       </div>
     </div>

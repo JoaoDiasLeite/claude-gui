@@ -316,6 +316,13 @@
   text-align: center;
 }
 
+.context-indicator {
+  font-size: 10.5px;
+  color: var(--text-2);
+  margin-top: 6px;
+  text-align: right;
+}
+
 /* ── Slash-command autocomplete picker ── */
 .slash-picker {
   position: absolute;
