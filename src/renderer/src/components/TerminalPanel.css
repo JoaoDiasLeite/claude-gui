@@ -12,7 +12,7 @@
 .terminal-panel.open {
   /* height is set via inline style when open; transition is still applied */
   overflow: visible;
-  border-radius: 14px 14px 0 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow: 0 -2px 8px rgba(0,0,0,0.12), 0 -1px 2px rgba(0,0,0,0.10);
 }
 
@@ -42,6 +42,7 @@
   cursor: pointer;
   user-select: none;
   height: 36px;
+  font-size: 12px;
   transition: background 0.14s;
 }
 .terminal-header:hover {
@@ -66,8 +67,8 @@
 }
 
 .terminal-count {
-  background: var(--bg-3);
-  border-radius: 10px;
+  background: var(--bg-2);
+  border-radius: 999px;
   padding: 0 6px;
   font-size: 10px;
   color: var(--text-2);
@@ -101,11 +102,13 @@
   display: flex;
   gap: 8px;
   padding: 2px 14px;
-  line-height: 1.5;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-2);
   transition: background 0.10s;
 }
 .terminal-line:hover {
-  background: color-mix(in srgb, var(--bg-hover) 50%, transparent);
+  background: var(--bg-1);
 }
 
 .terminal-prefix {
@@ -121,21 +124,18 @@
   word-break: break-all;
 }
 
-/* Line type coloring */
-.terminal-line.error .terminal-prefix,
-.terminal-line.error .terminal-text { color: var(--error); }
+/* Line type coloring — only the prefix carries the kind color; body text
+   stays the muted default except for error rows. */
+.terminal-line.error .terminal-prefix { color: var(--error); }
+.terminal-line.error .terminal-text { color: color-mix(in srgb, var(--error) 90%, transparent); }
 
-.terminal-line.user .terminal-prefix { color: var(--accent); }
-.terminal-line.user .terminal-text { color: var(--text-1); }
+.terminal-line.user .terminal-prefix { color: var(--text-1); }
 
-.terminal-line.thinking .terminal-prefix { color: var(--thinking); }
-.terminal-line.thinking .terminal-text { color: var(--text-2); font-style: italic; }
+.terminal-line.thinking .terminal-prefix { color: color-mix(in srgb, var(--thinking) 80%, transparent); }
+.terminal-line.thinking .terminal-text { font-style: italic; }
 
-.terminal-line.tool .terminal-prefix { color: #4fc3f7; }
-.terminal-line.tool .terminal-text { color: var(--text-0); }
+.terminal-line.tool .terminal-prefix { color: var(--text-2); }
 
-.terminal-line.result .terminal-prefix { color: var(--success); }
-.terminal-line.result .terminal-text { color: var(--text-1); }
+.terminal-line.result .terminal-prefix { color: var(--text-2); }
 
 .terminal-line.info .terminal-prefix { color: var(--text-2); }
-.terminal-line.info .terminal-text { color: var(--text-2); }
