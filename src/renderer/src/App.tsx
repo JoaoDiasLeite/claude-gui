@@ -627,10 +627,14 @@ export default function App() {
     }
   }, [])
 
-  // The primary account's session (5h) window, surfaced ambiently in the sidebar chip.
+  // The DEFAULT account's session (5h) window, surfaced ambiently in the sidebar chip.
+  // The sidebar row now displays the default account, so its badge must track the same
+  // account: prefer the report entry flagged isDefault, falling back to `primary`.
   const planSession = useMemo(() => {
-    if (!planReport?.primary) return undefined
-    const acc = planReport.accounts.find((a) => a.accountKey === planReport.primary)
+    if (!planReport) return undefined
+    const acc =
+      planReport.accounts.find((a) => a.isDefault && a.windows.length > 0) ??
+      planReport.accounts.find((a) => a.accountKey === planReport.primary)
     const w = acc?.windows.find((win) => win.key === 'five_hour')
     return w ? { utilization: w.utilization, resetsAt: w.resetsAt } : undefined
   }, [planReport])
@@ -687,10 +691,23 @@ export default function App() {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, model: modelId } : s)))
   }
 
-  const setSessionAccount = (accountId: string) => {
-    const name = accounts.find((a) => a.id === accountId)?.name
+  // Account selection is app-level: it sets the DEFAULT account used for new chats.
+  // Existing sessions keep their own accountId forever (a chat is permanently bound to
+  // the account that created it — its Claude Code resume id only exists there). The one
+  // exception: an unstarted draft (zero messages) follows the switch, so an empty chat
+  // inherits the account you just picked.
+  const switchDefaultAccount = async (accountId: string) => {
+    const { accounts: next, defaultAccountId: nextDefault } =
+      await window.electronAPI.accountsSetDefault(accountId)
+    setAccounts(next)
+    setDefaultAccountId(nextDefault)
+    const name = next.find((a) => a.id === accountId)?.name
     setSessions((prev) =>
-      prev.map((s) => (s.id === activeId ? { ...s, accountId, accountName: name } : s))
+      prev.map((s) =>
+        s.id === activeIdRef.current && s.messages.length === 0
+          ? { ...s, accountId, accountName: name }
+          : s
+      )
     )
   }
 
@@ -993,10 +1010,10 @@ export default function App() {
     for (const a of accounts) {
       items.push({
         id: `account:${a.id}`,
-        title: `Run as ${a.name}`,
-        subtitle: a.loggedIn ? a.email ?? 'this chat' : 'not logged in',
+        title: `Switch default account: ${a.name}`,
+        subtitle: a.loggedIn ? a.email ?? 'new chats' : 'not logged in',
         group: 'Switch account',
-        run: () => setSessionAccount(a.id)
+        run: () => switchDefaultAccount(a.id)
       })
     }
     return items
@@ -1031,7 +1048,8 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             auth={auth}
             accounts={accounts}
-            activeAccountId={activeSession?.accountId ?? defaultAccountId}
+            onAccountChange={switchDefaultAccount}
+            onManageAccounts={() => setAccountsOpen(true)}
             planSession={planSession}
             defaultModel={defaultModel}
             defaultAccountId={defaultAccountId}
@@ -1078,10 +1096,7 @@ export default function App() {
               models={models}
               currentModel={activeSession?.model || defaultModel}
               onModelChange={setSessionModel}
-              accounts={accounts}
               currentAccount={activeSession?.accountId ?? defaultAccountId}
-              onAccountChange={setSessionAccount}
-              onManageAccounts={() => setAccountsOpen(true)}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
               onToggleAutoApprove={toggleAutoApprove}

@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Session, ModelInfo, ImageAttachment, CCAccountStatus, SlashCommand } from '../types'
+import { Session, ModelInfo, ImageAttachment, SlashCommand } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
-import AccountPicker from './AccountPicker'
 import ChatTerminal from './ChatTerminal'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import './Chat.css'
@@ -17,10 +16,8 @@ interface Props {
   models: ModelInfo[]
   currentModel: string
   onModelChange: (modelId: string) => void
-  accounts: CCAccountStatus[]
+  /** The account this chat is bound to — read-only here; forwarded to ChatTerminal. */
   currentAccount?: string
-  onAccountChange: (accountId: string) => void
-  onManageAccounts: () => void
   onOpenClaudeMd: () => void
   autoApprove: boolean
   onToggleAutoApprove: () => void
@@ -46,10 +43,7 @@ export default function Chat({
   models,
   currentModel,
   onModelChange,
-  accounts,
   currentAccount,
-  onAccountChange,
-  onManageAccounts,
   onOpenClaudeMd,
   autoApprove,
   onToggleAutoApprove,
@@ -396,15 +390,6 @@ export default function Chat({
               </div>
             )}
           </div>
-          {accounts.length > 1 && (
-            <AccountPicker
-              accounts={accounts}
-              value={currentAccount}
-              onChange={onAccountChange}
-              onManage={onManageAccounts}
-              compact
-            />
-          )}
           {models.length > 0 && (
             <ModelPicker models={models} value={currentModel} onChange={onModelChange} compact />
           )}

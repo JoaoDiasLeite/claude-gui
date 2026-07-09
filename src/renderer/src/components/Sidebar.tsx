@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Session, AuthStatus, CCAccountStatus } from '../types'
 import FileTree from './FileTree'
 import './Sidebar.css'
+import './AccountPicker.css'
 
 const MODEL_LABELS: Record<string, string> = {
   'claude-opus-4-8': 'Opus 4.8',
@@ -40,8 +41,11 @@ interface Props {
   onOpenSettings: () => void
   auth: AuthStatus | null
   accounts: CCAccountStatus[]
-  activeAccountId?: string
-  /** Primary account's live plan session (5h) window, for the ambient badge. */
+  /** Switch the APP-LEVEL default account (used for new chats). */
+  onAccountChange: (accountId: string) => void
+  /** Open the accounts manager (from the picker's footer). */
+  onManageAccounts: () => void
+  /** Default account's live plan session (5h) window, for the ambient badge. */
   planSession?: { utilization: number; resetsAt?: string }
   /** App-wide default model/account — session badges only render when a session diverges from these. */
   defaultModel?: string
@@ -80,12 +84,17 @@ export default function Sidebar({
   onOpenSettings,
   auth,
   accounts,
-  activeAccountId,
+  onAccountChange,
+  onManageAccounts,
   planSession,
   defaultModel,
   defaultAccountId
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  // App-level account picker (the account row). Only toggles when there's more than
+  // one account and the row is in the ready state; otherwise the row opens Settings.
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  const accountRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState<number>(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
@@ -159,26 +168,48 @@ export default function Sidebar({
         ? 'API key'
         : 'No API key'
 
-  // Surface the account the active chat runs under. The default account also counts as
-  // ready when the global connection is (e.g. an API key), even if its own OAuth file
-  // isn't present; other accounts are ready only once logged in.
-  const activeAccount = accounts.find((a) => a.id === activeAccountId)
-  const accountReady = activeAccount
-    ? activeAccount.isDefault
-      ? activeAccount.loggedIn || authReady
-      : activeAccount.loggedIn
+  // Surface the DEFAULT account (used for new chats) — account selection is app-level,
+  // not per-chat. The default account also counts as ready when the global connection is
+  // (e.g. an API key), even if its own OAuth file isn't present; other accounts are ready
+  // only once logged in.
+  const defaultAccount = accounts.find((a) => a.id === defaultAccountId)
+  const accountReady = defaultAccount
+    ? defaultAccount.isDefault
+      ? defaultAccount.loggedIn || authReady
+      : defaultAccount.loggedIn
     : authReady
   const ready = accountReady
-  const accountDetail = activeAccount?.loggedIn
-    ? [activeAccount.email, activeAccount.plan].filter(Boolean).join(' · ')
+  const accountDetail = defaultAccount?.loggedIn
+    ? [defaultAccount.email, defaultAccount.plan].filter(Boolean).join(' · ')
     : ''
   // The pill shows just the account name — email/plan live in the tooltip, so the
   // ~200px row never ellipsizes mid-email against the usage badge.
-  const statusLabel = activeAccount
-    ? activeAccount.name + (ready ? '' : ' · not logged in')
+  const statusLabel = defaultAccount
+    ? defaultAccount.name + (ready ? '' : ' · not logged in')
     : authLabel
+  // The row doubles as a default-account picker when there's more than one account and
+  // it's connected; otherwise it just opens connection settings.
+  const isAccountPicker = accounts.length > 1 && ready
   const statusTitle =
-    (accountDetail ? `${accountDetail} — ` : '') + 'Open connection settings'
+    (accountDetail ? `${accountDetail} — ` : '') +
+    (isAccountPicker ? 'Switch default account' : 'Open connection settings')
+
+  // Close the account picker on outside click / Escape (mirrors AccountPicker).
+  useEffect(() => {
+    if (!accountMenuOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAccountMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [accountMenuOpen])
 
   // Blank "New chat" drafts (no messages yet) stay out of the list — the Sessions
   // section only appears once at least one chat has real content. The active draft
@@ -227,11 +258,13 @@ export default function Sidebar({
 
   return (
     <div className="sidebar" style={{ width, flex: '0 0 auto' }}>
-      <div className="sidebar-account">
+      <div className="sidebar-account" ref={accountRef}>
         <button
           className={`auth-status ${ready ? 'ok' : 'warn'}`}
-          onClick={onOpenSettings}
+          onClick={isAccountPicker ? () => setAccountMenuOpen((v) => !v) : onOpenSettings}
           title={statusTitle}
+          aria-haspopup={isAccountPicker ? 'listbox' : undefined}
+          aria-expanded={isAccountPicker ? accountMenuOpen : undefined}
         >
           <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
           <span className="auth-label">{statusLabel}</span>
@@ -243,8 +276,53 @@ export default function Sidebar({
               {planSession.utilization.toFixed(0)}%
             </span>
           )}
+          {isAccountPicker && (
+            <svg className="auth-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          )}
           {!ready && <span className="auth-cta">Connect</span>}
         </button>
+        {isAccountPicker && accountMenuOpen && (
+          <div className="account-picker-menu sidebar-account-menu" role="listbox">
+            {accounts.map((a) => (
+              <button
+                key={a.id}
+                className={`account-picker-item ${a.id === defaultAccountId ? 'selected' : ''}`}
+                role="option"
+                aria-selected={a.id === defaultAccountId}
+                onClick={() => {
+                  onAccountChange(a.id)
+                  setAccountMenuOpen(false)
+                }}
+              >
+                <div className="account-picker-item-main">
+                  <span className={`account-dot ${a.loggedIn ? 'ok' : 'warn'}`} />
+                  <span className="account-picker-item-name">{a.name}</span>
+                  {a.id === defaultAccountId && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+                <div className="account-picker-item-meta">
+                  {a.loggedIn
+                    ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
+                    : 'Not logged in'}
+                </div>
+              </button>
+            ))}
+            <button
+              className="account-picker-manage"
+              onClick={() => {
+                setAccountMenuOpen(false)
+                onManageAccounts()
+              }}
+            >
+              Manage accounts…
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="sidebar-tabs">
