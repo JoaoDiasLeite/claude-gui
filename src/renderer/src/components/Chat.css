@@ -73,11 +73,7 @@
   font-size: 11px;
   font-weight: 400;
   color: var(--text-2);
-  background: var(--bg-3);
-  border-radius: 6px;
-  padding: 2px 7px;
   white-space: nowrap;
-  border: 1px solid var(--border-light);
 }
 
 .chat-header-right {
@@ -103,7 +99,21 @@
   background: var(--bg-hover);
   color: var(--text-0);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
-  transform: translateY(-1px);
+}
+
+/* Segmented control wrapping the two mode toggles (Auto/Approve + Light/Full). */
+.header-toggle-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.header-toggle-group .approve-toggle {
+  border: none;
+  border-radius: 0;
+}
+.header-toggle-group .approve-toggle + .approve-toggle {
+  border-left: 1px solid var(--border);
 }
 
 .approve-toggle {
@@ -456,8 +466,8 @@
 .long-session-actions button:hover:not(:disabled) { background: var(--bg-hover); transform: translateY(-1px); }
 .long-session-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ── Export dropdown ─────────────────────────────────────────────────────── */
-.export-dropdown {
+/* ── Header overflow menu (⋯) ────────────────────────────────────────────── */
+.header-menu-dropdown {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -466,10 +476,11 @@
   border-radius: var(--radius);
   box-shadow: 0 6px 20px rgba(0,0,0,0.35);
   z-index: 200;
-  min-width: 160px;
+  min-width: 180px;
   overflow: hidden;
+  padding: 4px 0;
 }
-.export-dropdown button {
+.header-menu-dropdown button {
   display: block;
   width: 100%;
   text-align: left;
@@ -478,4 +489,10 @@
   color: var(--text-0);
   transition: background 0.12s;
 }
-.export-dropdown button:hover { background: var(--bg-hover); }
+.header-menu-dropdown button:hover:not(:disabled) { background: var(--bg-hover); }
+.header-menu-dropdown button:disabled { opacity: 0.4; cursor: not-allowed; }
+.header-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}

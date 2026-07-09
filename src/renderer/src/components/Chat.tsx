@@ -304,36 +304,38 @@ export default function Chat({
           )}
         </div>
         <div className="chat-header-right">
-          <button
-            className={`approve-toggle ${autoApprove ? 'auto' : 'ask'}`}
-            onClick={onToggleAutoApprove}
-            title={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
-            aria-label={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {autoApprove ? (
+          <div className="header-toggle-group">
+            <button
+              className={`approve-toggle ${autoApprove ? 'auto' : 'ask'}`}
+              onClick={onToggleAutoApprove}
+              title={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
+              aria-label={autoApprove ? 'Auto-approving all tools — click to require approval' : 'Asking before file edits & commands — click to auto-approve'}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {autoApprove ? (
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                ) : (
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                )}
+              </svg>
+              {autoApprove ? 'Auto' : 'Approve'}
+            </button>
+            <button
+              className={`approve-toggle ${lightMode ? 'auto' : 'ask'}`}
+              onClick={onToggleLightMode}
+              title={
+                lightMode
+                  ? 'Light mode ON — no tools sent (cheapest for plain chat). Click to enable tools.'
+                  : 'Tools enabled. Click for Light mode: no tools, fewer tokens per turn (best for plain Q&A).'
+              }
+              aria-label="Toggle light (no-tools) chat mode"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-              ) : (
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-              )}
-            </svg>
-            {autoApprove ? 'Auto' : 'Approve'}
-          </button>
-          <button
-            className={`approve-toggle ${lightMode ? 'auto' : 'ask'}`}
-            onClick={onToggleLightMode}
-            title={
-              lightMode
-                ? 'Light mode ON — no tools sent (cheapest for plain chat). Click to enable tools.'
-                : 'Tools enabled. Click for Light mode: no tools, fewer tokens per turn (best for plain Q&A).'
-            }
-            aria-label="Toggle light (no-tools) chat mode"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-            </svg>
-            {lightMode ? 'Light' : 'Full'}
-          </button>
+              </svg>
+              {lightMode ? 'Light' : 'Full'}
+            </button>
+          </div>
           <button className="header-icon-btn" onClick={onOpenGit} title="Git" aria-label="Git">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="9" r="3" />
@@ -354,43 +356,32 @@ export default function Chat({
               <line x1="12" y1="15" x2="16" y2="15" />
             </svg>
           </button>
-          <div className="export-menu-wrap" style={{ position: 'relative' }}>
+          <div className="header-menu-wrap" style={{ position: 'relative' }}>
             <button
               className="header-icon-btn"
-              onClick={() => !isEmpty && setExportMenuOpen((v) => !v)}
-              title="Export chat"
-              aria-label="Export chat"
-              disabled={isEmpty}
+              onClick={() => setExportMenuOpen((v) => !v)}
+              title="More"
+              aria-label="More"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
+                <circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />
               </svg>
             </button>
             {exportMenuOpen && (
-              <div className="export-dropdown" onMouseLeave={() => setExportMenuOpen(false)}>
-                <button onClick={() => { setExportMenuOpen(false); handleSaveMarkdown() }}>
+              <div className="header-menu-dropdown" onMouseLeave={() => setExportMenuOpen(false)}>
+                <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); handleSaveMarkdown() }}>
                   {markdownSaved ? 'Saved ✓' : 'Export as .md'}
                 </button>
-                <button onClick={handleCopyMarkdown}>
+                <button disabled={isEmpty} onClick={handleCopyMarkdown}>
                   {markdownCopied ? 'Copied ✓' : 'Copy as Markdown'}
                 </button>
-                <button onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
+                <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
+                <div className="header-menu-divider" />
+                <button onClick={() => { setExportMenuOpen(false); onOpenCheckpoints() }}>Checkpoints…</button>
+                <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit CLAUDE.md</button>
               </div>
             )}
           </div>
-          <button className="header-icon-btn" onClick={onOpenCheckpoints} title="Checkpoints / timeline" aria-label="Checkpoints / timeline">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" />
-            </svg>
-          </button>
-          <button className="header-icon-btn" onClick={onOpenClaudeMd} title="Edit CLAUDE.md" aria-label="Edit CLAUDE.md">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-          </button>
           {accounts.length > 1 && (
             <AccountPicker
               accounts={accounts}
