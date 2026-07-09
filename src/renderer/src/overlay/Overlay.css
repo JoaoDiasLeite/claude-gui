@@ -1,13 +1,13 @@
-/* Quick-launcher overlay window. The OS window is transparent acrylic; the shell
-   paints a translucent surface over it (like the main app's title bar / nav rail)
-   so the frosted-glass material shows through, with the app's rounded border. */
+/* Quick-launcher overlay window. The OS window keeps a transparent background so
+   DWM can shape the rounded corners of this frameless floating flyout; the shell
+   itself paints a solid, opaque surface (like the main app's title bar / nav rail). */
 
 .overlay-shell {
   display: flex;
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+  background: var(--bg-1);
   border: 1px solid var(--border-light);
   border-radius: 12px;
   overflow: hidden;

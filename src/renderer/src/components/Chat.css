@@ -11,7 +11,7 @@
   justify-content: space-between;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
-  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  background: var(--bg-1);
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
@@ -235,7 +235,7 @@
 .chat-input-area {
   padding: 12px 20px 16px;
   border-top: 1px solid var(--border);
-  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  background: var(--bg-1);
   flex-shrink: 0;
 }
 
@@ -243,12 +243,12 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 8px 8px 8px 14px;
   transition: border-color 0.14s, box-shadow 0.14s;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.18), 0 6px 18px rgba(0,0,0,0.10);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
   position: relative;
 }
 .input-wrapper:focus-within {
@@ -284,12 +284,12 @@
   transition: background 0.14s, color 0.14s, transform 0.14s, box-shadow 0.14s;
 }
 .send-btn.active {
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 75%, #e0a06f));
+  background: var(--accent);
   color: white;
   box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .send-btn.active:hover {
-  background: linear-gradient(135deg, var(--accent-hover), color-mix(in srgb, var(--accent-hover) 75%, #e0a06f));
+  background: var(--accent-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 50%, transparent);
 }

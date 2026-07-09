@@ -1,6 +1,7 @@
-/* Approval toast window. The OS window is transparent acrylic; the shell paints a
-   translucent surface over it (matching the quick-launcher overlay) so the frosted
-   material shows through, with the app's rounded border. Compact by design. */
+/* Approval toast window. The OS window keeps a transparent background so DWM can
+   shape the rounded corners of this frameless floating flyout; the shell itself
+   paints a solid, opaque surface (matching the quick-launcher overlay). Compact
+   by design. */
 
 .toast-shell {
   display: flex;
@@ -9,7 +10,7 @@
   width: 100vw;
   padding: 12px 14px;
   gap: 8px;
-  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+  background: var(--bg-1);
   border: 1px solid var(--border-light);
   border-radius: 12px;
   overflow: hidden;

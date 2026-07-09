@@ -210,15 +210,11 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    // Frameless with the Win11 acrylic backdrop: the transparent backgroundColor lets
-    // the OS frosted-glass material show through the chrome surfaces (title bar /
-    // nav rail / sidebar), which paint translucent colors. Safe again on Electron 42 —
-    // the Electron 28 bug where material windows permanently lost their rounding and
-    // material after maximize→restore (electron/electron#42393) is fixed here.
+    // Frameless with a custom title bar (see TitleBar.tsx) drawn by the renderer;
+    // the window itself is opaque, flat-themed chrome — no OS backdrop material.
     frame: false,
-    backgroundMaterial: 'acrylic',
     resizable: true,
-    backgroundColor: '#00000000',
+    backgroundColor: '#141312',
     icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

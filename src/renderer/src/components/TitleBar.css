@@ -3,15 +3,10 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  /* Translucent so the window's acrylic material frosts through. Win11 suspends
-     acrylic while maximized (color shift), so .maximized swaps in an opaque bg. */
-  background: color-mix(in srgb, var(--bg-1) 62%, transparent);
+  background: var(--bg-1);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
-}
-.app-shell.maximized .titlebar {
-  background: linear-gradient(180deg, var(--bg-1), color-mix(in srgb, var(--bg-1) 92%, var(--bg-0)));
 }
 
 .titlebar-brand {

@@ -262,9 +262,7 @@ html, body, #root {
 
 body {
   font-family: var(--font-sans);
-  /* Transparent so the frameless window's rounded corners (painted by .app-shell)
-     reveal the desktop behind them instead of a square backdrop. */
-  background: transparent;
+  background: var(--bg-0);
   color: var(--text-0);
   font-size: 14px;
   line-height: 1.6;

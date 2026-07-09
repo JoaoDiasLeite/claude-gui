@@ -1,5 +1,5 @@
 .terminal-panel {
-  background: linear-gradient(150deg, var(--bg-2), color-mix(in srgb, var(--bg-1) 82%, var(--bg-0)));
+  background: var(--bg-2);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
   max-height: 36px;
