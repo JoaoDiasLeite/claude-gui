@@ -15,9 +15,41 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
-    version: '0.4.0',
+    version: '0.5.0',
     date: '2026-07-09',
     tag: 'latest',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Conversation branching — fork a chat from any message into a new session; copied history stays visible and context carries over automatically.',
+          'Attach any text file to a message via drag-and-drop or the attach button (up to 5 files, 200 KB each); contents ride along with the prompt.',
+          'SSH key management in Remote & WSL — discover keys in ~/.ssh, copy public keys with a ready authorized_keys one-liner, generate ed25519 keys, and pick a key per host.',
+          'Rooms can be renamed inline and reordered, with layout persisted across restarts.',
+          'Context indicator under the chat input shows the real token footprint re-sent each turn, with amber/red escalation as it grows.',
+        ],
+      },
+      {
+        title: 'Improvements',
+        items: [
+          'The long-session warning now triggers on the actual context size (~120k tokens) instead of message count.',
+          'Chats no longer load global plugin/skill marketplaces into context — only project settings and per-project permission allowlists; light mode is fully isolated.',
+          'Background utility calls (compact, planner assist, agent suggestions) run with no settings tiers at all, cutting their token overhead.',
+          'Startup window color follows the configured theme, removing the dark flash on launch for light-theme users.',
+          'Plan-usage badge refreshes immediately after switching the default account.',
+        ],
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Component stylesheets no longer leak into each other — shared primitives (modals, buttons, inputs, toggles) moved to one canonical stylesheet and all accidental class-name collisions were removed.',
+        ],
+      },
+    ],
+  },
+  {
+    version: '0.4.0',
+    date: '2026-07-09',
     sections: [
       {
         title: 'Features',
