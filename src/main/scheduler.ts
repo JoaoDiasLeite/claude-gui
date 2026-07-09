@@ -320,6 +320,9 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
       // For read-only routines, disallowedTools removes mutating tools from context
       // entirely — they cannot be invoked even under bypassPermissions.
       permissionMode: 'bypassPermissions',
+      // Routines do real work in their project, so project settings load — but the
+      // user tier stays out (global plugin/skill marketplaces bloat every turn).
+      settingSources: ['project'],
       includePartialMessages: false
     }
 

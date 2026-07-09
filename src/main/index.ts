@@ -657,8 +657,11 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // Control which settings tiers load. Omitting this loads user+project+local
   // (CLI default), which pulls global plugin/skill marketplaces into every turn's
   // context. Light mode = full isolation ([]); normal chats keep this project's
-  // settings/CLAUDE.md but drop the user tier where those plugins live.
-  const settingSources: ('user' | 'project' | 'local')[] = payload.lightMode ? [] : ['project']
+  // settings/CLAUDE.md and settings.local.json (per-project permission allowlists,
+  // consulted before canUseTool) but drop the user tier where those plugins live.
+  const settingSources: ('user' | 'project' | 'local')[] = payload.lightMode
+    ? []
+    : ['project', 'local']
   const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
 
   // In 'ask' mode, prompt the renderer before any mutating tool runs.
@@ -997,7 +1000,9 @@ ipcMain.handle(
           env,
           abortController: abort,
           permissionMode: 'bypassPermissions',
-          allowedTools: []
+          allowedTools: [],
+          // Pure reasoning — no settings tiers, so plugins/skills never load.
+          settingSources: []
         }
       })
       let text = ''
@@ -1205,8 +1210,9 @@ ipcMain.handle(
           env,
           abortController: abort,
           permissionMode: 'bypassPermissions',
-          // Pure reasoning — no tools, no MCP, no file access.
-          allowedTools: []
+          // Pure reasoning — no tools, no MCP, no file access, no settings tiers.
+          allowedTools: [],
+          settingSources: []
         }
       })
 
@@ -1372,8 +1378,9 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
         env,
         abortController: abort,
         permissionMode: 'bypassPermissions',
-        // Pure reasoning — no tools, no MCP, no file access.
-        allowedTools: []
+        // Pure reasoning — no tools, no MCP, no file access, no settings tiers.
+        allowedTools: [],
+        settingSources: []
       }
     })
 
