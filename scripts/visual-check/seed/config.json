@@ -1,0 +1,18 @@
+{
+  "defaultModel": "sonnet",
+  "limits": { "hourUsd": 0, "sessionUsd": 0, "weekUsd": 0 },
+  "ui": {
+    "theme": "dark",
+    "palette": "warm-rust",
+    "density": "comfortable",
+    "fontSize": "md",
+    "onboarded": true
+  },
+  "system": {
+    "openAtLogin": false,
+    "startMinimized": false,
+    "closeToTray": false,
+    "overlayShortcut": "",
+    "explorerContextMenu": false
+  }
+}
