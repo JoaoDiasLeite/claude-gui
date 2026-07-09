@@ -6,6 +6,60 @@
   background: var(--bg-0);
 }
 
+/* ── Grouped-view sub-nav ──
+   Wraps a group's active view + a segmented control so the user can flip
+   between the group's members. The wrapper is a flex column so the view keeps
+   its full-height behaviour (the view sets its own `flex: 1`). */
+.view-with-subnav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.view-with-subnav > .view {
+  min-height: 0;
+}
+
+.view-subnav {
+  flex-shrink: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+  -webkit-app-region: drag;
+}
+
+.view-subnav-group {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.view-subnav-btn {
+  height: 26px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+  background: transparent;
+  transition: background 0.14s, color 0.14s;
+}
+.view-subnav-btn + .view-subnav-btn {
+  border-left: 1px solid var(--border);
+}
+.view-subnav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+}
+.view-subnav-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
 .view-header {
   display: flex;
   align-items: flex-start;

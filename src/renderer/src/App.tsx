@@ -23,7 +23,7 @@ import ResizeHandles from './components/ResizeHandles'
 import Chat from './components/Chat'
 import TerminalPanel from './components/TerminalPanel'
 import SettingsModal from './components/SettingsModal'
-import NavRail, { View } from './components/NavRail'
+import NavRail, { View, VIEW_GROUPS } from './components/NavRail'
 import ClaudeMdModal from './components/ClaudeMdModal'
 import ApprovalModal from './components/ApprovalModal'
 import CheckpointsModal from './components/CheckpointsModal'
@@ -71,6 +71,16 @@ function newSession(projectPath?: string, model?: string, accountId?: string): S
     createdAt: now,
     updatedAt: now
   }
+}
+
+// Labels for the segmented sub-nav shown above a group's active view.
+const MEMBER_LABELS: Record<string, string> = {
+  agents: 'Agents',
+  rooms: 'Rooms',
+  planner: 'Planner',
+  scheduled: 'Routines',
+  mcp: 'MCP',
+  remote: 'Remote & WSL'
 }
 
 export default function App() {
@@ -993,6 +1003,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, models, accounts])
 
+  // The group whose member is currently shown, if any — drives the sub-nav.
+  const activeGroup = VIEW_GROUPS.find((g) => g.members.includes(view))
+
   return (
     <div className={`app-shell ${maximized ? 'maximized' : ''}`}>
       {!maximized && <ResizeHandles />}
@@ -1096,42 +1109,60 @@ export default function App() {
       )}
 
       {view === 'projects' && <ProjectsView onResume={resumeCCSession} />}
-      {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
-      {view === 'rooms' && (
-        <RoomsView
-          sessions={sessions}
-          runningIds={runningIds}
-          attentionIds={attentionIds}
-          approvals={approvalQueue}
-          onRespondApproval={respondApprovalById}
-          onOpenSession={(id) => {
-            setActiveId(id)
-            setView('chat')
-          }}
-          onOpenAgentsView={() => setView('agents')}
-          onDeploy={deployAgent}
-        />
-      )}
-      {view === 'planner' && (
-        <PlannerView
-          accounts={accounts}
-          models={models}
-          defaultModel={defaultModel}
-          defaultAccountId={defaultAccountId}
-          onRunTask={runPlannerTask}
-        />
-      )}
-      {view === 'scheduled' && (
-        <ScheduledView
-          models={models}
-          defaultModel={defaultModel}
-          accounts={accounts}
-          defaultAccountId={defaultAccountId}
-        />
-      )}
       {view === 'usage' && <UsageView />}
-      {view === 'mcp' && <McpView />}
-      {view === 'remote' && <RemoteView onConnect={connectRemote} onConnectWsl={connectWsl} />}
+
+      {activeGroup && (
+        <div className="view-with-subnav">
+          <div className="view-subnav">
+            <div className="view-subnav-group">
+              {activeGroup.members.map((m) => (
+                <button
+                  key={m}
+                  className={`view-subnav-btn ${view === m ? 'active' : ''}`}
+                  onClick={() => setView(m)}
+                >
+                  {MEMBER_LABELS[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
+          {view === 'rooms' && (
+            <RoomsView
+              sessions={sessions}
+              runningIds={runningIds}
+              attentionIds={attentionIds}
+              approvals={approvalQueue}
+              onRespondApproval={respondApprovalById}
+              onOpenSession={(id) => {
+                setActiveId(id)
+                setView('chat')
+              }}
+              onOpenAgentsView={() => setView('agents')}
+              onDeploy={deployAgent}
+            />
+          )}
+          {view === 'planner' && (
+            <PlannerView
+              accounts={accounts}
+              models={models}
+              defaultModel={defaultModel}
+              defaultAccountId={defaultAccountId}
+              onRunTask={runPlannerTask}
+            />
+          )}
+          {view === 'scheduled' && (
+            <ScheduledView
+              models={models}
+              defaultModel={defaultModel}
+              accounts={accounts}
+              defaultAccountId={defaultAccountId}
+            />
+          )}
+          {view === 'mcp' && <McpView />}
+          {view === 'remote' && <RemoteView onConnect={connectRemote} onConnectWsl={connectWsl} />}
+        </div>
+      )}
 
       {settingsOpen && (
         <SettingsModal

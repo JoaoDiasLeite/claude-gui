@@ -66,16 +66,33 @@ const ICONS: Record<string, JSX.Element> = {
   )
 }
 
-const ITEMS: { key: View; label: string }[] = [
-  { key: 'chat', label: 'Chat' },
-  { key: 'projects', label: 'Projects' },
-  { key: 'agents', label: 'Agents' },
-  { key: 'rooms', label: 'Rooms' },
-  { key: 'planner', label: 'Planner' },
-  { key: 'scheduled', label: 'Routines' },
-  { key: 'usage', label: 'Usage' },
-  { key: 'mcp', label: 'MCP' },
-  { key: 'remote', label: 'Remote' }
+// A group bundles several views under one rail entry. Exported so App.tsx can
+// derive the active group and render the segmented sub-nav for its members.
+export interface ViewGroup {
+  key: string
+  label: string
+  members: View[]
+}
+
+export const VIEW_GROUPS: ViewGroup[] = [
+  { key: 'agents', label: 'Agents', members: ['agents', 'rooms'] },
+  { key: 'planner', label: 'Planner', members: ['planner', 'scheduled'] },
+  { key: 'servers', label: 'Servers', members: ['mcp', 'remote'] }
+]
+
+// A rail entry is either a standalone view or a group of views. Groups use the
+// icon of their first member.
+type RailEntry =
+  | { kind: 'single'; view: View; label: string }
+  | { kind: 'group'; group: ViewGroup }
+
+const RAIL: RailEntry[] = [
+  { kind: 'single', view: 'chat', label: 'Chat' },
+  { kind: 'single', view: 'projects', label: 'Projects' },
+  { kind: 'group', group: VIEW_GROUPS[0] },
+  { kind: 'group', group: VIEW_GROUPS[1] },
+  { kind: 'single', view: 'usage', label: 'Usage' },
+  { kind: 'group', group: VIEW_GROUPS[2] }
 ]
 
 export default function NavRail({ view, onChange, onSettings }: Props) {
@@ -89,19 +106,43 @@ export default function NavRail({ view, onChange, onSettings }: Props) {
       </div>
 
       <div className="nav-items">
-        {ITEMS.map((item) => (
-          <button
-            key={item.key}
-            className={`nav-item ${view === item.key ? 'active' : ''}`}
-            onClick={() => onChange(item.key)}
-            title={item.label}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {ICONS[item.key]}
-            </svg>
-            <span className="nav-item-label">{item.label}</span>
-          </button>
-        ))}
+        {RAIL.map((entry) => {
+          if (entry.kind === 'single') {
+            return (
+              <button
+                key={entry.view}
+                className={`nav-item ${view === entry.view ? 'active' : ''}`}
+                onClick={() => onChange(entry.view)}
+                title={entry.label}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  {ICONS[entry.view]}
+                </svg>
+                <span className="nav-item-label">{entry.label}</span>
+              </button>
+            )
+          }
+          const { group } = entry
+          const active = group.members.includes(view)
+          // Clicking a group jumps to its first member — unless a member is
+          // already active, in which case it's a no-op.
+          const onClickGroup = () => {
+            if (!active) onChange(group.members[0])
+          }
+          return (
+            <button
+              key={group.key}
+              className={`nav-item ${active ? 'active' : ''}`}
+              onClick={onClickGroup}
+              title={group.label}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                {ICONS[group.members[0]]}
+              </svg>
+              <span className="nav-item-label">{group.label}</span>
+            </button>
+          )
+        })}
       </div>
 
       <button className="nav-item settings" onClick={onSettings} title="Settings">
