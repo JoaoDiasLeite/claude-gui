@@ -204,6 +204,9 @@ function ensureDirs(): void {
 }
 
 function createWindow(): void {
+  // Mirrors global.css --bg-0 for each theme, so the native window background
+  // (visible briefly before the renderer paints) doesn't flash the wrong theme.
+  const backgroundColor = getConfig().ui.theme === 'light' ? '#f7f5f1' : '#141312'
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -215,7 +218,7 @@ function createWindow(): void {
     // the window itself is opaque, flat-themed chrome — no OS backdrop material.
     frame: false,
     resizable: true,
-    backgroundColor: '#141312',
+    backgroundColor,
     icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

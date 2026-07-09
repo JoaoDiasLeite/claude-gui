@@ -713,6 +713,10 @@ export default function App() {
           : s
       )
     )
+    // Force a fresh plan-usage read so the sidebar badge reflects the newly
+    // selected default account immediately, instead of showing the previous
+    // account's number until the watcher's next (~5min) tick.
+    window.electronAPI.ccPlanUsage(true).then(setPlanReport).catch(() => {})
   }
 
   const toggleAutoApprove = () => {
