@@ -1,0 +1,95 @@
+.changelog-modal {
+  width: 500px;
+}
+
+.changelog-body {
+  gap: 0;
+  padding: 0;
+}
+
+/* ── Entry (one per version) ──────────────────────────────── */
+.cl-entry {
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.cl-entry:last-child {
+  border-bottom: none;
+}
+
+.cl-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cl-version {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.cl-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+.cl-tag-new {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+}
+.cl-tag-latest {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+  color: var(--success, #3fb950);
+}
+
+.cl-date {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* ── Section ──────────────────────────────────────────────── */
+.cl-section {
+  margin-bottom: 10px;
+}
+.cl-section:last-child {
+  margin-bottom: 0;
+}
+
+.cl-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-2);
+  margin-bottom: 5px;
+}
+
+/* ── Item list ────────────────────────────────────────────── */
+.cl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cl-item {
+  font-size: 13px;
+  color: var(--text-1);
+  line-height: 1.55;
+  padding-left: 14px;
+  position: relative;
+}
+.cl-item::before {
+  content: '·';
+  position: absolute;
+  left: 3px;
+  color: var(--text-2);
+  font-weight: 700;
+}

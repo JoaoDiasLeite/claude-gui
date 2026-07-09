@@ -50,4 +50,10 @@
   letter-spacing: 0.02em;
 }
 
-.nav-item.settings { margin-top: auto; }
+.nav-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}

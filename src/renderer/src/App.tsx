@@ -31,6 +31,7 @@ import GitModal from './components/GitModal'
 import CommandPalette, { CommandItem } from './components/CommandPalette'
 import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
+import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs } from './types'
 import ProjectsView from './views/ProjectsView'
 import AgentsView from './views/AgentsView'
@@ -95,6 +96,7 @@ export default function App() {
   const [terminalLines, setTerminalLines] = useState<TermLine[]>([])
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [changelogOpen, setChangelogOpen] = useState(false)
   const [claudeMdOpen, setClaudeMdOpen] = useState(false)
   const [checkpointsOpen, setCheckpointsOpen] = useState(false)
   const [gitOpen, setGitOpen] = useState(false)
@@ -1028,7 +1030,7 @@ export default function App() {
       {!maximized && <ResizeHandles />}
       <TitleBar maximized={maximized} />
       <div className="app">
-        <NavRail view={view} onChange={setView} onSettings={() => setSettingsOpen(true)} />
+        <NavRail view={view} onChange={setView} onSettings={() => setSettingsOpen(true)} onChangelog={() => setChangelogOpen(true)} />
 
       {view === 'chat' && (
         <>
@@ -1227,6 +1229,7 @@ export default function App() {
       {accountsOpen && (
         <AccountsModal onClose={() => setAccountsOpen(false)} onChanged={refreshAccounts} />
       )}
+      {changelogOpen && <ChangelogModal onClose={() => setChangelogOpen(false)} />}
       </div>
     </div>
   )
