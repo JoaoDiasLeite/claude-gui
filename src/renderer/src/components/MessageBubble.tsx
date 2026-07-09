@@ -385,6 +385,92 @@ function ToolCallView({ call }: { call: ToolCall }) {
   )
 }
 
+/** Singular/plural label per tool kind, in the order they appear in the summary line. */
+const KIND_LABELS: { kind: ToolKind; one: string; many: string }[] = [
+  { kind: 'bash', one: 'command', many: 'commands' },
+  { kind: 'file-edit', one: 'file edit', many: 'file edits' },
+  { kind: 'read', one: 'read', many: 'reads' },
+  { kind: 'search', one: 'search', many: 'searches' },
+  { kind: 'web', one: 'web', many: 'web' },
+  { kind: 'other', one: 'tool', many: 'tools' }
+]
+
+/** Builds e.g. "13 steps · 9 commands · 2 file edits · 1 search" from a run of calls. */
+function summarizeGroup(calls: ToolCall[]): string {
+  const counts = new Map<ToolKind, number>()
+  for (const call of calls) {
+    const k = kindOf(call.tool)
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  const total = calls.length
+  const parts = [`${total} step${total === 1 ? '' : 's'}`]
+  for (const { kind, one, many } of KIND_LABELS) {
+    const n = counts.get(kind) ?? 0
+    if (n > 0) parts.push(`${n} ${n === 1 ? one : many}`)
+  }
+  return parts.join(' · ')
+}
+
+function Chevron() {
+  return (
+    <svg
+      className="tool-group-chevron"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  )
+}
+
+/**
+ * Collapses a message's run of tool calls into a single card with a summary header.
+ * Auto-opens while the turn is streaming or any call is still running, then
+ * auto-collapses once complete — unless the user has toggled it manually.
+ */
+function ToolCallGroup({ calls, streaming }: { calls: ToolCall[]; streaming: boolean }) {
+  const [override, setOverride] = useState<boolean | null>(null)
+  const running = calls.find((c) => c.result === undefined)
+  const streamingOrRunning = streaming || running !== undefined
+  const open = override !== null ? override : streamingOrRunning
+
+  const runningArg = running ? summaryFor(running.tool, running.input).text : ''
+
+  return (
+    <div className={`tool-group ${open ? 'open' : ''}`}>
+      <button
+        type="button"
+        className="tool-group-header"
+        aria-expanded={open}
+        onClick={() => setOverride(!open)}
+      >
+        <Chevron />
+        <span className="tool-group-summary">{summarizeGroup(calls)}</span>
+        {running && (
+          <>
+            {runningArg && <span className="tool-group-running">· running: {runningArg}</span>}
+            <span className="tool-call-spin" />
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="tool-group-body">
+          {calls.map((call) => (
+            <ToolCallView key={call.id} call={call} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function fmtTok(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M'
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K'
@@ -455,9 +541,11 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
         </div>
         {!isUser && message.toolCalls && message.toolCalls.length > 0 && (
           <div className="tool-calls">
-            {message.toolCalls.map((call) => (
-              <ToolCallView key={call.id} call={call} />
-            ))}
+            {message.toolCalls.length >= 3 ? (
+              <ToolCallGroup calls={message.toolCalls} streaming={streaming} />
+            ) : (
+              message.toolCalls.map((call) => <ToolCallView key={call.id} call={call} />)
+            )}
           </div>
         )}
         {isUser && editing ? (
