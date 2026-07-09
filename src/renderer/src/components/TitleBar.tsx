@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+import { UpdaterState } from '../types'
 import './TitleBar.css'
 
 interface Props {
@@ -12,6 +14,25 @@ interface Props {
 export default function TitleBar({ maximized }: Props) {
   const toggleMaximize = () => window.electronAPI.windowMaximizeToggle()
 
+  // Ambient "restart to update" pill: mirrors the same 'updater:event' feed the
+  // Settings modal listens to, so the pill shows up even if Settings was never
+  // opened for this session (e.g. the download finished in the background).
+  const [updater, setUpdater] = useState<UpdaterState | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.electronAPI.updaterState().then((s) => {
+      if (!cancelled) setUpdater(s)
+    })
+    const off = window.electronAPI.onUpdaterEvent((s) => {
+      if (!cancelled) setUpdater((prev) => ({ ...(prev ?? s), ...s }))
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+
   return (
     <div className="titlebar" onDoubleClick={toggleMaximize}>
       <div className="titlebar-brand">
@@ -25,6 +46,22 @@ export default function TitleBar({ maximized }: Props) {
       </div>
 
       <div className="titlebar-drag" />
+
+      {updater?.state === 'downloaded' && (
+        <button
+          className="titlebar-update-pill"
+          onClick={() => window.electronAPI.updaterInstall()}
+          title={`Install Claude GUI v${updater.version ?? ''} and relaunch`}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+            <path d="M3 21v-5h5" />
+          </svg>
+          Restart to update
+        </button>
+      )}
 
       <div className="titlebar-controls" onDoubleClick={(e) => e.stopPropagation()}>
         <button

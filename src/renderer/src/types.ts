@@ -627,6 +627,7 @@ declare global {
       // Auto-update
       updaterState: () => Promise<UpdaterState>
       updaterCheck: () => Promise<UpdaterState>
+      updaterInstall: () => Promise<void>
       onUpdaterEvent: (cb: (data: UpdaterState) => void) => () => void
 
       // Tray / quick-launcher overlay — events received by the MAIN window

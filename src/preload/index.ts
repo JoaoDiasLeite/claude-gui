@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Auto-update
   updaterState: () => ipcRenderer.invoke('updater:state'),
   updaterCheck: () => ipcRenderer.invoke('updater:check'),
+  updaterInstall: () => ipcRenderer.invoke('updater:install'),
   onUpdaterEvent: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('updater:event', fn)

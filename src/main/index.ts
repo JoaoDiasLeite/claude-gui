@@ -80,7 +80,7 @@ import { createToastWindow, showToast, hideToast, sendToToast } from './toast'
 import { createPillWindow, showPill, hidePill, hidePillSoon, sendToPill } from './pill'
 import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
-import { initUpdater, getUpdaterState, checkNow } from './updater'
+import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 import { setExplorerContextMenu, extractLaunchAction, LaunchAction } from './shell-integration'
 import { refreshJumpList } from './jumplist'
@@ -479,6 +479,7 @@ ipcMain.handle('app:notify', (_, payload: { title: string; body: string }) => {
 
 ipcMain.handle('updater:state', () => getUpdaterState())
 ipcMain.handle('updater:check', () => checkNow())
+ipcMain.handle('updater:install', () => quitAndInstall())
 
 // ─── Auth IPC ───────────────────────────────────────────────────────────────
 

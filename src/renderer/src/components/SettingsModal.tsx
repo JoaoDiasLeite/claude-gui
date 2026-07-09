@@ -463,6 +463,14 @@ export default function SettingsModal({
                 >
                   Check for updates
                 </button>
+                {updater.state === 'downloaded' && (
+                  <button
+                    className="btn-secondary small"
+                    onClick={() => window.electronAPI.updaterInstall()}
+                  >
+                    Restart & update
+                  </button>
+                )}
               </div>
               <p className={`field-hint ${updater.state === 'error' ? 'shortcut-status-error' : ''}`}>
                 {updaterStatusText()}
