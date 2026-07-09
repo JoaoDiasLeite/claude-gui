@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 14px 10px 8px;
+  padding: 12px 10px 10px;
 }
 
 /* ── Auth status ──────────────────────────────────────────── */
@@ -83,6 +83,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
+  font-weight: 500;
+  color: var(--text-0);
 }
 
 .auth-cta {

@@ -172,9 +172,13 @@ export default function Sidebar({
   const accountDetail = activeAccount?.loggedIn
     ? [activeAccount.email, activeAccount.plan].filter(Boolean).join(' · ')
     : ''
+  // The pill shows just the account name — email/plan live in the tooltip, so the
+  // ~200px row never ellipsizes mid-email against the usage badge.
   const statusLabel = activeAccount
-    ? activeAccount.name + (accountDetail ? ` · ${accountDetail}` : ready ? '' : ' · not logged in')
+    ? activeAccount.name + (ready ? '' : ' · not logged in')
     : authLabel
+  const statusTitle =
+    (accountDetail ? `${accountDetail} — ` : '') + 'Open connection settings'
 
   // Blank "New chat" drafts (no messages yet) stay out of the list — the Sessions
   // section only appears once at least one chat has real content. The active draft
@@ -227,7 +231,7 @@ export default function Sidebar({
         <button
           className={`auth-status ${ready ? 'ok' : 'warn'}`}
           onClick={onOpenSettings}
-          title="Open connection settings"
+          title={statusTitle}
         >
           <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
           <span className="auth-label">{statusLabel}</span>
