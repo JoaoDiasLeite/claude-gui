@@ -3,6 +3,30 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+/* ── Drag & drop overlay ──────────────────────────────────── */
+.chat-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg-0) 72%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-lg);
+  pointer-events: none;
+}
+.chat-drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .chat-header {
@@ -157,6 +181,47 @@
   justify-content: center;
 }
 .attachment-remove:hover { background: var(--error); }
+
+/* Transient rejection notice above the input. */
+.attach-notice {
+  font-size: 12px;
+  color: var(--error);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+/* Compact chip for a non-image (text) file attachment. */
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 5px 8px 5px 9px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-1);
+}
+.file-chip-icon { flex-shrink: 0; color: var(--text-2); }
+.file-chip-name {
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-chip-size { flex-shrink: 0; color: var(--text-2); }
+.file-chip-remove {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-2);
+}
+.file-chip-remove:hover { background: var(--error); color: #fff; }
 
 .attach-btn {
   flex-shrink: 0;

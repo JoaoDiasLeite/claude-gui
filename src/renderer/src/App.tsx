@@ -433,7 +433,12 @@ export default function App() {
   // Shared helper — builds the sendAgent payload from a session + prompt.
   // Both sendMessage, retryTurn, and editAndResend call this so params stay identical.
   const buildAgentPayload = useCallback(
-    (session: Session, text: string, images?: { mediaType: string; data: string }[]) => ({
+    (
+      session: Session,
+      text: string,
+      images?: { mediaType: string; data: string }[],
+      files?: { name: string; content: string }[]
+    ) => ({
       appSessionId: session.id,
       claudeSessionId: session.claudeSessionId,
       prompt: text,
@@ -448,6 +453,7 @@ export default function App() {
       lightMode: session.lightMode ?? false,
       approvalMode: (session.autoApprove ? 'auto' : 'ask') as 'auto' | 'ask',
       images,
+      files,
       remoteHostId: session.remoteHostId,
       wslDistro: session.wslDistro,
       accountId: session.accountId ?? defaultAccountId
@@ -456,7 +462,11 @@ export default function App() {
   )
 
   const sendMessage = useCallback(
-    (text: string, images?: { mediaType: string; data: string }[]) => {
+    (
+      text: string,
+      images?: { mediaType: string; data: string }[],
+      files?: { name: string; content: string }[]
+    ) => {
       const session = sessions.find((s) => s.id === activeIdRef.current)
       if (!session || runningIds.has(session.id)) return
 
@@ -472,7 +482,15 @@ export default function App() {
         )
       }
 
-      const userMsg: Message = { id: generateId(), role: 'user', content: text, timestamp: Date.now() }
+      // The transcript shows only the filenames of attached files; the full content
+      // rides along in the prompt (see main/index.ts buildPrompt), never in
+      // message.content — keeps stored sessions and future re-sends light.
+      // NOTE: edited-resend re-sends text only and will NOT re-attach these files.
+      const displayContent = files && files.length
+        ? `${text}\n\n📎 attached: ${files.map((f) => f.name).join(', ')}`
+        : text
+
+      const userMsg: Message = { id: generateId(), role: 'user', content: displayContent, timestamp: Date.now() }
       const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
 
       const updated: Session = {
@@ -487,7 +505,7 @@ export default function App() {
       setTerminalOpen(true)
       addTermFor(session.id, { kind: 'user', text: text.slice(0, 120) })
 
-      window.electronAPI.sendAgent(buildAgentPayload(session, text, images))
+      window.electronAPI.sendAgent(buildAgentPayload(session, text, images, files))
     },
     [sessions, runningIds, startRun, addTermFor, buildAgentPayload]
   )

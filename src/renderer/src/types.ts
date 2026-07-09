@@ -409,10 +409,21 @@ export interface GitStatus {
 }
 
 export interface ImageAttachment {
+  kind: 'image'
   mediaType: string
   data: string
   preview: string
 }
+
+export interface FileAttachment {
+  kind: 'file'
+  name: string
+  size: number
+  /** Full text content, delivered inline with the prompt (not persisted on the Message). */
+  content: string
+}
+
+export type Attachment = ImageAttachment | FileAttachment
 
 export type SshAuthType = 'password' | 'key' | 'agent'
 
@@ -680,6 +691,7 @@ declare global {
         useMcp?: boolean
         approvalMode?: 'ask' | 'auto'
         images?: { mediaType: string; data: string }[]
+        files?: { name: string; content: string }[]
         remoteHostId?: string
         wslDistro?: string
         accountId?: string

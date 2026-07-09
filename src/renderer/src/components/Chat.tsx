@@ -1,10 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
-import { Session, ModelInfo, ImageAttachment, SlashCommand } from '../types'
+import { Session, ModelInfo, Attachment, SlashCommand } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import ChatTerminal from './ChatTerminal'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import './Chat.css'
+
+// ── Text-file attachment limits & heuristics ─────────────────────────────────
+const MAX_FILE_ATTACHMENTS = 5
+const MAX_FILE_BYTES = 200 * 1024
+// Extensions that are almost certainly binary — images among these go through the
+// existing image path instead, so anything here reaching the text path is rejected.
+const BINARY_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'zip', 'exe', 'dll', 'bin'
+])
+
+// Human-readable byte size, e.g. 14560 → "14.2 KB".
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const kb = bytes / 1024
+  if (kb < 1024) return `${kb.toFixed(1)} KB`
+  return `${(kb / 1024).toFixed(1)} MB`
+}
+
+// Ellipsize the middle of a long filename so the extension stays visible.
+function middleEllipsis(name: string, max = 28): string {
+  if (name.length <= max) return name
+  const keep = max - 1
+  const head = Math.ceil(keep / 2)
+  const tail = Math.floor(keep / 2)
+  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`
+}
 
 /**
  * Approximate the context footprint currently re-sent on every turn: walk back to
@@ -24,7 +50,11 @@ function contextTokens(session?: Session): number | null {
 interface Props {
   session?: Session
   streaming: boolean
-  onSendMessage: (text: string, images?: { mediaType: string; data: string }[]) => void
+  onSendMessage: (
+    text: string,
+    images?: { mediaType: string; data: string }[],
+    files?: { name: string; content: string }[]
+  ) => void
   onStop: () => void
   onOpenSettings: () => void
   ready: boolean
@@ -84,7 +114,14 @@ export default function Chat({
     setTermOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
   }
   const [input, setInput] = useState('')
-  const [attachments, setAttachments] = useState<ImageAttachment[]>([])
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  // Transient inline feedback (e.g. rejected attachment); clears itself after ~4s.
+  const [attachNotice, setAttachNotice] = useState<string | null>(null)
+  // True while files are being dragged over the chat, to show the drop overlay.
+  const [dragging, setDragging] = useState(false)
+  // dragenter/dragleave fire per descendant; count them so the overlay only clears
+  // once the pointer has truly left the chat root.
+  const dragDepth = useRef(0)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -187,23 +224,74 @@ export default function Chat({
     }
     const text = input.trim()
     if (!text && attachments.length === 0) return
-    const images = attachments.map((a) => ({ mediaType: a.mediaType, data: a.data }))
+    const images = attachments
+      .filter((a): a is Extract<Attachment, { kind: 'image' }> => a.kind === 'image')
+      .map((a) => ({ mediaType: a.mediaType, data: a.data }))
+    const files = attachments
+      .filter((a): a is Extract<Attachment, { kind: 'file' }> => a.kind === 'file')
+      .map((a) => ({ name: a.name, content: a.content }))
     setInput('')
     setAttachments([])
     resetTextareaHeight()
-    onSendMessage(text || 'Describe these image(s).', images.length ? images : undefined)
+    // Sensible fallback prompt when the user attaches without typing.
+    const fallback = images.length ? 'Describe these image(s).' : 'See the attached file(s).'
+    onSendMessage(
+      text || fallback,
+      images.length ? images : undefined,
+      files.length ? files : undefined
+    )
   }
 
+  // Show a brief red notice above the input; auto-clears after ~4s.
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showNotice = (msg: string) => {
+    setAttachNotice(msg)
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setAttachNotice(null), 4000)
+  }
+
+  // Route each incoming file: images go through the existing base64 image path; anything
+  // else is read as text and attached as a file chip. Enforce limits (max 5 files, 200 KB
+  // each) and reject likely-binary content at add time.
   const addFiles = (files: FileList | File[]) => {
+    // Reserve remaining file slots up front (reads are async, so count optimistically).
+    let fileSlots = MAX_FILE_ATTACHMENTS - attachments.filter((a) => a.kind === 'file').length
     for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
+      if (file.type.startsWith('image/')) {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const result = reader.result as string
+          const data = result.split(',')[1] ?? ''
+          setAttachments((prev) => [...prev, { kind: 'image', mediaType: file.type, data, preview: result }])
+        }
+        reader.readAsDataURL(file)
+        continue
+      }
+      const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
+      if (BINARY_EXTENSIONS.has(ext)) {
+        showNotice(`Can't attach "${file.name}" — looks like a binary file.`)
+        continue
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        showNotice(`"${file.name}" is too large (max ${formatSize(MAX_FILE_BYTES)}).`)
+        continue
+      }
+      if (fileSlots <= 0) {
+        showNotice(`Only ${MAX_FILE_ATTACHMENTS} files can be attached per message.`)
+        break
+      }
+      fileSlots--
       const reader = new FileReader()
       reader.onload = () => {
-        const result = reader.result as string
-        const data = result.split(',')[1] ?? ''
-        setAttachments((prev) => [...prev, { mediaType: file.type, data, preview: result }])
+        const content = reader.result as string
+        // NUL byte ⇒ almost certainly binary content that slipped past the denylist.
+        if (content.includes(String.fromCharCode(0))) {
+          showNotice(`Can't attach "${file.name}" — looks like a binary file.`)
+          return
+        }
+        setAttachments((prev) => [...prev, { kind: 'file', name: file.name, size: file.size, content }])
       }
-      reader.readAsDataURL(file)
+      reader.readAsText(file)
     }
   }
 
@@ -212,6 +300,35 @@ export default function Chat({
     if (imageItems.length === 0) return
     e.preventDefault()
     addFiles(imageItems.map((i) => i.getAsFile()).filter((f): f is File => !!f))
+  }
+
+  // ── Drag & drop files onto the chat ────────────────────────────────────────
+  const dndActive = ready && !streaming
+  const dragHasFiles = (e: React.DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
+  const handleDragEnter = (e: React.DragEvent) => {
+    if (!dndActive || !dragHasFiles(e)) return
+    e.preventDefault()
+    dragDepth.current += 1
+    setDragging(true)
+  }
+  const handleDragOver = (e: React.DragEvent) => {
+    if (!dndActive || !dragHasFiles(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!dragHasFiles(e)) return
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+  const handleDrop = (e: React.DragEvent) => {
+    dragDepth.current = 0
+    setDragging(false)
+    if (!dragHasFiles(e)) return
+    // Prevent the browser from navigating away to the dropped file.
+    e.preventDefault()
+    if (!dndActive) return
+    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files)
   }
 
   const removeAttachment = (idx: number) => {
@@ -297,7 +414,25 @@ export default function Chat({
     ctxTokens != null ? ctxTokens >= 120_000 : !!session && session.messages.length >= 40
 
   return (
-    <div className="chat">
+    <div
+      className="chat"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragging && (
+        <div className="chat-drop-overlay">
+          <div className="chat-drop-inner">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Drop files to attach</span>
+          </div>
+        </div>
+      )}
       <div className="chat-header">
         <div className="chat-title">
           {session?.agentName && <span className="chat-agent-badge">{session.agentName}</span>}
@@ -499,18 +634,35 @@ export default function Chat({
             </div>
           </div>
         )}
+        {attachNotice && <div className="attach-notice">{attachNotice}</div>}
         {attachments.length > 0 && (
           <div className="attachments">
-            {attachments.map((a, i) => (
-              <div className="attachment" key={i}>
-                <img src={a.preview} alt="attachment" />
-                <button className="attachment-remove" onClick={() => removeAttachment(i)} title="Remove" aria-label="Remove attachment">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            {attachments.map((a, i) =>
+              a.kind === 'image' ? (
+                <div className="attachment" key={i}>
+                  <img src={a.preview} alt="attachment" />
+                  <button className="attachment-remove" onClick={() => removeAttachment(i)} title="Remove" aria-label="Remove attachment">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="file-chip" key={i} title={`${a.name} · ${formatSize(a.size)}`}>
+                  <svg className="file-chip-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
                   </svg>
-                </button>
-              </div>
-            ))}
+                  <span className="file-chip-name">{middleEllipsis(a.name)}</span>
+                  <span className="file-chip-size">{formatSize(a.size)}</span>
+                  <button className="file-chip-remove" onClick={() => removeAttachment(i)} title="Remove" aria-label="Remove attachment">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )
+            )}
           </div>
         )}
         <div className="input-wrapper">
@@ -555,17 +707,20 @@ export default function Chat({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
             multiple
             style={{ display: 'none' }}
-            onChange={(e) => e.target.files && addFiles(e.target.files)}
+            onChange={(e) => {
+              if (e.target.files) addFiles(e.target.files)
+              // Reset so picking the same file again re-fires onChange.
+              e.target.value = ''
+            }}
           />
           <button
             className="attach-btn"
             onClick={() => fileInputRef.current?.click()}
             disabled={!ready || streaming}
-            title="Attach image"
-            aria-label="Attach image"
+            title="Attach image or file"
+            aria-label="Attach image or file"
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -574,7 +729,7 @@ export default function Chat({
           <textarea
             ref={textareaRef}
             className="chat-input"
-            placeholder={ready ? 'Message Claude…  (paste or attach images)' : 'Connect your account in Settings to start'}
+            placeholder={ready ? 'Message Claude…  (paste images or drop/attach files)' : 'Connect your account in Settings to start'}
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}

@@ -535,6 +535,8 @@ interface SendPayload {
   approvalMode?: 'ask' | 'auto'
   /** Pasted/attached images to include with this turn. */
   images?: { mediaType: string; data: string }[]
+  /** Attached text files — appended to the prompt as delimited blocks. */
+  files?: { name: string; content: string }[]
   /** If set, run on this remote SSH host instead of locally. */
   remoteHostId?: string
   /** If set, run inside this WSL distro instead of locally. */
@@ -544,17 +546,32 @@ interface SendPayload {
 }
 
 /**
+ * Append attached text files to the prompt as clearly delimited blocks, AFTER the
+ * user's own text. Works for both the plain-string and structured (image) paths.
+ */
+function appendFiles(text: string, files: { name: string; content: string }[] | undefined): string {
+  if (!files || files.length === 0) return text
+  const blocks = files
+    .map((f) => `--- Attached file: ${f.name} ---\n${f.content}\n--- End of ${f.name} ---`)
+    .join('\n\n')
+  return text ? `${text}\n\n${blocks}` : blocks
+}
+
+/**
  * Build the `prompt` for query(). A plain string is the proven fast path; when images are
  * attached we must use the structured streaming-input form (one user message with text +
  * image content blocks). The generator completing signals end-of-input so the run finishes.
+ * Attached text files are folded into the text portion in either case.
  */
 function buildPrompt(
   text: string,
   images: { mediaType: string; data: string }[] | undefined,
+  files: { name: string; content: string }[] | undefined,
   sessionId: string
 ): string | AsyncIterable<unknown> {
-  if (!images || images.length === 0) return text
-  const content: unknown[] = [{ type: 'text', text }]
+  const fullText = appendFiles(text, files)
+  if (!images || images.length === 0) return fullText
+  const content: unknown[] = [{ type: 'text', text: fullText }]
   for (const img of images) {
     content.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data: img.data } })
   }
@@ -606,9 +623,13 @@ ipcMain.handle(
 ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   const { appSessionId, claudeSessionId, prompt, projectPath } = payload
 
+  // Remote/WSL runs take a plain prompt string (no structured image path), so fold any
+  // attached text files straight into the prompt text here.
+  const promptWithFiles = appendFiles(prompt, payload.files)
+
   // Remote host: drive the remote machine's Claude Code over SSH instead of the local SDK.
   if (payload.remoteHostId) {
-    runRemote(appSessionId, payload.remoteHostId, prompt, payload.model, claudeSessionId, {
+    runRemote(appSessionId, payload.remoteHostId, promptWithFiles, payload.model, claudeSessionId, {
       onEvent: (e) => send('agent:event', e),
       onDone: (d) => send('agent:done', { appSessionId, ...d }),
       onError: (msg) => send('agent:error', { appSessionId, error: msg })
@@ -618,7 +639,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
   // WSL distro: drive that distro's Claude Code via wsl.exe.
   if (payload.wslDistro) {
-    runWsl(appSessionId, payload.wslDistro, prompt, payload.model, claudeSessionId, projectPath, undefined, {
+    runWsl(appSessionId, payload.wslDistro, promptWithFiles, payload.model, claudeSessionId, projectPath, undefined, {
       onEvent: (e) => send('agent:event', e),
       onDone: (d) => send('agent:done', { appSessionId, ...d }),
       onError: (msg) => send('agent:error', { appSessionId, error: msg })
@@ -706,7 +727,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   try {
     const query = await getQuery()
     const stream = query({
-      prompt: buildPrompt(prompt, payload.images, claudeSessionId ?? '') as string,
+      prompt: buildPrompt(prompt, payload.images, payload.files, claudeSessionId ?? '') as string,
       options: {
         ...sdkExecutable(),
         model,
@@ -1205,7 +1226,7 @@ ipcMain.handle(
     try {
       const query = await getQuery()
       const stream = query({
-        prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, '') as string,
+        prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, undefined, '') as string,
         options: {
           ...sdkExecutable(),
           model,
