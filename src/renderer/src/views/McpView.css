@@ -1,4 +1,34 @@
-/* ── McpView.css — premium polish layer ─────────────────────────────────── */
+/* ── McpView.css — base layout + premium polish layer ────────────────────
+   The base rules below used to live in views.css (duplicated here as an
+   "override" layer); they've been consolidated into this file since these
+   classes are only ever used by McpView, so this file is now the single
+   owner. The polish rules further down still layer on top of them. The
+   badge rules are scoped under .mcp-card-head so they only affect MCP's
+   own badges (a bare `.badge` selector here would leak onto every badge
+   in the app — see shared.css for the generic badge primitive). ──────── */
+
+.mcp-list { display: flex; flex-direction: column; gap: 10px; }
+.mcp-card { background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.mcp-card-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; cursor: pointer; }
+.mcp-card-head:hover { background: var(--bg-hover); }
+.mcp-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mcp-status.ok { background: var(--success); }
+.mcp-status.warn { background: var(--accent); }
+.mcp-card-name { font-size: 14px; font-weight: 600; }
+.mcp-card-spacer { flex: 1; }
+.mcp-card-summary { padding: 0 14px 12px 31px; font-size: 12px; color: var(--text-1); }
+.mcp-card-summary code { font-size: 11.5px; }
+.mcp-card-project { font-size: 11px; color: var(--text-2); margin-top: 4px; font-family: var(--font-mono); }
+.mcp-card-config { margin: 0 14px 14px; max-height: 280px; }
+
+/* Status dots glow softly (kept alongside the base .mcp-status above). */
+.mcp-status.ok { box-shadow: 0 0 7px color-mix(in srgb, var(--success) 70%, transparent); }
+.mcp-status.warn { box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 70%, transparent); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Premium polish layer — layered AFTER the base rules above so
+   equal-specificity rules win here.
+   ═══════════════════════════════════════════════════════════════════════ */
 
 /* Card head: tighter breathing room, clear hover affordance */
 .mcp-card-head {
@@ -22,8 +52,9 @@
   color: var(--text-0);
 }
 
-/* Badge refinements — crisp tinted pills with a thin tinted border */
-.badge {
+/* Badge refinements — crisp tinted pills with a thin tinted border.
+   Scoped under .mcp-card-head so these only affect MCP's own badges. */
+.mcp-card-head .badge {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -32,38 +63,38 @@
   border: 1px solid transparent;
 }
 
-.badge.stdio {
+.mcp-card-head .badge.stdio {
   background: rgba(79, 195, 247, 0.13);
   color: #4fc3f7;
   border-color: rgba(79, 195, 247, 0.28);
 }
 
-.badge.http,
-.badge.sse {
+.mcp-card-head .badge.http,
+.mcp-card-head .badge.sse {
   background: color-mix(in srgb, var(--thinking) 14%, transparent);
   color: var(--thinking);
   border-color: color-mix(in srgb, var(--thinking) 28%, transparent);
 }
 
-.badge.scope {
+.mcp-card-head .badge.scope {
   background: color-mix(in srgb, var(--bg-3) 80%, transparent);
   color: var(--text-2);
   border-color: var(--border-light);
 }
 
-.badge.warn {
+.mcp-card-head .badge.warn {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 /* Source pill: 'local' vs a WSL distro */
-.badge.src {
+.mcp-card-head .badge.src {
   background: color-mix(in srgb, var(--success) 13%, transparent);
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 28%, transparent);
 }
-.badge.src.wsl {
+.mcp-card-head .badge.src.wsl {
   background: rgba(79, 195, 247, 0.13);
   color: #4fc3f7;
   border-color: rgba(79, 195, 247, 0.28);

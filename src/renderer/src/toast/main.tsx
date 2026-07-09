@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import Toast from './Toast'
 import '../styles/global.css'
+import '../styles/shared.css'
 import './Toast.css'
 
 createRoot(document.getElementById('root')!).render(

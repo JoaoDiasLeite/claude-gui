@@ -187,9 +187,9 @@ export default function SettingsModal({
                 <div className="auth-option-title">
                   Use my Claude Code account
                   {claudeDetected ? (
-                    <span className="pill ok">Detected</span>
+                    <span className="status-pill ok">Detected</span>
                   ) : (
-                    <span className="pill warn">Not found</span>
+                    <span className="status-pill warn">Not found</span>
                   )}
                 </div>
                 <div className="auth-option-desc">
@@ -211,7 +211,7 @@ export default function SettingsModal({
               <div className="auth-option-body">
                 <div className="auth-option-title">
                   Use an API key
-                  {hasApiKey && <span className="pill ok">Saved</span>}
+                  {hasApiKey && <span className="status-pill ok">Saved</span>}
                 </div>
                 <div className="auth-option-desc">
                   Bills your Anthropic Console account. Stored encrypted in your OS keychain.

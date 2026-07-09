@@ -1,0 +1,219 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   shared.css — cross-component primitives.
+
+   Because every component/view stylesheet is bundled into one global
+   sheet, two files defining the same bare class name silently collide
+   (whichever lands later in the bundle wins, or properties merge in
+   unpredictable ways). The classes below are used by many unrelated
+   components, so they get ONE canonical definition here instead of being
+   copy-pasted (and drifting) across files.
+
+   Component-specific visual refinements belong in the component's own
+   stylesheet as SCOPED overrides (e.g. `.mcp-card-head .badge { ... }`,
+   `.settings-modal .btn-primary { ... }`) — never as a second bare
+   re-definition of these selectors.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Modal shell ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  /* The backdrop covers the frameless window's draggable title bar. Without an
+     explicit no-drag, clicks in that top strip (including a tall modal's header)
+     start a window drag instead of reaching the button/backdrop underneath. */
+  -webkit-app-region: no-drag;
+}
+
+.modal {
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  width: 420px;
+  max-width: calc(100vw - 40px);
+  /* Clamp to the viewport and let .modal-body scroll — a modal taller than the
+     window (e.g. Settings on a small screen) must never overflow off-screen. */
+  max-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal.wide { width: 560px; }
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Buttons ── */
+.btn-primary, .btn-secondary, .btn-ghost {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.1s, box-shadow 0.14s;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 75%, #e0a06f));
+  color: #fff;
+  border: 1px solid transparent;
+  box-shadow: 0 2px 10px var(--accent-dim);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 45%, transparent); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-secondary { background: var(--bg-3); color: var(--text-1); border: 1px solid var(--border-light); }
+.btn-secondary:hover { background: var(--bg-hover); transform: translateY(-1px); }
+.btn-ghost { background: var(--bg-2); color: var(--text-1); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-0); transform: translateY(-1px); }
+.btn-primary.small, .btn-ghost.small { padding: 5px 11px; font-size: 12px; }
+.btn-text { font-size: 12px; color: var(--text-2); cursor: pointer; }
+.btn-text:hover { color: var(--text-0); }
+.btn-text:disabled { opacity: 0.5; cursor: default; }
+.btn-text.danger:hover { color: var(--error); }
+
+/* ── Text input ── */
+.text-input {
+  width: 100%;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text-0);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.text-input:focus { border-color: var(--accent); }
+.text-input.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.text-input.textarea { resize: vertical; line-height: 1.5; }
+select.text-input { cursor: pointer; }
+
+/* ── Form groups ── */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.form-group label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+}
+.form-group.grow { flex: 1; }
+.form-group.icon-group { flex-shrink: 0; }
+
+/* ── Toggle switch (checkbox-based) ── */
+.toggle-switch {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+.toggle-track {
+  width: 34px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  border: 1px solid var(--border-light);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.toggle-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: transform 0.15s, background 0.15s;
+}
+.toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.toggle-switch input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(14px);
+  background: white;
+}
+.toggle-switch input:disabled + .toggle-track {
+  opacity: 0.5;
+  cursor: default;
+}
+.toggle-switch input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Badge ── */
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--bg-3);
+  color: var(--text-1);
+}
+
+/* ── Status pill (small "ok"/"warn" indicator) ──
+   Used by SettingsModal, AccountsModal, and OnboardingModal. Named
+   `.status-pill` (not `.pill`) so it doesn't collide with the unrelated
+   selectable-tag `.pill` in PlannerView.css. */
+.status-pill {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+.status-pill.ok { background: rgba(76, 175, 110, 0.15); color: var(--success); }
+.status-pill.warn { background: rgba(204, 120, 92, 0.15); color: var(--accent); }
+
+/* ── Segmented control ── */
+.seg-control { display: flex; gap: 0; border: 1px solid var(--border-light); border-radius: var(--radius-sm); overflow: hidden; width: fit-content; }
+.seg-control button { padding: 7px 14px; font-size: 12.5px; color: var(--text-2); background: var(--bg-1); }
+.seg-control button.on { background: var(--accent-dim); color: var(--accent); }

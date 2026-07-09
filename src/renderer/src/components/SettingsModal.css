@@ -1,53 +1,6 @@
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  /* The backdrop covers the frameless window's draggable title bar. Without an
-     explicit no-drag, clicks in that top strip (including a tall modal's header)
-     start a window drag instead of reaching the button/backdrop underneath. */
-  -webkit-app-region: no-drag;
-}
-
-.modal {
-  background: var(--bg-2);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius);
-  width: 420px;
-  max-width: calc(100vw - 40px);
-  /* Clamp to the viewport and let .modal-body scroll — a modal taller than the
-     window (e.g. Settings on a small screen) must never overflow off-screen. */
-  max-height: calc(100vh - 60px);
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 20px 14px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.modal-header h3 {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.modal-body {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  overflow-y: auto;
-  min-height: 0;
-}
+/* Modal shell (.modal-backdrop / .modal / .modal-header / .modal-body /
+   .modal-footer) now lives in styles/shared.css — it's used by every modal
+   component in the app, not just this one. */
 
 .auth-option-group {
   display: flex;
@@ -107,16 +60,10 @@
   line-height: 1.5;
 }
 
-.pill {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
-  border-radius: 10px;
-}
-.pill.ok { background: rgba(76, 175, 110, 0.15); color: var(--success); }
-.pill.warn { background: rgba(204, 120, 92, 0.15); color: var(--accent); }
+/* .status-pill (renamed from the generic `.pill`, which collided with the
+   unrelated selectable-tag `.pill` in PlannerView.css) is also used by
+   AccountsModal and OnboardingModal, so it's defined once in
+   styles/shared.css rather than here. */
 
 .api-key-section {
   padding: 14px;
@@ -132,29 +79,8 @@
   margin-top: 10px;
 }
 
-.btn-primary.small { padding: 6px 14px; font-size: 12px; }
-
-.btn-text {
-  font-size: 12px;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.btn-text:hover { color: var(--error); }
-.btn-text:disabled { opacity: 0.5; cursor: default; }
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-group label {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-2);
-}
+/* .btn-primary/.btn-secondary/.btn-ghost/.btn-text and .form-group are
+   defined once in styles/shared.css. */
 
 .field-hint {
   font-size: 12px;
@@ -199,37 +125,8 @@
 .seg-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .seg-field > span { font-size: 13px; color: var(--text-1); }
 
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 14px 20px 18px;
-  border-top: 1px solid var(--border);
-}
-
-.btn-secondary, .btn-primary {
-  padding: 8px 18px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.btn-secondary {
-  background: var(--bg-3);
-  border: 1px solid var(--border-light);
-  color: var(--text-1);
-}
-.btn-secondary:hover { background: var(--bg-hover); }
-
-.btn-primary {
-  background: var(--accent);
-  border: 1px solid transparent;
-  color: white;
-}
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+/* .modal-footer and the base .btn-secondary/.btn-primary live in
+   styles/shared.css. `.saved` is a Settings-only state on top of it. */
 .btn-primary.saved { background: var(--success); }
 
 /* ── Palette picker ── */
@@ -296,54 +193,9 @@
   color: var(--text-1);
 }
 
-/* ── System integration section ── */
-.toggle-switch {
-  position: relative;
-  display: inline-flex;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.toggle-switch input {
-  position: absolute;
-  opacity: 0;
-  width: 1px;
-  height: 1px;
-  pointer-events: none;
-}
-.toggle-track {
-  width: 34px;
-  height: 20px;
-  border-radius: 10px;
-  background: var(--bg-3);
-  border: 1px solid var(--border-light);
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  transition: background 0.15s, border-color 0.15s;
-}
-.toggle-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--text-2);
-  transition: transform 0.15s, background 0.15s;
-}
-.toggle-switch input:checked + .toggle-track {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.toggle-switch input:checked + .toggle-track .toggle-thumb {
-  transform: translateX(14px);
-  background: white;
-}
-.toggle-switch input:disabled + .toggle-track {
-  opacity: 0.5;
-  cursor: default;
-}
-.toggle-switch input:focus-visible + .toggle-track {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* ── System integration section ──
+   .toggle-switch/.toggle-track/.toggle-thumb are defined once in
+   styles/shared.css. */
 
 .shortcut-field {
   display: flex;

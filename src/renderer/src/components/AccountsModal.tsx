@@ -125,8 +125,8 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
                   ) : (
                     <div className="account-row-name">
                       {a.name}
-                      {a.id === defaultId && <span className="pill">Default</span>}
-                      {!a.loggedIn && <span className="pill warn">Not logged in</span>}
+                      {a.id === defaultId && <span className="status-pill">Default</span>}
+                      {!a.loggedIn && <span className="status-pill warn">Not logged in</span>}
                     </div>
                   )}
                   <div className="account-row-meta">

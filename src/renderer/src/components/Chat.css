@@ -81,6 +81,10 @@
   color: var(--text-0);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
+/* Active state while the embedded terminal (ChatTerminal) is open. */
+.header-icon-btn.term-active {
+  color: var(--accent);
+}
 
 /* Segmented control wrapping the two mode toggles (Auto/Approve + Light/Full). */
 .header-toggle-group {

@@ -84,7 +84,7 @@ export default function OnboardingModal({ onFinish }: Props) {
             >
               <div className="auth-option-radio"><span className={auth?.mode === 'claude-code' ? 'on' : ''} /></div>
               <div className="auth-option-body">
-                <div className="auth-option-title">Use my Claude Code account {detected && <span className="pill ok">Detected</span>}</div>
+                <div className="auth-option-title">Use my Claude Code account {detected && <span className="status-pill ok">Detected</span>}</div>
                 <div className="auth-option-desc">
                   Reuses the CLI login — no API key needed.{' '}
                   {!detected && 'Run `claude` once and log in, then click Re-check.'}
@@ -99,7 +99,7 @@ export default function OnboardingModal({ onFinish }: Props) {
             >
               <div className="auth-option-radio"><span className={auth?.mode === 'api-key' ? 'on' : ''} /></div>
               <div className="auth-option-body">
-                <div className="auth-option-title">Use an API key {auth?.hasApiKey && <span className="pill ok">Saved</span>}</div>
+                <div className="auth-option-title">Use an API key {auth?.hasApiKey && <span className="status-pill ok">Saved</span>}</div>
                 <div className="auth-option-desc">Stored encrypted in your OS keychain.</div>
               </div>
             </button>

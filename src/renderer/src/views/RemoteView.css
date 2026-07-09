@@ -1,4 +1,55 @@
-/* ── RemoteView.css — premium polish layer ──────────────────────────────── */
+/* ── RemoteView.css — base layout + premium polish layer ─────────────────
+   The base rules below used to live in views.css (duplicated here as an
+   "override" layer); they've been consolidated into this file since these
+   classes are only ever used by RemoteView, so this file is now the
+   single owner. The polish rules further down still layer on top. ────── */
+
+.remote-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  margin-bottom: 10px;
+}
+.remote-count {
+  background: var(--bg-3);
+  color: var(--text-1);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font-size: 11px;
+}
+.wsl-path { margin-top: 6px; max-width: 360px; }
+
+.ssh-list { display: flex; flex-direction: column; gap: 10px; }
+.ssh-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.ssh-card-main { flex: 1; min-width: 0; }
+.ssh-card-name { font-size: 14.5px; font-weight: 600; }
+.ssh-card-target { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-1); font-family: var(--font-mono); margin-top: 2px; }
+.ssh-card-path { font-size: 11.5px; color: var(--text-2); font-family: var(--font-mono); margin-top: 2px; }
+.ssh-card-acct { font-size: 11.5px; color: #4fc3f7; margin-top: 3px; }
+.ssh-card.hidden-card { opacity: 0.6; }
+.ssh-card-name.muted, .ssh-card-target.muted { color: var(--text-2); }
+.ssh-test { font-size: 11.5px; margin-top: 6px; font-family: var(--font-mono); }
+.ssh-test.ok { color: var(--success); }
+.ssh-test.err { color: var(--error); }
+.ssh-card-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Premium polish layer — layered AFTER the base rules above so
+   equal-specificity rules win here.
+   ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── Section headers ─────────────────────────────────────────────────────── */
 .remote-section-title {

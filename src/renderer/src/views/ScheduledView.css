@@ -154,7 +154,10 @@
 
 .toggle-btn.on { color: var(--accent); }
 
-.toggle-track {
+/* Scoped under .toggle-btn — this is a different toggle-switch implementation
+   than the checkbox-based one in styles/shared.css (bare `.toggle-track` /
+   `.toggle-thumb` here would collide with it). */
+.toggle-btn .toggle-track {
   position: relative;
   width: 32px;
   height: 18px;
@@ -170,7 +173,7 @@
   border-color: var(--accent);
 }
 
-.toggle-thumb {
+.toggle-btn .toggle-thumb {
   position: absolute;
   top: 2px;
   left: 2px;

@@ -1,6 +1,120 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   ProjectsView.css — premium polish layer for the Projects tab.
-   Layered AFTER views.css so equal-specificity rules win here.
+   ProjectsView.css — base layout + premium polish for the Projects tab.
+   The base rules below used to live in views.css (duplicated here as an
+   "override" layer); they've been consolidated into this file since these
+   classes are only ever used by ProjectsView, so this file is now the
+   single owner. The polish rules further down still layer on top of them.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.proj-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+  color: var(--text-2);
+  -webkit-app-region: no-drag;
+}
+.proj-search-input {
+  background: none;
+  border: none;
+  outline: none;
+  padding: 7px 0;
+  width: 220px;
+  color: var(--text-0);
+  font-size: 13px;
+}
+.proj-search-clear { display: flex; color: var(--text-2); }
+.proj-search-clear:hover { color: var(--text-0); }
+
+.search-results { flex: 1; overflow-y: auto; padding: 12px 20px; }
+.search-results-head { font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
+.search-hit {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  cursor: pointer;
+  background: var(--bg-1);
+  transition: border-color 0.15s;
+}
+.search-hit:hover { border-color: var(--accent); }
+.search-hit-top { display: flex; align-items: center; gap: 8px; }
+.search-hit-title { font-size: 13.5px; font-weight: 600; color: var(--text-0); }
+.search-hit-project { font-size: 11px; color: var(--text-1); background: var(--bg-3); border-radius: 4px; padding: 1px 6px; }
+.search-hit-date { font-size: 11px; color: var(--text-2); margin-left: auto; }
+.search-hit-snippet { font-size: 12px; color: var(--text-1); margin-top: 5px; font-family: var(--font-mono); }
+.search-hit-acct { font-size: 10.5px; color: #4fc3f7; margin-top: 4px; }
+
+.projects-split { flex: 1; display: flex; overflow: hidden; }
+.projects-list {
+  width: 300px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 10px;
+}
+.project-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 2px;
+  transition: background 0.1s;
+}
+.project-row:hover { background: var(--bg-hover); }
+.project-row.active { background: var(--bg-3); }
+.project-row-name { font-size: 13.5px; font-weight: 600; color: var(--text-0); display: flex; align-items: center; gap: 6px; }
+.project-row-meta { display: flex; gap: 5px; font-size: 11.5px; color: var(--text-2); margin: 2px 0; }
+.project-row-path {
+  font-size: 11px; color: var(--text-2); font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.project-row-acct {
+  font-size: 10.5px; color: #4fc3f7; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.src-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.src-badge.wsl { background: rgba(79,195,247,0.14); color: #4fc3f7; }
+
+.sessions-pane { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.sessions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.session-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+  position: relative;
+}
+.session-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.session-card-title { font-size: 13.5px; font-weight: 600; color: var(--text-0); margin-bottom: 4px; }
+.session-card-preview {
+  font-size: 12px; color: var(--text-1); line-height: 1.5; margin-bottom: 10px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.session-card-footer { display: flex; gap: 8px; font-size: 11px; color: var(--text-2); flex-wrap: wrap; }
+.session-card-model { font-family: var(--font-mono); }
+.session-card-resume {
+  position: absolute; top: 12px; right: 12px;
+  display: flex; align-items: center; gap: 3px;
+  font-size: 11px; color: var(--accent); opacity: 0; transition: opacity 0.15s;
+}
+.session-card:hover .session-card-resume { opacity: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Premium polish layer — layered AFTER the base rules above so
+   equal-specificity rules win here.
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── Search pill ─────────────────────────────────────────────────────── */
