@@ -55,6 +55,12 @@ export interface Session {
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
+  /**
+   * Set when this session was forked from another chat. Drives the "branched from …"
+   * divider shown after the copied messages. `atMessageId` is the id of the last
+   * copied message (the branch point) in this session's transcript.
+   */
+  branchedFrom?: { name: string; atMessageId: string }
   /** Accumulated usage across this chat's turns. */
   costUsd?: number
   inputTokens?: number

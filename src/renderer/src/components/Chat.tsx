@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { Session, ModelInfo, Attachment, SlashCommand } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
@@ -75,6 +75,7 @@ interface Props {
   onOpenGit: () => void
   onRetry: () => void
   onEditResend: (messageId: string, newText: string) => void
+  onBranch: (messageId: string) => void
   onExportSession: (format: 'md' | 'html') => void
 }
 
@@ -101,6 +102,7 @@ export default function Chat({
   onOpenGit,
   onRetry,
   onEditResend,
+  onBranch,
   onExportSession
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
@@ -580,14 +582,23 @@ export default function Chat({
           <>
             {session!.messages.map((msg, idx) => {
               const isLast = idx === session!.messages.length - 1
+              const showBranchDivider = session!.branchedFrom?.atMessageId === msg.id
               return (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  streaming={streaming && isLast && msg.role === 'assistant'}
-                  onRetry={isLast && msg.role === 'assistant' && msg.error ? onRetry : undefined}
-                  onEditResend={onEditResend}
-                />
+                <Fragment key={msg.id}>
+                  <MessageBubble
+                    message={msg}
+                    streaming={streaming && isLast && msg.role === 'assistant'}
+                    onRetry={isLast && msg.role === 'assistant' && msg.error ? onRetry : undefined}
+                    onEditResend={onEditResend}
+                    onBranch={onBranch}
+                  />
+                  {showBranchDivider && (
+                    <div className="branch-divider" role="separator">
+                      <span className="branch-divider-mark" aria-hidden="true">&#9090;</span>
+                      branched from &ldquo;{session!.branchedFrom!.name}&rdquo; here
+                    </div>
+                  )}
+                </Fragment>
               )
             })}
           </>

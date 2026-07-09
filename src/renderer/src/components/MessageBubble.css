@@ -75,6 +75,24 @@
 .message-row:hover .message-copy { opacity: 1; }
 .message-copy:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
 
+/* ── Branch action (quiet, same treatment as Copy) ────────────── */
+.message-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+.message-row:hover .message-branch { opacity: 1; }
+.message-branch:hover { color: var(--text-0); background: var(--bg-hover); border-color: var(--border-light); }
+
 /* ── Message content ──────────────────────────────────────── */
 .message-content {
   color: var(--text-0);

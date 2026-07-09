@@ -36,6 +36,8 @@ interface Props {
   /** Defined only on the last assistant message when it ended in an error. */
   onRetry?: () => void
   onEditResend: (messageId: string, newText: string) => void
+  /** Fork a new session from this message point. Present when branching is available. */
+  onBranch?: (messageId: string) => void
 }
 
 function summarizeInput(input: unknown): string {
@@ -477,7 +479,7 @@ function fmtTok(n: number): string {
   return String(Math.round(n))
 }
 
-export default function MessageBubble({ message, streaming, onRetry, onEditResend }: Props) {
+export default function MessageBubble({ message, streaming, onRetry, onEditResend, onBranch }: Props) {
   const isUser = message.role === 'user'
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState(message.content)
@@ -524,6 +526,22 @@ export default function MessageBubble({ message, streaming, onRetry, onEditResen
         <div className="message-head">
           <span className="message-role">{isUser ? 'You' : 'Claude'}</span>
           <CopyMessage text={message.content} />
+          {onBranch && !streaming && !editing && (
+            <button
+              className="message-branch"
+              onClick={() => onBranch(message.id)}
+              title="Branch a new chat from this point"
+              aria-label="Branch a new chat from this point"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+              Branch
+            </button>
+          )}
           {isUser && !editing && (
             <button
               className="message-edit"

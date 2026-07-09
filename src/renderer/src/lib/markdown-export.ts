@@ -55,3 +55,31 @@ export function sessionToMarkdown(session: Session): string {
 
   return lines.join('\n').trimEnd() + '\n'
 }
+
+/**
+ * Compact serialization of a transcript used to seed a *branched* session's context.
+ * Unlike the export above, this drops timestamps and the document header and keeps
+ * only what a fresh session needs to continue coherently: a role header per message,
+ * its text, and one-line tool-call summaries (never tool bodies/results).
+ *
+ * Capped at `maxChars`, truncating OLDEST-first (the recent tail is the most useful
+ * context) with a marker so the model knows history was elided.
+ */
+export function sessionToReplaySeed(session: Session, maxChars = 30_000): string {
+  const blocks: string[] = []
+  for (const msg of session.messages) {
+    const who = msg.role === 'user' ? 'User' : 'Assistant'
+    const parts: string[] = [`### ${who}`]
+    if (msg.content) parts.push(msg.content)
+    if (msg.toolCalls && msg.toolCalls.length > 0) {
+      for (const tc of msg.toolCalls) parts.push(toolCallLine(tc))
+    }
+    blocks.push(parts.join('\n'))
+  }
+  let body = blocks.join('\n\n')
+  if (body.length > maxChars) {
+    const marker = '[earlier messages truncated]\n\n'
+    body = marker + body.slice(body.length - (maxChars - marker.length))
+  }
+  return body
+}

@@ -33,6 +33,7 @@ import OnboardingModal from './components/OnboardingModal'
 import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs } from './types'
+import { sessionToReplaySeed } from './lib/markdown-export'
 import ProjectsView from './views/ProjectsView'
 import AgentsView from './views/AgentsView'
 import RoomsView from './views/RoomsView'
@@ -784,6 +785,60 @@ export default function App() {
     window.electronAPI.saveSession(s)
   }
 
+  // Fork a chat from any message point into a new session. Unlike Compact (which
+  // summarizes via an LLM call), this is instant and client-side: it deep-copies the
+  // messages up to and including the branch point for visual continuity, and seeds the
+  // new session's context through the SAME channel Compact uses — the `systemPrompt`
+  // field, re-sent on every turn by buildAgentPayload. The branched session gets NO
+  // claudeSessionId: the Claude Code engine can only resume from a session's latest
+  // point, so a truncated fork must rebuild context client-side (via the seed).
+  const branchSession = (messageId: string) => {
+    const parent = sessionsRef.current.find((s) => s.id === activeIdRef.current)
+    if (!parent) return
+    const idx = parent.messages.findIndex((m) => m.id === messageId)
+    if (idx === -1) return
+
+    // Deep copy messages[0..idx] inclusive — display history for the new transcript.
+    // structuredClone keeps message ids, so branchedFrom.atMessageId lines up.
+    const sliced = parent.messages.slice(0, idx + 1).map((m) => structuredClone(m))
+
+    // Name: "<parent> (branch)", deduping with "(branch 2)", "(branch 3)"… on collision.
+    const existing = new Set(sessionsRef.current.map((s) => s.name))
+    let name = `${parent.name} (branch)`
+    for (let n = 2; existing.has(name); n++) name = `${parent.name} (branch ${n})`
+
+    // Compact serialization of the slice → the context carrier. Combine with the
+    // parent's own systemPrompt (e.g. an agent's instructions) so both survive.
+    const seed = sessionToReplaySeed({ ...parent, messages: sliced })
+    const carryOver = `Context carried over from a previous (branched) session:\n\n${seed}`
+    const systemPrompt = parent.systemPrompt ? `${parent.systemPrompt}\n\n${carryOver}` : carryOver
+
+    const now = Date.now()
+    const s: Session = {
+      id: generateId(),
+      name,
+      messages: sliced,
+      projectPath: parent.projectPath,
+      model: parent.model,
+      accountId: parent.accountId,
+      accountName: parent.accountName,
+      systemPrompt,
+      permissionMode: parent.permissionMode,
+      allowedTools: parent.allowedTools,
+      useMcp: parent.useMcp,
+      autoApprove: parent.autoApprove,
+      lightMode: parent.lightMode,
+      // Intentionally NO claudeSessionId — the fork rebuilds context via the seed.
+      branchedFrom: { name: parent.name, atMessageId: sliced[sliced.length - 1].id },
+      createdAt: now,
+      updatedAt: now
+    }
+    setSessions((prev) => [s, ...prev])
+    setActiveId(s.id)
+    setView('chat')
+    window.electronAPI.saveSession(s)
+  }
+
   const createCheckpoint = async (label: string) => {
     if (!activeSession) return
     await window.electronAPI.checkpointCreate(
@@ -1135,6 +1190,7 @@ export default function App() {
               onOpenGit={() => setGitOpen(true)}
               onRetry={retryTurn}
               onEditResend={editAndResend}
+              onBranch={branchSession}
               onExportSession={(format) => {
                 if (activeSession) window.electronAPI.exportSession(activeSession, format)
               }}
