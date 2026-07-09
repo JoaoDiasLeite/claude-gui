@@ -227,7 +227,7 @@ export default function Sidebar({
 
   return (
     <div className="sidebar" style={{ width, flex: '0 0 auto' }}>
-      <div className="account-row">
+      <div className="sidebar-account">
         <button
           className={`auth-status ${ready ? 'ok' : 'warn'}`}
           onClick={onOpenSettings}

@@ -27,15 +27,20 @@
 
 /* ── Account row ──────────────────────────────────────────── */
 /* First element in the sidebar now that the duplicate brand row (the title
-   bar already shows "Claude GUI") is gone. */
-.account-row {
+   bar already shows "Claude GUI") is gone. Named sidebar-account because
+   AccountsModal.css already owns `.account-row` (a boxed card) and component
+   styles share one global bundle. */
+.sidebar-account {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 12px 10px 10px;
+  padding: 10px 10px 4px;
 }
 
 /* ── Auth status ──────────────────────────────────────────── */
+/* A quiet flat row, not a boxed pill — the account line sits directly above the
+   tab row and session cards, and three stacked boxes read as clutter. The box
+   look only appears in the warn state, where it has to draw attention. */
 .auth-status {
   display: flex;
   align-items: center;
@@ -43,7 +48,7 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border-radius: var(--radius);
   font-size: 12px;
   cursor: pointer;
@@ -51,13 +56,11 @@
   border: 1px solid transparent;
 }
 .auth-status.ok {
-  background: var(--bg-2);
-  border-color: var(--border);
+  background: transparent;
   color: var(--text-1);
 }
 .auth-status.ok:hover {
   background: var(--bg-hover);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 .auth-status.warn {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -107,9 +110,10 @@
 /* ── Sidebar tabs ─────────────────────────────────────────── */
 .sidebar-tabs {
   display: flex;
+  align-items: center;
   padding: 0 10px;
   gap: 2px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .sidebar-tab {
