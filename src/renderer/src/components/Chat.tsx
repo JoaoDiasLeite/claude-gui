@@ -280,12 +280,26 @@ export default function Chat({
         <div className="chat-title">
           {session?.agentName && <span className="chat-agent-badge">{session.agentName}</span>}
           {session?.name || 'New chat'}
-          {session?.projectPath && (
-            <span className="chat-project" title={session.projectPath}>
-              {session.projectPath.split(/[\\/]/).filter(Boolean).pop()}
-            </span>
+          {session?.claudeSessionId && (
+            <svg
+              className="chat-resumed-icon"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <title>Resumed Claude Code session</title>
+              <path d="M3 12a9 9 0 0 1 15.3-6.4L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-15.3 6.4L3 16" />
+              <path d="M3 21v-5h5" />
+            </svg>
           )}
-          {session?.claudeSessionId && <span className="chat-resumed" title="Resumed Claude Code session">resumed</span>}
           {session?.remoteHostName && (
             <span className="chat-remote" title="Running on remote host over SSH">⇄ {session.remoteHostName}</span>
           )}
@@ -566,7 +580,7 @@ export default function Chat({
             )}
           </button>
         </div>
-        <div className="input-hint">Enter to send · Shift+Enter for newline</div>
+        {isEmpty && <div className="input-hint">Enter to send · Shift+Enter for newline</div>}
       </div>
       </div>
     </div>

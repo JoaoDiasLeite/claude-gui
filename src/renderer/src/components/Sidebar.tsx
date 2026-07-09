@@ -43,6 +43,9 @@ interface Props {
   activeAccountId?: string
   /** Primary account's live plan session (5h) window, for the ambient badge. */
   planSession?: { utilization: number; resetsAt?: string }
+  /** App-wide default model/account — session badges only render when a session diverges from these. */
+  defaultModel?: string
+  defaultAccountId?: string
 }
 
 // "resets in 3h 12m" for the plan badge tooltip.
@@ -78,7 +81,9 @@ export default function Sidebar({
   auth,
   accounts,
   activeAccountId,
-  planSession
+  planSession,
+  defaultModel,
+  defaultAccountId
 }: Props) {
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [width, setWidth] = useState<number>(() => {
@@ -218,39 +223,25 @@ export default function Sidebar({
 
   return (
     <div className="sidebar" style={{ width, flex: '0 0 auto' }}>
-      <div className="sidebar-header">
-        <div className="sidebar-logo">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="10" stroke="var(--accent)" strokeWidth="1.5" />
-            <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          <span>Claude GUI</span>
-        </div>
-        <button className="icon-btn" onClick={onOpenSettings} title="Settings" aria-label="Settings">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
+      <div className="account-row">
+        <button
+          className={`auth-status ${ready ? 'ok' : 'warn'}`}
+          onClick={onOpenSettings}
+          title="Open connection settings"
+        >
+          <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
+          <span className="auth-label">{statusLabel}</span>
+          {planSession && (
+            <span
+              className={`plan-badge ${planSession.utilization >= 90 ? 'danger' : planSession.utilization >= 70 ? 'warn' : 'ok'}`}
+              title={`Plan session window: ${planSession.utilization.toFixed(0)}% used${planSession.resetsAt ? ` · ${fmtReset(planSession.resetsAt)}` : ''}`}
+            >
+              {planSession.utilization.toFixed(0)}%
+            </span>
+          )}
+          {!ready && <span className="auth-cta">Connect</span>}
         </button>
       </div>
-
-      <button
-        className={`auth-status ${ready ? 'ok' : 'warn'}`}
-        onClick={onOpenSettings}
-        title="Open connection settings"
-      >
-        <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
-        <span className="auth-label">{statusLabel}</span>
-        {planSession && (
-          <span
-            className={`plan-badge ${planSession.utilization >= 90 ? 'danger' : planSession.utilization >= 70 ? 'warn' : 'ok'}`}
-            title={`Plan session window: ${planSession.utilization.toFixed(0)}% used${planSession.resetsAt ? ` · ${fmtReset(planSession.resetsAt)}` : ''}`}
-          >
-            {planSession.utilization.toFixed(0)}%
-          </span>
-        )}
-        {!ready && <span className="auth-cta">Connect</span>}
-      </button>
 
       <div className="sidebar-tabs">
         <button
@@ -265,34 +256,33 @@ export default function Sidebar({
         >
           Files
         </button>
+        {tab === 'sessions' && (
+          <div className="sidebar-tab-actions">
+            {onNewQuickChat && (
+              <button
+                className="icon-btn"
+                onClick={onNewQuickChat}
+                title="Quick chat (Haiku — cheapest model)"
+                aria-label="Quick chat with Haiku"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+              </button>
+            )}
+            <button className="icon-btn" onClick={onNewSession} title="New chat" aria-label="New chat">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="sidebar-content">
         {tab === 'sessions' ? (
           <>
-            <div className="sidebar-section-header">
-              <span>Sessions</span>
-              <div className="sidebar-section-actions">
-                {onNewQuickChat && (
-                  <button
-                    className="icon-btn"
-                    onClick={onNewQuickChat}
-                    title="Quick chat (Haiku — cheapest model)"
-                    aria-label="Quick chat with Haiku"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                    </svg>
-                  </button>
-                )}
-                <button className="icon-btn" onClick={onNewSession} title="New chat" aria-label="New chat">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
             {(visibleSessions.length >= 5 || searchQuery) && (
               <div className="session-search">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="session-search-icon">
@@ -387,8 +377,8 @@ export default function Sidebar({
                     )}
                   </div>
                   {(() => {
-                    const modelLabel = s.model ? shortModelLabel(s.model) : null
-                    const accountLabel = accounts.length > 1
+                    const modelLabel = s.model && s.model !== defaultModel ? shortModelLabel(s.model) : null
+                    const accountLabel = accounts.length > 1 && s.accountId && s.accountId !== defaultAccountId
                       ? (s.accountName || accounts.find((a) => a.id === s.accountId)?.name || null)
                       : null
                     if (!modelLabel && !accountLabel) return null

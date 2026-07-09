@@ -84,6 +84,11 @@ export default function TerminalPanel({ lines, open, onToggle, onClear }: Props)
 
   const totalHeight = open ? HEADER_HEIGHT + bodyHeight : HEADER_HEIGHT
 
+  // Nothing to show and nothing to control — don't occupy a row in the layout.
+  // It reappears the instant a line arrives (state lives in the parent, so this
+  // component re-renders) or the panel gets reopened from elsewhere.
+  if (lines.length === 0 && !open) return null
+
   return (
     <div
       className={`terminal-panel ${open ? 'open' : ''}`}

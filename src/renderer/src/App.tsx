@@ -1033,6 +1033,8 @@ export default function App() {
             accounts={accounts}
             activeAccountId={activeSession?.accountId ?? defaultAccountId}
             planSession={planSession}
+            defaultModel={defaultModel}
+            defaultAccountId={defaultAccountId}
           />
           <div className="main-area">
             {!activeSession ? (

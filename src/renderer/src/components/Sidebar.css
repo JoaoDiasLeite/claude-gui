@@ -25,25 +25,14 @@
   opacity: 0.35;
 }
 
-.sidebar-header {
+/* ── Account row ──────────────────────────────────────────── */
+/* First element in the sidebar now that the duplicate brand row (the title
+   bar already shows "Claude GUI") is gone. */
+.account-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 12px 10px;
-  -webkit-app-region: drag;
-}
-
-.sidebar-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-0);
-}
-
-.sidebar-header .icon-btn {
-  -webkit-app-region: no-drag;
+  gap: 6px;
+  padding: 14px 10px 8px;
 }
 
 /* ── Auth status ──────────────────────────────────────────── */
@@ -51,7 +40,9 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 0 10px 8px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
   padding: 7px 10px;
   border-radius: var(--radius);
   font-size: 12px;
@@ -135,6 +126,16 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
+/* Quick-chat / new-chat icon buttons, inline at the end of the tab row
+   (only shown while the Chats tab is active). */
+.sidebar-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
 .sidebar-content {
   flex: 1;
   overflow: hidden;
@@ -153,12 +154,6 @@
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: var(--text-2);
-}
-
-.sidebar-section-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
 }
 
 /* ── Session search ───────────────────────────────────────── */
