@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { readJsonFile } from './json-file'
 
 export type AuthMode = 'claude-code' | 'api-key'
 
@@ -19,7 +20,7 @@ let state: AuthState = { mode: 'claude-code' }
 export function loadAuthState(): void {
   try {
     if (fs.existsSync(authStatePath)) {
-      state = JSON.parse(fs.readFileSync(authStatePath, 'utf-8'))
+      state = readJsonFile<AuthState>(authStatePath)
     }
   } catch {
     state = { mode: 'claude-code' }

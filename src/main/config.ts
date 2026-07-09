@@ -2,6 +2,7 @@ import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { readJsonFile } from './json-file'
 
 export interface ModelInfo {
   id: string
@@ -72,7 +73,7 @@ let config: AppConfig = {
 export function loadConfig(): void {
   try {
     if (fs.existsSync(configPath)) {
-      const loaded = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+      const loaded = readJsonFile<Partial<AppConfig>>(configPath)
       config = {
         ...config,
         ...loaded,
@@ -125,7 +126,7 @@ const claudeSettingsPath = path.join(os.homedir(), '.claude', 'settings.json')
 export function getClaudeSettings(): Record<string, unknown> {
   try {
     if (fs.existsSync(claudeSettingsPath)) {
-      return JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf-8'))
+      return readJsonFile<Record<string, unknown>>(claudeSettingsPath)
     }
   } catch {
     // ignore
@@ -160,6 +161,8 @@ function writeClaudeSettings(patch: Record<string, unknown>): WriteResult {
     let raw: string
     try {
       raw = fs.readFileSync(claudeSettingsPath, 'utf-8')
+      // Tolerate a UTF-8 BOM (external tools like PowerShell 5.1 write one).
+      if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1)
     } catch (e) {
       return { ok: false, error: `Could not read settings.json: ${String(e)}` }
     }

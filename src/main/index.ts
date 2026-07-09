@@ -84,6 +84,7 @@ import { initUpdater, getUpdaterState, checkNow } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
 import { setExplorerContextMenu, extractLaunchAction, LaunchAction } from './shell-integration'
 import { refreshJumpList } from './jumplist'
+import { readJsonFile } from './json-file'
 
 let mainWindow: BrowserWindow | null = null
 // True once the user (or OS) actually intends to exit — lets the close handler
@@ -1259,8 +1260,7 @@ function buildHistoryDigest(): { digest: string; sessionCount: number } {
   const sessions: SessionLike[] = []
   for (const f of files) {
     try {
-      const raw = fs.readFileSync(path.join(sessionsDir, f), 'utf-8')
-      const s = JSON.parse(raw) as SessionLike
+      const s = readJsonFile<SessionLike>(path.join(sessionsDir, f))
       if (s && Array.isArray(s.messages) && s.messages.length > 0) sessions.push(s)
     } catch {
       // Skip corrupt/unreadable session files.
@@ -1512,7 +1512,7 @@ ipcMain.handle('session:list', () => {
     return fs
       .readdirSync(sessionsDir)
       .filter((f) => f.endsWith('.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(sessionsDir, f), 'utf-8')))
+      .map((f) => readJsonFile<any>(path.join(sessionsDir, f)))
       .sort((a, b) => b.updatedAt - a.updatedAt)
   } catch {
     return []

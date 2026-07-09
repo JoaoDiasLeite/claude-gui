@@ -5,6 +5,7 @@ import { Notification } from 'electron'
 import { listConfigDirs, listAccountStatus } from './accounts'
 import { getWslCredentialsPaths } from './wsl'
 import { updateTrayTooltip } from './tray'
+import { readJsonFile } from './json-file'
 
 // Real plan usage straight from Anthropic, the way community HUDs (claude-hud,
 // claudeline, ccusage-style statuslines) do it: GET api.anthropic.com/api/oauth/usage
@@ -121,7 +122,7 @@ interface Source {
 function readCredentialsFile(credsPath: string): OauthCreds | null {
   try {
     if (!fs.existsSync(credsPath)) return null
-    const raw = JSON.parse(fs.readFileSync(credsPath, 'utf-8')) as Record<string, unknown>
+    const raw = readJsonFile<Record<string, unknown>>(credsPath)
     const o = (raw.claudeAiOauth ?? raw) as Record<string, unknown>
     if (typeof o?.accessToken !== 'string' || !o.accessToken) return null
     return {
@@ -138,9 +139,9 @@ function readCredentialsFile(credsPath: string): OauthCreds | null {
 /** Read the login identity (email) from a .claude.json sitting next to a config dir. */
 function readIdentityEmail(claudeJsonPath: string): string | undefined {
   try {
-    const raw = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8')) as {
+    const raw = readJsonFile<{
       oauthAccount?: { emailAddress?: string }
-    }
+    }>(claudeJsonPath)
     const email = raw.oauthAccount?.emailAddress
     return typeof email === 'string' && email ? email : undefined
   } catch {

@@ -7,6 +7,7 @@ import { buildSubprocessEnv } from './auth'
 import { getConfig } from './config'
 import { accountConfigDir } from './accounts'
 import { sdkExecutable } from './sdk-exe'
+import { readJsonFile } from './json-file'
 
 // ─── Data model ────────────────────────────────────────────────────────────
 
@@ -132,8 +133,7 @@ export function listScheduledRuns(): ScheduledRun[] {
   }
   for (const f of files) {
     try {
-      const raw = fs.readFileSync(path.join(schedulerDir, f), 'utf-8')
-      results.push(JSON.parse(raw) as ScheduledRun)
+      results.push(readJsonFile<ScheduledRun>(path.join(schedulerDir, f)))
     } catch {
       // Skip corrupt or unreadable files; log so operators can detect data issues
       console.warn(`[scheduler] Skipping unreadable routine file: ${f}`)
@@ -186,7 +186,7 @@ export function setScheduledRunEnabled(id: string, enabled: boolean): ScheduledR
   const p = fileFor(id)
   if (!fs.existsSync(p)) return listScheduledRuns()
   try {
-    const run = JSON.parse(fs.readFileSync(p, 'utf-8')) as ScheduledRun
+    const run = readJsonFile<ScheduledRun>(p)
     const updated: ScheduledRun = { ...run, enabled }
     if (enabled) {
       updated.nextRunAt = computeNextRun(updated, Date.now())
@@ -374,7 +374,7 @@ export async function runScheduledRunNow(id: string): Promise<{ ok: boolean; sum
 
   let run: ScheduledRun
   try {
-    run = JSON.parse(fs.readFileSync(p, 'utf-8')) as ScheduledRun
+    run = readJsonFile<ScheduledRun>(p)
   } catch {
     return null
   }

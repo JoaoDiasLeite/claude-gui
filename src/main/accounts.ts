@@ -3,6 +3,7 @@ import { spawn } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
+import { readJsonFile } from './json-file'
 
 /**
  * Multi-account support for Claude Code subscription logins.
@@ -57,7 +58,7 @@ let state: AccountsState = freshState()
 export function loadAccounts(): void {
   try {
     if (fs.existsSync(accountsFile())) {
-      const loaded = JSON.parse(fs.readFileSync(accountsFile(), 'utf-8')) as Partial<AccountsState>
+      const loaded = readJsonFile<Partial<AccountsState>>(accountsFile())
       const accounts = Array.isArray(loaded.accounts) ? loaded.accounts : []
       // Always guarantee a default account exists.
       if (!accounts.some((a) => a.id === DEFAULT_ID)) {
@@ -109,7 +110,7 @@ function pathsFor(account: CCAccount): AccountPaths {
 
 function readOAuthAccount(claudeJsonPath: string): { email?: string; org?: string; plan?: string } {
   try {
-    const raw = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'))
+    const raw = readJsonFile<any>(claudeJsonPath)
     const a = raw.oauthAccount
     if (!a || typeof a !== 'object') return {}
     const plan =

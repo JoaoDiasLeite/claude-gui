@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { readJsonFile } from './json-file'
 
 /**
  * A tiny JSON-backed key/value store for cached values and persisted user choices
@@ -15,7 +16,7 @@ let loaded = false
 function ensureLoaded(): void {
   if (loaded) return
   try {
-    if (fs.existsSync(storePath)) data = JSON.parse(fs.readFileSync(storePath, 'utf-8'))
+    if (fs.existsSync(storePath)) data = readJsonFile<Record<string, unknown>>(storePath)
   } catch {
     data = {}
   }

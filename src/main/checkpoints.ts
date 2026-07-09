@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { readJsonFile } from './json-file'
 
 // ─── ID safety ─────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ export function listCheckpoints(sessionId: string): CheckpointMeta[] {
   const metas: CheckpointMeta[] = []
   for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json'))) {
     try {
-      const c: Checkpoint = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8'))
+      const c: Checkpoint = readJsonFile<Checkpoint>(path.join(dir, f))
       metas.push(toMeta(c))
     } catch {
       // skip
@@ -129,7 +130,7 @@ function read(sessionId: string, id: string): Checkpoint | null {
   const p = path.join(root, sessionId, `${id}.json`)
   if (!fs.existsSync(p)) return null
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    return readJsonFile<Checkpoint>(p)
   } catch {
     return null
   }

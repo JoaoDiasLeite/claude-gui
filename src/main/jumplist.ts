@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { readJsonFile } from './json-file'
 
 // Windows Jump List: the menu that pops from the taskbar/Start icon on right-click.
 // We surface a "New chat" task plus the most recently active project folders, each
@@ -30,11 +31,11 @@ function recentProjects(max: number): RecentProject[] {
   }
   for (const f of files) {
     try {
-      const s = JSON.parse(fs.readFileSync(path.join(sessionsDir, f), 'utf-8')) as {
+      const s = readJsonFile<{
         projectPath?: string
         updatedAt?: number
         messages?: { timestamp?: number }[]
-      }
+      }>(path.join(sessionsDir, f))
       const p = s.projectPath
       if (!p || typeof p !== 'string') continue
       const last =

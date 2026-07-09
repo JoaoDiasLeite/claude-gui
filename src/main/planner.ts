@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { readJsonFile } from './json-file'
 
 // A weekly plan is keyed by its Monday (ISO date, e.g. "2026-06-15") and stored
 // as one JSON file per week, mirroring the agents.ts pattern.
@@ -99,7 +100,7 @@ export function getWeek(weekStart: string): WeekPlan {
   const p = fileFor(weekStart)
   if (!fs.existsSync(p)) return emptyWeek(weekStart)
   try {
-    const parsed = JSON.parse(fs.readFileSync(p, 'utf-8')) as WeekPlan
+    const parsed = readJsonFile<WeekPlan>(p)
     return { ...emptyWeek(weekStart), ...parsed, weekStart }
   } catch {
     return emptyWeek(weekStart)

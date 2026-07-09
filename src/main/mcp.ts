@@ -2,6 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { getWslClaudeRoots } from './wsl'
+import { readJsonFile } from './json-file'
 
 const claudeJsonPath = path.join(os.homedir(), '.claude.json')
 const authCachePath = path.join(os.homedir(), '.claude', 'mcp-needs-auth-cache.json')
@@ -22,7 +23,7 @@ export interface McpServer {
 
 function readJson(p: string): any {
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    return readJsonFile<any>(p)
   } catch {
     return {}
   }
@@ -35,7 +36,7 @@ function readClaudeJson(): any {
 function authNeeded(cachePath: string): Set<string> {
   const set = new Set<string>()
   try {
-    const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
+    const cache = readJsonFile<any>(cachePath)
     // Cache shape varies; collect any server names present.
     const collect = (o: unknown) => {
       if (o && typeof o === 'object') {

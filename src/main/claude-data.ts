@@ -4,6 +4,7 @@ import * as os from 'os'
 import { priceFor } from './config'
 import { getWslClaudeRoots } from './wsl'
 import { storeGet, storeSet } from './store'
+import { readJsonFile } from './json-file'
 
 // ─── Sources (local + WSL distros) ──────────────────────────────────────────
 
@@ -25,7 +26,7 @@ export interface ClaudeSource {
 
 function readAccount(claudeJsonPath: string): SourceAccount | undefined {
   try {
-    const raw = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'))
+    const raw = readJsonFile<any>(claudeJsonPath)
     const a = raw.oauthAccount
     if (!a || typeof a !== 'object') return undefined
     const plan =
@@ -145,7 +146,7 @@ export interface CCTranscriptMessage {
 function realPathMap(claudeJsonPath: string): Map<string, string> {
   const map = new Map<string, string>()
   try {
-    const raw = JSON.parse(fs.readFileSync(claudeJsonPath, 'utf-8'))
+    const raw = readJsonFile<any>(claudeJsonPath)
     if (raw.projects && typeof raw.projects === 'object') {
       for (const realPath of Object.keys(raw.projects)) {
         map.set(encodePath(realPath), realPath)

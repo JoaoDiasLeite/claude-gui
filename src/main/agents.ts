@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
+import { readJsonFile } from './json-file'
 
 export interface AgentDef {
   id: string
@@ -27,7 +28,7 @@ export function listAgents(): AgentDef[] {
     return fs
       .readdirSync(agentsDir)
       .filter((f) => f.endsWith('.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(agentsDir, f), 'utf-8')))
+      .map((f) => readJsonFile<AgentDef>(path.join(agentsDir, f)))
       .sort((a, b) => b.updatedAt - a.updatedAt)
   } catch {
     return []
@@ -49,7 +50,7 @@ export function getAgent(id: string): AgentDef | null {
   const p = path.join(agentsDir, `${id}.json`)
   if (!fs.existsSync(p)) return null
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'))
+    return readJsonFile<AgentDef>(p)
   } catch {
     return null
   }
