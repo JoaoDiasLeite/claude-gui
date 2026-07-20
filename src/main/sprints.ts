@@ -21,6 +21,19 @@ export interface SprintItem {
   createdAt: number
   /** Set the moment the item first enters 'done' — the burndown x-axis anchor. */
   completedAt?: number | null
+  /** The status this item held before its current one — lets un-checking 'done' restore it. */
+  prevStatus?: ItemStatus | null
+}
+
+/** Cached GitLab backfill so re-opening the importer doesn't re-hit the MCP each time. */
+export interface SprintBackfillCache {
+  fetchedAt: number
+  project?: string
+  projectUrl?: string
+  source?: string
+  note?: string
+  openIssueCount?: number | null
+  items: { title: string; points?: number | null; notes?: string }[]
 }
 
 export interface DailyStandup {
@@ -46,6 +59,8 @@ export interface Sprint {
   standups: DailyStandup[]
   /** Project folder standups/metrics default to (for git-log digest). */
   projectPath?: string
+  /** Last GitLab backfill result, cached so the importer opens instantly. */
+  backfillCache?: SprintBackfillCache
   createdAt: number
   updatedAt: number
 }

@@ -172,12 +172,32 @@
   padding-bottom: 9px;
   border-bottom: 1px solid var(--border);
 }
+.sprint-col-check-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+.sprint-col-check {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sprint-col-check:disabled { opacity: 0.4; cursor: default; }
 .sprint-col-name {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-1);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+/* In-progress items get a half-filled check to hint "one more step to done". */
+.task-check.partial {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 .sprint-col-count {
   font-size: 11px;
@@ -402,6 +422,12 @@
   white-space: nowrap;
   min-width: 0;
   flex: 1;
+}
+.backfill-cached {
+  font-size: 10.5px;
+  color: var(--text-2);
+  font-style: italic;
+  flex-shrink: 0;
 }
 .backfill-actions-row {
   display: flex;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Sprint, SprintItem, DailyStandup, ItemStatus, SprintStatus, CCAccountStatus, ModelInfo } from '../types'
+import { Sprint, SprintItem, SprintBackfillCache, DailyStandup, ItemStatus, SprintStatus, CCAccountStatus, ModelInfo } from '../types'
 import Menu, { MoreIcon, CaretDownIcon } from '../components/Menu'
 import './views.css'
 import './PlannerView.css'
@@ -178,6 +178,31 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
     }))
   const deleteItem = (id: string) => mutate((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) }))
   const moveItem = (id: string, status: ItemStatus) => updateItem(id, { status })
+
+  // The card checkbox steps an item forward through the workflow (todo → in-progress →
+  // done); checking a done item steps it back to whatever it was before (not straight
+  // to the backlog).
+  const advanceItem = (item: SprintItem) => {
+    if (item.status === 'done') {
+      const back = item.prevStatus && item.prevStatus !== 'done' ? item.prevStatus : 'in-progress'
+      moveItem(item.id, back)
+    } else {
+      moveItem(item.id, NEXT_STATUS[item.status])
+    }
+  }
+
+  // Column header "check all" advances every item in that column one step forward.
+  const advanceAll = (status: ItemStatus) => {
+    const next = NEXT_STATUS[status]
+    if (next === status) return
+    mutate((s) => ({
+      ...s,
+      items: s.items.map((i) => (i.status === status ? applyItemPatch(i, { status: next }) : i))
+    }))
+  }
+
+  // Persist the last GitLab backfill so re-opening the importer is instant.
+  const cacheBackfill = (cache: SprintBackfillCache) => mutate((s) => ({ ...s, backfillCache: cache }))
 
   // Append imported issues (from the GitLab backfill) as fresh To-do items.
   const addBacklogItems = (rows: { title: string; points?: number | null; notes?: string }[]) =>
@@ -430,7 +455,19 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
                   }}
                 >
                   <div className="sprint-col-head">
-                    <span className="sprint-col-name">{col.label}</span>
+                    <label className="sprint-col-check-wrap">
+                      {col.status !== 'done' && (
+                        <input
+                          type="checkbox"
+                          className="sprint-col-check"
+                          checked={false}
+                          disabled={colItems.length === 0}
+                          onChange={() => advanceAll(col.status)}
+                          title={`Move all to ${col.status === 'todo' ? 'In progress' : 'Done'}`}
+                        />
+                      )}
+                      <span className="sprint-col-name">{col.label}</span>
+                    </label>
                     <span className="sprint-col-count">
                       {colItems.length}
                       {pts > 0 && <em> · {pts}p</em>}
@@ -447,9 +484,7 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
                           setOverCol(null)
                         }}
                         onOpen={() => setEditingItemId(i.id)}
-                        onToggleDone={() =>
-                          moveItem(i.id, i.status === 'done' ? 'todo' : 'done')
-                        }
+                        onAdvance={() => advanceItem(i)}
                         onDelete={() => deleteItem(i.id)}
                       />
                     ))}
@@ -512,6 +547,7 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
           defaultModel={defaultModel}
           defaultAccountId={defaultAccountId}
           onAdd={addBacklogItems}
+          onCache={cacheBackfill}
           onClose={() => setBackfillOpen(false)}
         />
       )}
@@ -519,14 +555,22 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
   )
 }
 
-// Setting an item to 'done' stamps completedAt (burndown anchor); leaving 'done' clears it.
+// Any status change records where the item came from (prevStatus) so un-checking 'done'
+// can restore the previous column; entering 'done' stamps completedAt (burndown anchor).
 function applyItemPatch(item: SprintItem, patch: Partial<SprintItem>): SprintItem {
   const next = { ...item, ...patch }
   if (patch.status !== undefined && patch.status !== item.status) {
+    next.prevStatus = item.status
     if (patch.status === 'done') next.completedAt = item.completedAt ?? Date.now()
     else next.completedAt = null
   }
   return next
+}
+
+const NEXT_STATUS: Record<ItemStatus, ItemStatus> = {
+  todo: 'in-progress',
+  'in-progress': 'done',
+  done: 'done'
 }
 
 // ─── Sprint switcher (built on the shared Menu) ─────────────────────────────────
@@ -567,10 +611,16 @@ function ItemCard(props: {
   onDragStart: () => void
   onDragEnd: () => void
   onOpen: () => void
-  onToggleDone: () => void
+  onAdvance: () => void
   onDelete: () => void
 }) {
   const i = props.item
+  const advanceTitle =
+    i.status === 'done'
+      ? 'Move back a step'
+      : i.status === 'todo'
+        ? 'Move to In progress'
+        : 'Mark done'
   return (
     <div
       className={`sprint-item ${i.status === 'done' ? 'done' : ''}`}
@@ -585,12 +635,12 @@ function ItemCard(props: {
     >
       <div className="sprint-item-main">
         <button
-          className={`task-check ${i.status === 'done' ? 'on' : ''}`}
+          className={`task-check ${i.status === 'done' ? 'on' : ''} ${i.status === 'in-progress' ? 'partial' : ''}`}
           onClick={(e) => {
             e.stopPropagation()
-            props.onToggleDone()
+            props.onAdvance()
           }}
-          title={i.status === 'done' ? 'Mark not done' : 'Mark done'}
+          title={advanceTitle}
         >
           {i.status === 'done' ? '✓' : ''}
         </button>
@@ -1205,6 +1255,14 @@ function MiniRing({ pct }: { pct: number }) {
 }
 
 // ─── Backlog backfill from GitLab MCP ──────────────────────────────────────────
+function relBackfillTime(ms: number): string {
+  const diff = Date.now() - ms
+  if (diff < 60_000) return 'just now'
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`
+  return `${Math.round(diff / 86_400_000)}d ago`
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   'git-remote': 'from git remote',
   'mcp-default': 'MCP default project',
@@ -1217,19 +1275,24 @@ function BacklogBackfillModal(props: {
   defaultModel: string
   defaultAccountId: string
   onAdd: (rows: { title: string; points?: number | null; notes?: string }[]) => void
+  onCache: (cache: SprintBackfillCache) => void
   onClose: () => void
 }) {
+  const cache = props.sprint.backfillCache
   // Phase 1 — load the MCP and resolve which GitLab project it's attributed to.
-  const [resolving, setResolving] = useState(true)
+  const [resolving, setResolving] = useState(!cache)
   const [resolveError, setResolveError] = useState<string | null>(null)
-  const [project, setProject] = useState('')
-  const [info, setInfo] = useState<{ source?: string; url?: string; note?: string; openIssueCount?: number | null } | null>(null)
+  const [project, setProject] = useState(cache?.project ?? '')
+  const [info, setInfo] = useState<{ source?: string; url?: string; note?: string; openIssueCount?: number | null } | null>(
+    cache ? { source: cache.source, url: cache.projectUrl, note: cache.note, openIssueCount: cache.openIssueCount ?? null } : null
+  )
 
   // Phase 2 — fetch that project's open issues.
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
-  const [items, setItems] = useState<{ title: string; points?: number | null; notes?: string }[]>([])
-  const [hasFetched, setHasFetched] = useState(false)
+  const [items, setItems] = useState<{ title: string; points?: number | null; notes?: string }[]>(cache?.items ?? [])
+  const [hasFetched, setHasFetched] = useState(!!cache)
+  const [cachedAt, setCachedAt] = useState<number | null>(cache?.fetchedAt ?? null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const existing = useMemo(
@@ -1238,6 +1301,10 @@ function BacklogBackfillModal(props: {
   )
   const isDup = (title: string) => existing.has(title.trim().toLowerCase())
   const busy = resolving || fetching
+
+  // Pre-select fetched issues that aren't already on the board (skip duplicates).
+  const preselect = (rows: { title: string }[]) =>
+    setSelected(new Set(rows.map((f, i) => (isDup(f.title) ? -1 : i)).filter((i) => i >= 0)))
 
   const resolveProject = async () => {
     setResolving(true)
@@ -1263,7 +1330,9 @@ function BacklogBackfillModal(props: {
   }
 
   useEffect(() => {
-    resolveProject()
+    // Cached results hydrate the initial state above — only probe when there's no cache.
+    if (cache) preselect(cache.items ?? [])
+    else resolveProject()
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -1284,12 +1353,23 @@ function BacklogBackfillModal(props: {
     setHasFetched(true)
     if (!res.ok || !res.data) {
       setFetchError(res.error || 'Could not fetch issues.')
-      setItems([])
       return
     }
     const fetched = (res.data.items ?? []).filter((i) => i && i.title && i.title.trim())
     setItems(fetched)
-    setSelected(new Set(fetched.map((f, i) => (isDup(f.title) ? -1 : i)).filter((i) => i >= 0)))
+    preselect(fetched)
+    // Cache the fresh result so re-opening is instant (persisted on the sprint).
+    const now = Date.now()
+    setCachedAt(now)
+    props.onCache({
+      fetchedAt: now,
+      project: project.trim() || undefined,
+      projectUrl: info?.url,
+      source: info?.source,
+      note: info?.note,
+      openIssueCount: info?.openIssueCount ?? null,
+      items: fetched
+    })
   }
 
   const toggle = (i: number) =>
@@ -1334,7 +1414,7 @@ function BacklogBackfillModal(props: {
                   onKeyDown={(e) => e.key === 'Enter' && !busy && fetchIssues()}
                 />
                 <button className="assist-btn primary" onClick={fetchIssues} disabled={busy}>
-                  {fetching ? 'Fetching…' : 'Fetch issues'}
+                  {fetching ? 'Fetching…' : hasFetched && items.length > 0 ? 'Refresh' : 'Fetch issues'}
                 </button>
               </div>
               <div className="backfill-attr-meta">
@@ -1343,6 +1423,7 @@ function BacklogBackfillModal(props: {
                   <span className="backfill-attr-count">{info.openIssueCount} open</span>
                 )}
                 {info?.url && <span className="backfill-attr-url" title={info.url}>{info.url}</span>}
+                {cachedAt && <span className="backfill-cached">cached {relBackfillTime(cachedAt)}</span>}
               </div>
               {resolveError && (
                 <div className="assist-error">{resolveError} — you can still type a project above and fetch.</div>
@@ -1364,7 +1445,13 @@ function BacklogBackfillModal(props: {
           {!fetching && items.length > 0 && (
             <>
               <div className="backfill-actions-row">
-                <span className="backfill-count">{selected.size} of {items.length} selected</span>
+                <span className="backfill-count">
+                  {items.filter((it) => !isDup(it.title)).length} new
+                  {items.some((it) => isDup(it.title)) &&
+                    ` · ${items.filter((it) => isDup(it.title)).length} already added`}
+                  {' · '}
+                  {selected.size} selected
+                </span>
                 <div className="backfill-selbtns">
                   <button className="btn-ghost small" onClick={() => setSelected(new Set(items.map((_, i) => i)))}>All</button>
                   <button className="btn-ghost small" onClick={() => setSelected(new Set())}>None</button>
