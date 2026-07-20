@@ -575,11 +575,15 @@
 }
 .standup-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 13px;
+  margin-bottom: 15px;
+}
+.standup-head-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 .standup-head .planner-label {
   margin-bottom: 0;
@@ -587,8 +591,27 @@
 .standup-datenav {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 8px;
+}
+.standup-nav-btn {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border-light);
+  background: var(--bg-2);
+  color: var(--text-1);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.standup-nav-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+  border-color: var(--accent);
 }
 .standup-error {
   margin-bottom: 13px;
@@ -622,13 +645,19 @@
 }
 .standup-date-input {
   width: auto;
-  padding: 5px 9px;
-  font-size: 12.5px;
+  height: 34px;
+  padding: 0 11px;
+  font-size: 13px;
   color-scheme: dark light;
 }
 .btn-ghost.small {
   padding: 3px 9px;
   font-size: 11.5px;
+}
+.standup-datenav .btn-ghost.small {
+  height: 34px;
+  padding: 0 13px;
+  font-size: 12.5px;
 }
 .standup-grid {
   display: grid;

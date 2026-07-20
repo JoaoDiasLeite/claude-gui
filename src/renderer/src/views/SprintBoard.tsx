@@ -940,25 +940,8 @@ function StandupSection(props: {
   return (
     <div className="standup">
       <div className="standup-head">
-        <span className="planner-label">Daily standup</span>
-        <div className="standup-datenav">
-          <button className="btn-ghost icon" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
-            ‹
-          </button>
-          <input
-            type="date"
-            className="text-input standup-date-input"
-            value={props.date}
-            onChange={(e) => e.target.value && props.onDate(e.target.value)}
-          />
-          <button className="btn-ghost icon" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
-            ›
-          </button>
-          {!isToday && (
-            <button className="btn-ghost" onClick={() => props.onDate(today)}>
-              Today
-            </button>
-          )}
+        <div className="standup-head-top">
+          <span className="planner-label">Daily standup</span>
           <div className="sb-split">
             <button
               className="assist-btn primary sb-split-main"
@@ -977,7 +960,7 @@ function StandupSection(props: {
                 triggerClass="assist-btn primary sb-split-caret"
                 triggerTitle="More standup actions"
                 triggerContent={<CaretDownIcon />}
-                align="right"
+                align="left"
                 items={[
                   ...(props.onDiscuss
                     ? [{ label: 'Discuss in chat', icon: <ChatIcon />, onClick: props.onDiscuss }]
@@ -989,6 +972,25 @@ function StandupSection(props: {
               />
             )}
           </div>
+        </div>
+        <div className="standup-datenav">
+          <button className="standup-nav-btn" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
+            <ChevronIcon dir="left" />
+          </button>
+          <input
+            type="date"
+            className="text-input standup-date-input"
+            value={props.date}
+            onChange={(e) => e.target.value && props.onDate(e.target.value)}
+          />
+          <button className="standup-nav-btn" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
+            <ChevronIcon dir="right" />
+          </button>
+          {!isToday && (
+            <button className="btn-ghost small" onClick={() => props.onDate(today)}>
+              Today
+            </button>
+          )}
         </div>
       </div>
 
@@ -1500,6 +1502,14 @@ function CaretDownIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
+function ChevronIcon({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points={dir === 'left' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
     </svg>
   )
 }
