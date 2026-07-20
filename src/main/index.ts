@@ -48,7 +48,7 @@ import {
   SshHost
 } from './ssh'
 import { listSshKeys, generateKey, readPublicKey } from './ssh-keys'
-import { listDistros, testDistro, runWsl, stopWsl } from './wsl'
+import { listDistros, testDistro, runWsl, stopWsl, runWslOneShot, uncToWslPath } from './wsl'
 import { getHiddenDistros, setDistroHidden, getRoomsLayout, setRoomsLayout, RoomsLayout } from './store'
 import {
   loadAccounts,
@@ -1403,7 +1403,7 @@ function buildBacklogBackfillPrompt(instructions?: string): string {
     : ''
   return `You have access to this project's configured MCP servers, including a GitLab server. Using ONLY the GitLab MCP tools (and read-only file tools), fetch the currently OPEN issues for this project's GitLab repository so they can seed a sprint backlog. This is strictly READ-ONLY — do NOT create, edit, close, label, or comment on anything.${extra}
 
-Work out the correct GitLab project/repository from the git remote in the current directory or the MCP server's configured default. Respond with ONLY a single JSON object — no markdown fences, no prose outside the JSON:
+Work out the correct GitLab project/repository from: the user's instructions above if they name a project or group, otherwise the git remote in the current directory, otherwise list the projects available via the MCP and pick the best match. Respond with ONLY a single JSON object — no markdown fences, no prose outside the JSON:
 {
   "items": [
     { "title": "<issue title>", "points": <small integer story-point estimate, or null>, "notes": "<issue reference like #123 plus a one-line summary, or an empty string>" }
@@ -1412,19 +1412,65 @@ Work out the correct GitLab project/repository from the git remote in the curren
 If you cannot reach GitLab or there are no open issues, return { "items": [] }.`
 }
 
+// Heuristically identify the GitLab MCP among all configured servers (local + WSL).
+function looksLikeGitlab(s: { name: string; url?: string; config?: Record<string, unknown> }): boolean {
+  if (/git.?lab|wm-git/i.test(s.name)) return true
+  if (s.url && /gitlab/i.test(s.url)) return true
+  const env = (s.config as { env?: Record<string, unknown> } | undefined)?.env
+  if (env && typeof env === 'object') {
+    for (const [k, v] of Object.entries(env)) {
+      if (/gitlab/i.test(k) || /gitlab/i.test(String(v))) return true
+    }
+  }
+  return false
+}
+
 ipcMain.handle(
   'sprint:backfill',
   async (
     _,
     payload: { projectPath?: string; instructions?: string; model?: string; accountId?: string }
   ) => {
-    if (!payload.projectPath) {
-      return { ok: false as const, error: 'Set a project folder on the sprint first (Sprint settings) so the GitLab MCP can be located.', costUsd: 0 }
+    const model = payload.model || getConfig().defaultModel
+    const promptText = buildBacklogBackfillPrompt(payload.instructions)
+
+    // Find the GitLab MCP wherever it lives — local ~/.claude.json OR a WSL distro's.
+    let servers: { name: string; source: string; url?: string; config?: Record<string, unknown> }[] = []
+    try {
+      servers = await listMcpServers()
+    } catch {
+      servers = []
     }
+    const gitlab = servers.find(looksLikeGitlab)
+    if (!gitlab) {
+      return {
+        ok: false as const,
+        error: 'No GitLab MCP server was found in Claude Code (checked local and WSL). Configure the GitLab MCP, then try again.',
+        costUsd: 0
+      }
+    }
+
+    // ── WSL-hosted MCP: run that distro's own `claude -p` so its stdio server loads.
+    // `source` is the distro name for WSL servers, 'local' otherwise.
+    if (gitlab.source && gitlab.source !== 'local') {
+      const cwd = uncToWslPath(payload.projectPath) ?? undefined
+      const res = await runWslOneShot(gitlab.source, promptText, {
+        model,
+        // MCP server + read-only file tools (to read a repo's .git/config); no Bash/Write.
+        allowedTools: [`mcp__${gitlab.name}`, 'Read', 'Grep', 'Glob'],
+        cwd,
+        timeoutMs: 180000
+      })
+      if (!res.ok) return { ok: false as const, error: res.error || 'The WSL backfill run failed.', costUsd: 0 }
+      try {
+        return { ok: true as const, data: extractJson(res.text), costUsd: 0 }
+      } catch {
+        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: res.text, costUsd: 0 }
+      }
+    }
+
+    // ── Local MCP: SDK path with the project's (+ global) mcpServers.
     const mcpServers = mcpServersForProject(payload.projectPath)
-    if (!mcpServers || Object.keys(mcpServers).length === 0) {
-      return { ok: false as const, error: 'No MCP servers are configured for this project in Claude Code. Add the GitLab MCP to this project, then try again.', costUsd: 0 }
-    }
     const abort = new AbortController()
     const env = buildSubprocessEnv()
     const configDir = accountConfigDir(payload.accountId)
@@ -1432,18 +1478,17 @@ ipcMain.handle(
       env.CLAUDE_CONFIG_DIR = configDir
       delete env.ANTHROPIC_API_KEY
     }
-    const model = payload.model || getConfig().defaultModel
     // Allow every configured MCP server plus read-only file tools — never the mutating
     // built-ins (Bash/Write/Edit), so a bypassPermissions run can't touch the repo.
     const allowedTools = [...Object.keys(mcpServers).map((n) => `mcp__${n}`), 'Read', 'Grep', 'Glob']
     try {
       const query = await getQuery()
       const stream = query({
-        prompt: buildPrompt(buildBacklogBackfillPrompt(payload.instructions), undefined, undefined, '') as string,
+        prompt: buildPrompt(promptText, undefined, undefined, '') as string,
         options: {
           ...sdkExecutable(),
           model,
-          cwd: payload.projectPath,
+          cwd: payload.projectPath || os.homedir(),
           env,
           abortController: abort,
           permissionMode: 'bypassPermissions',

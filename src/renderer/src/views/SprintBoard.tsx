@@ -1277,7 +1277,7 @@ function BacklogBackfillModal(props: {
           <div className="backfill-filter">
             <input
               className="text-input"
-              placeholder="Optional filter — e.g. label:bug, milestone “Sprint 14”…"
+              placeholder="Optional — GitLab project/group or filter, e.g. “cityfy/task-times”, label:bug…"
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !busy && run(instructions)}

@@ -278,6 +278,88 @@ export function runWsl(
   child.stdin?.end(prompt)
 }
 
+/**
+ * Run a one-shot headless `claude -p` inside a distro and capture its full output — used
+ * for background JSON tasks (e.g. the GitLab-MCP backlog backfill) where the MCP server
+ * only exists inside WSL. Loads the distro's own MCP config automatically; bypasses
+ * permission prompts (there's no interactive channel) and restricts tools to allowedTools.
+ * Returns the concatenated assistant text (or the final result string).
+ */
+export function runWslOneShot(
+  distro: string,
+  prompt: string,
+  opts: { model?: string; allowedTools?: string[]; cwd?: string; timeoutMs?: number }
+): Promise<{ ok: boolean; text: string; error?: string }> {
+  if (!isWindows) return Promise.resolve({ ok: false, text: '', error: 'WSL is only available on Windows' })
+  return new Promise((resolve) => {
+    const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions']
+    if (opts.model) flags.push('--model', opts.model)
+    if (opts.allowedTools?.length) flags.push('--allowedTools', opts.allowedTools.join(','))
+    const useHome = !opts.cwd || isWindowsHomeMount(opts.cwd)
+    const cd = useHome ? 'cd "$HOME" && ' : `cd ${shQuote(opts.cwd!)} && `
+    const cmd = `${cd}claude ${flags.join(' ')}`
+    const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', CLAUDE_SHELL_FLAG, cmd], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    })
+    let out = ''
+    let stderr = ''
+    let done = false
+    const finish = (r: { ok: boolean; text: string; error?: string }) => {
+      if (done) return
+      done = true
+      resolve(r)
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      finish({ ok: false, text: '', error: `Timed out after ${(opts.timeoutMs ?? 120000) / 1000}s` })
+    }, opts.timeoutMs ?? 120000)
+
+    child.stdout?.on('data', (d: Buffer) => (out += d.toString('utf8')))
+    child.stderr?.on('data', (d: Buffer) => (stderr += d.toString('utf8')))
+    child.on('error', (e) => {
+      clearTimeout(timer)
+      finish({ ok: false, text: '', error: e.message })
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      // Parse the stream-json lines: accumulate assistant text; honour the final result.
+      let text = ''
+      let resultErr: string | undefined
+      for (const line of out.split('\n')) {
+        const t = line.trim()
+        if (!t.startsWith('{')) continue
+        try {
+          const msg = JSON.parse(t)
+          if (msg.type === 'assistant') {
+            for (const b of msg.message?.content ?? []) if (b.type === 'text') text += b.text
+          } else if (msg.type === 'result') {
+            if (msg.subtype && msg.subtype !== 'success') resultErr = msg.result ?? msg.subtype
+            else if (typeof msg.result === 'string' && !text.trim()) text = msg.result
+          }
+        } catch {
+          /* non-JSON shell noise — skip */
+        }
+      }
+      if (resultErr) return finish({ ok: false, text, error: resultErr })
+      if (code && code !== 0 && !text.trim()) {
+        return finish({ ok: false, text: '', error: stderr.trim().slice(0, 500) || `claude exited with code ${code}` })
+      }
+      finish({ ok: true, text })
+    })
+
+    child.stdin?.end(prompt)
+  })
+}
+
+/** Convert a \\wsl.localhost\<distro>\home\… (or \\wsl$\…) UNC path to its Linux path. */
+export function uncToWslPath(p: string | undefined): string | null {
+  if (!p) return null
+  const m = p.match(/^\\\\wsl(?:\.localhost|\$)\\[^\\]+\\(.*)$/i)
+  if (!m) return null
+  return '/' + m[1].replace(/\\/g, '/')
+}
+
 export function stopWsl(appSessionId: string): boolean {
   const child = activeProcs.get(appSessionId)
   if (child) {
