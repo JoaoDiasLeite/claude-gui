@@ -871,9 +871,19 @@ declare global {
         instructions?: string
         model?: string
         accountId?: string
+        /** When true, only resolve which GitLab project the MCP is attributed to. */
+        probe?: boolean
       }) => Promise<{
         ok: boolean
-        data?: { items: { title: string; points?: number | null; notes?: string }[] }
+        data?: {
+          items?: { title: string; points?: number | null; notes?: string }[]
+          project?: string
+          projectId?: number | string | null
+          url?: string
+          openIssueCount?: number | null
+          source?: string
+          note?: string
+        }
         error?: string
         raw?: string
         costUsd: number

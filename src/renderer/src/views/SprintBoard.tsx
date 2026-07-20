@@ -1203,6 +1203,13 @@ function MiniRing({ pct }: { pct: number }) {
 }
 
 // ─── Backlog backfill from GitLab MCP ──────────────────────────────────────────
+const SOURCE_LABELS: Record<string, string> = {
+  'git-remote': 'from git remote',
+  'mcp-default': 'MCP default project',
+  instructions: 'from your input',
+  guess: 'best guess'
+}
+
 function BacklogBackfillModal(props: {
   sprint: Sprint
   defaultModel: string
@@ -1210,46 +1217,78 @@ function BacklogBackfillModal(props: {
   onAdd: (rows: { title: string; points?: number | null; notes?: string }[]) => void
   onClose: () => void
 }) {
-  const [busy, setBusy] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  // Phase 1 — load the MCP and resolve which GitLab project it's attributed to.
+  const [resolving, setResolving] = useState(true)
+  const [resolveError, setResolveError] = useState<string | null>(null)
+  const [project, setProject] = useState('')
+  const [info, setInfo] = useState<{ source?: string; url?: string; note?: string; openIssueCount?: number | null } | null>(null)
+
+  // Phase 2 — fetch that project's open issues.
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
   const [items, setItems] = useState<{ title: string; points?: number | null; notes?: string }[]>([])
+  const [hasFetched, setHasFetched] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [instructions, setInstructions] = useState('')
 
   const existing = useMemo(
     () => new Set(props.sprint.items.map((i) => i.title.trim().toLowerCase())),
     [props.sprint]
   )
   const isDup = (title: string) => existing.has(title.trim().toLowerCase())
+  const busy = resolving || fetching
 
-  const run = async (instr?: string) => {
-    setBusy(true)
-    setError(null)
+  const resolveProject = async () => {
+    setResolving(true)
+    setResolveError(null)
     const res = await window.electronAPI.sprintBackfill({
       projectPath: props.sprint.projectPath,
-      instructions: instr,
+      probe: true,
       model: props.defaultModel,
       accountId: props.defaultAccountId
     })
-    setBusy(false)
+    setResolving(false)
     if (!res.ok || !res.data) {
-      setError(res.error || 'Could not fetch issues.')
-      setItems([])
+      setResolveError(res.error || 'Could not load the GitLab MCP.')
       return
     }
-    const fetched = (res.data.items ?? []).filter((i) => i && i.title && i.title.trim())
-    setItems(fetched)
-    // Pre-select everything that isn't already on the board.
-    setSelected(new Set(fetched.map((f, i) => (isDup(f.title) ? -1 : i)).filter((i) => i >= 0)))
+    setProject(res.data.project || '')
+    setInfo({
+      source: res.data.source,
+      url: res.data.url,
+      note: res.data.note,
+      openIssueCount: res.data.openIssueCount ?? null
+    })
   }
 
   useEffect(() => {
-    run()
+    resolveProject()
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const fetchIssues = async () => {
+    setFetching(true)
+    setFetchError(null)
+    setHasFetched(false)
+    const res = await window.electronAPI.sprintBackfill({
+      projectPath: props.sprint.projectPath,
+      instructions: project.trim() || undefined,
+      model: props.defaultModel,
+      accountId: props.defaultAccountId
+    })
+    setFetching(false)
+    setHasFetched(true)
+    if (!res.ok || !res.data) {
+      setFetchError(res.error || 'Could not fetch issues.')
+      setItems([])
+      return
+    }
+    const fetched = (res.data.items ?? []).filter((i) => i && i.title && i.title.trim())
+    setItems(fetched)
+    setSelected(new Set(fetched.map((f, i) => (isDup(f.title) ? -1 : i)).filter((i) => i >= 0)))
+  }
 
   const toggle = (i: number) =>
     setSelected((prev) => {
@@ -1274,34 +1313,53 @@ function BacklogBackfillModal(props: {
           <button className="chip-x lg" onClick={props.onClose}>×</button>
         </div>
         <div className="task-modal-body">
-          <div className="backfill-filter">
-            <input
-              className="text-input"
-              placeholder="Optional — GitLab project/group or filter, e.g. “cityfy/task-times”, label:bug…"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !busy && run(instructions)}
-              disabled={busy}
-            />
-            <button className="assist-btn" onClick={() => run(instructions)} disabled={busy}>
-              {busy ? 'Fetching…' : 'Fetch'}
-            </button>
-          </div>
-
-          {busy && (
+          {/* Phase 1 — which project the MCP is attributed to */}
+          {resolving ? (
             <div className="assist-loading">
               <div className="view-spinner" />
-              <span>Asking Claude to read your open GitLab issues…</span>
+              <span>Loading the GitLab MCP and finding the attributed project…</span>
+            </div>
+          ) : (
+            <div className="backfill-attribution">
+              <span className="planner-label">Attributed project</span>
+              {info?.note && <p className="backfill-attr-note">{info.note}</p>}
+              <div className="backfill-project-row">
+                <input
+                  className="text-input"
+                  placeholder="group/subgroup/project — or a filter"
+                  value={project}
+                  onChange={(e) => setProject(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !busy && fetchIssues()}
+                />
+                <button className="assist-btn primary" onClick={fetchIssues} disabled={busy}>
+                  {fetching ? 'Fetching…' : 'Fetch issues'}
+                </button>
+              </div>
+              <div className="backfill-attr-meta">
+                {info?.source && <span className="backfill-source">{SOURCE_LABELS[info.source] ?? info.source}</span>}
+                {typeof info?.openIssueCount === 'number' && (
+                  <span className="backfill-attr-count">{info.openIssueCount} open</span>
+                )}
+                {info?.url && <span className="backfill-attr-url" title={info.url}>{info.url}</span>}
+              </div>
+              {resolveError && (
+                <div className="assist-error">{resolveError} — you can still type a project above and fetch.</div>
+              )}
             </div>
           )}
 
-          {error && !busy && <div className="assist-error">{error}</div>}
-
-          {!busy && !error && items.length === 0 && (
-            <p className="burndown-empty">No open issues came back. Try adjusting the filter above.</p>
+          {/* Phase 2 — the project's open issues */}
+          {fetching && (
+            <div className="assist-loading">
+              <div className="view-spinner" />
+              <span>Reading open issues from GitLab…</span>
+            </div>
           )}
-
-          {!busy && items.length > 0 && (
+          {fetchError && !fetching && <div className="assist-error">{fetchError}</div>}
+          {hasFetched && !fetching && !fetchError && items.length === 0 && (
+            <p className="burndown-empty">No open issues came back. Try a different project or filter above.</p>
+          )}
+          {!fetching && items.length > 0 && (
             <>
               <div className="backfill-actions-row">
                 <span className="backfill-count">{selected.size} of {items.length} selected</span>
@@ -1315,11 +1373,7 @@ function BacklogBackfillModal(props: {
                   const dup = isDup(it.title)
                   return (
                     <label key={i} className={`backfill-row ${dup ? 'dup' : ''}`}>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(i)}
-                        onChange={() => toggle(i)}
-                      />
+                      <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} />
                       <span className="backfill-row-body">
                         <span className="backfill-row-title">{it.title}</span>
                         {it.notes?.trim() && <span className="backfill-row-notes">{it.notes}</span>}

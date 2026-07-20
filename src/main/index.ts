@@ -1412,6 +1412,24 @@ Work out the correct GitLab project/repository from: the user's instructions abo
 If you cannot reach GitLab or there are no open issues, return { "items": [] }.`
 }
 
+function buildProjectProbePrompt(instructions?: string): string {
+  const extra = instructions?.trim()
+    ? `\n\nThe user suggests this project/group: ${instructions.trim()}`
+    : ''
+  return `You have access to this project's configured MCP servers, including a GitLab server. Load it and determine which single GitLab project this backlog should be attributed to. Decide it from: the user's suggestion below if given, otherwise the git remote of the repository in the current directory, otherwise the GitLab server's own configured/default project. This is strictly READ-ONLY — only inspect, do not modify anything.${extra}
+
+Respond with ONLY a single JSON object — no markdown fences, no prose outside the JSON:
+{
+  "project": "<full path like group/subgroup/name, or best human identifier>",
+  "projectId": <numeric GitLab project id, or null>,
+  "url": "<project web URL, or empty string>",
+  "openIssueCount": <number of open issues if known, or null>,
+  "source": "git-remote" | "mcp-default" | "instructions" | "guess",
+  "note": "<one short sentence explaining how you determined it>"
+}
+If you cannot determine a project, return { "project": "", "source": "guess", "note": "<why>" }.`
+}
+
 // Heuristically identify the GitLab MCP among all configured servers (local + WSL).
 function looksLikeGitlab(s: { name: string; url?: string; config?: Record<string, unknown> }): boolean {
   if (/git.?lab|wm-git/i.test(s.name)) return true
@@ -1429,10 +1447,12 @@ ipcMain.handle(
   'sprint:backfill',
   async (
     _,
-    payload: { projectPath?: string; instructions?: string; model?: string; accountId?: string }
+    payload: { projectPath?: string; instructions?: string; model?: string; accountId?: string; probe?: boolean }
   ) => {
     const model = payload.model || getConfig().defaultModel
-    const promptText = buildBacklogBackfillPrompt(payload.instructions)
+    const promptText = payload.probe
+      ? buildProjectProbePrompt(payload.instructions)
+      : buildBacklogBackfillPrompt(payload.instructions)
 
     // Find the GitLab MCP wherever it lives — local ~/.claude.json OR a WSL distro's.
     let servers: { name: string; source: string; url?: string; config?: Record<string, unknown> }[] = []

@@ -366,13 +366,61 @@
 .backfill-modal {
   width: 560px;
 }
-.backfill-filter {
+.backfill-attribution {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--border);
+}
+.backfill-attr-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-1);
+}
+.backfill-project-row {
   display: flex;
   gap: 8px;
 }
-.backfill-filter .text-input {
+.backfill-project-row .text-input {
   flex: 1;
   min-width: 0;
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+}
+.backfill-attr-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.backfill-source {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--accent-hover);
+  background: var(--accent-dim);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.backfill-attr-count {
+  font-size: 11px;
+  color: var(--text-1);
+  background: var(--bg-3);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.backfill-attr-url {
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 .backfill-actions-row {
   display: flex;
