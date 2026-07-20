@@ -41,6 +41,9 @@
   top: calc(100% + 6px);
   z-index: 60;
   min-width: 200px;
+  max-width: 320px;
+  max-height: 340px;
+  overflow-y: auto;
   background: var(--bg-1);
   border: 1px solid var(--border-light);
   border-radius: 11px;
@@ -73,7 +76,15 @@
 }
 .sb-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
 .sb-menu-item.danger { color: var(--error); }
+.sb-menu-item.active {
+  background: var(--accent-dim);
+  color: var(--text-0);
+}
 .sb-menu-item svg { flex-shrink: 0; opacity: 0.85; }
+.sb-menu-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Split button: a primary action joined to a caret that opens the menu. */
 .sb-split {
@@ -90,64 +101,18 @@
   margin-left: 1px;
 }
 
-/* ─── Sprint switcher dropdown ──────────────────────────────────────────────── */
-.sprint-switcher {
-  position: relative;
-}
-.sprint-switcher > .assist-btn {
+/* ─── Sprint switcher (Menu trigger) ────────────────────────────────────────── */
+.sprint-switcher-trigger {
   gap: 8px;
+  max-width: 280px;
 }
-.sprint-switcher-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 50;
-  min-width: 240px;
-  max-height: 320px;
-  overflow-y: auto;
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.sprint-switcher-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 11px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-1);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.12s;
-}
-.sprint-switcher-item:hover {
-  background: var(--bg-hover);
-  color: var(--text-0);
-}
-.sprint-switcher-item.on {
-  background: var(--accent-dim);
-  color: var(--text-0);
-}
-.sprint-switcher-name {
-  flex: 1;
-  min-width: 0;
+.sprint-switcher-current {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sprint-switcher-status {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-2);
+.sprint-switcher-trigger .sprint-switcher-current + svg {
+  flex-shrink: 0;
 }
 .sprint-status-dot {
   width: 8px;
@@ -575,22 +540,27 @@
 }
 .standup-head {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-start;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
   margin-bottom: 15px;
 }
-.standup-head-top {
+.standup-head-right {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
 }
 .standup-head .planner-label {
   margin-bottom: 0;
+  margin-top: 8px;
 }
 .standup-datenav {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 .standup-nav-btn {

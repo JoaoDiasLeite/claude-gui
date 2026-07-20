@@ -528,7 +528,7 @@ function applyItemPatch(item: SprintItem, patch: Partial<SprintItem>): SprintIte
   return next
 }
 
-// ─── Sprint switcher (custom dropdown — native <select> popups don't render here) ──
+// ─── Sprint switcher (built on the shared Menu) ─────────────────────────────────
 function SprintSwitcher({
   sprints,
   activeId,
@@ -538,43 +538,25 @@ function SprintSwitcher({
   activeId: string
   onSelect: (id: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const active = sprints.find((s) => s.id === activeId)
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
   return (
-    <div className="sprint-switcher" ref={ref}>
-      <button className="assist-btn" onClick={() => setOpen((v) => !v)}>
-        {active?.name ?? 'Select sprint'}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </button>
-      {open && (
-        <div className="sprint-switcher-menu">
-          {sprints.map((s) => (
-            <button
-              key={s.id}
-              className={`sprint-switcher-item ${s.id === activeId ? 'on' : ''}`}
-              onClick={() => {
-                onSelect(s.id)
-                setOpen(false)
-              }}
-            >
-              <span className={`sprint-status-dot ${s.status}`} />
-              <span className="sprint-switcher-name">{s.name}</span>
-              <span className="sprint-switcher-status">{STATUS_LABELS[s.status]}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <Menu
+      triggerClass="assist-btn sprint-switcher-trigger"
+      triggerTitle="Switch sprint"
+      triggerContent={
+        <>
+          <span className="sprint-switcher-current">{active?.name ?? 'Select sprint'}</span>
+          <CaretDownIcon />
+        </>
+      }
+      align="right"
+      items={sprints.map((s) => ({
+        label: s.name,
+        icon: <span className={`sprint-status-dot ${s.status}`} title={STATUS_LABELS[s.status]} />,
+        active: s.id === activeId,
+        onClick: () => onSelect(s.id)
+      }))}
+    />
   )
 }
 
@@ -940,8 +922,8 @@ function StandupSection(props: {
   return (
     <div className="standup">
       <div className="standup-head">
-        <div className="standup-head-top">
-          <span className="planner-label">Daily standup</span>
+        <span className="planner-label">Daily standup</span>
+        <div className="standup-head-right">
           <div className="sb-split">
             <button
               className="assist-btn primary sb-split-main"
@@ -960,7 +942,7 @@ function StandupSection(props: {
                 triggerClass="assist-btn primary sb-split-caret"
                 triggerTitle="More standup actions"
                 triggerContent={<CaretDownIcon />}
-                align="left"
+                align="right"
                 items={[
                   ...(props.onDiscuss
                     ? [{ label: 'Discuss in chat', icon: <ChatIcon />, onClick: props.onDiscuss }]
@@ -972,25 +954,25 @@ function StandupSection(props: {
               />
             )}
           </div>
-        </div>
-        <div className="standup-datenav">
-          <button className="standup-nav-btn" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
-            <ChevronIcon dir="left" />
-          </button>
-          <input
-            type="date"
-            className="text-input standup-date-input"
-            value={props.date}
-            onChange={(e) => e.target.value && props.onDate(e.target.value)}
-          />
-          <button className="standup-nav-btn" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
-            <ChevronIcon dir="right" />
-          </button>
-          {!isToday && (
-            <button className="btn-ghost small" onClick={() => props.onDate(today)}>
-              Today
+          <div className="standup-datenav">
+            <button className="standup-nav-btn" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
+              <ChevronIcon dir="left" />
             </button>
-          )}
+            <input
+              type="date"
+              className="text-input standup-date-input"
+              value={props.date}
+              onChange={(e) => e.target.value && props.onDate(e.target.value)}
+            />
+            <button className="standup-nav-btn" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
+              <ChevronIcon dir="right" />
+            </button>
+            {!isToday && (
+              <button className="btn-ghost small" onClick={() => props.onDate(today)}>
+                Today
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1438,6 +1420,7 @@ interface MenuItem {
   onClick: () => void
   danger?: boolean
   disabled?: boolean
+  active?: boolean
 }
 function Menu({
   triggerClass,
@@ -1471,7 +1454,7 @@ function Menu({
           {items.map((it, i) => (
             <button
               key={i}
-              className={`sb-menu-item ${it.danger ? 'danger' : ''}`}
+              className={`sb-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}
               disabled={it.disabled}
               onClick={() => {
                 setOpen(false)
