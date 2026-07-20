@@ -92,6 +92,11 @@
   flex-direction: column;
   gap: 20px;
 }
+/* This is a height-bounded flex column; keep children at their natural height so a tall
+   board can't flex-shrink the (overflow:hidden) tab bar into a 2px sliver — it just scrolls. */
+.sprint-scroll > * {
+  flex-shrink: 0;
+}
 .sprint-goal {
   background: var(--bg-1);
   border: 1px solid var(--border);
