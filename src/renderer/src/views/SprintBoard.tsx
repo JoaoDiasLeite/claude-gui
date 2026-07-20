@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Sprint, SprintItem, ItemStatus, SprintStatus, CCAccountStatus, ModelInfo } from '../types'
+import { Sprint, SprintItem, DailyStandup, ItemStatus, SprintStatus, CCAccountStatus, ModelInfo } from '../types'
 import './views.css'
 import './PlannerView.css'
 import './SprintBoard.css'
@@ -68,6 +68,7 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
   const [overCol, setOverCol] = useState<ItemStatus | null>(null)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [sprintModal, setSprintModal] = useState<'new' | 'edit' | null>(null)
+  const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const active = sprints.find((s) => s.id === activeId) ?? null
@@ -150,6 +151,32 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
     }))
   const deleteItem = (id: string) => mutate((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) }))
   const moveItem = (id: string, status: ItemStatus) => updateItem(id, { status })
+
+  // ─── Standups (one per date, upserted in place) ─────────────────────────────
+  const standupFor = (date: string): DailyStandup =>
+    active?.standups.find((s) => s.date === date) ?? {
+      date,
+      yesterday: '',
+      today: '',
+      blockers: '',
+      updatedAt: 0
+    }
+  const patchStandup = (date: string, patch: Partial<Omit<DailyStandup, 'date'>>) =>
+    mutate((s) => {
+      const existing = s.standups.find((st) => st.date === date)
+      const merged: DailyStandup = {
+        ...(existing ?? { date, yesterday: '', today: '', blockers: '', updatedAt: 0 }),
+        ...patch,
+        date,
+        updatedAt: Date.now()
+      }
+      const standups = existing
+        ? s.standups.map((st) => (st.date === date ? merged : st))
+        : [...s.standups, merged]
+      return { ...s, standups }
+    })
+  const deleteStandup = (date: string) =>
+    mutate((s) => ({ ...s, standups: s.standups.filter((st) => st.date !== date) }))
 
   // ─── Metrics ──────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -278,6 +305,16 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
               )
             })}
           </div>
+
+          <StandupSection
+            date={standupDate}
+            onDate={setStandupDate}
+            standup={standupFor(standupDate)}
+            history={[...active.standups].sort((a, b) => b.date.localeCompare(a.date))}
+            onPatch={(patch) => patchStandup(standupDate, patch)}
+            onEditHistory={setStandupDate}
+            onDeleteHistory={deleteStandup}
+          />
         </div>
       )}
 
@@ -655,6 +692,171 @@ function SprintModal(props: {
       </div>
     </div>,
     document.body
+  )
+}
+
+// ─── Standup section (editor + saved history) ──────────────────────────────────
+function fmtDate(dateStr: string): string {
+  return parseYmd(dateStr).toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  })
+}
+
+function StandupSection(props: {
+  date: string
+  onDate: (d: string) => void
+  standup: DailyStandup
+  history: DailyStandup[]
+  onPatch: (patch: Partial<Omit<DailyStandup, 'date'>>) => void
+  onEditHistory: (date: string) => void
+  onDeleteHistory: (date: string) => void
+}) {
+  const today = ymd(new Date())
+  const s = props.standup
+  const isToday = props.date === today
+  return (
+    <div className="standup">
+      <div className="standup-head">
+        <span className="planner-label">Daily standup</span>
+        <div className="standup-datenav">
+          <button className="btn-ghost icon" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
+            ‹
+          </button>
+          <input
+            type="date"
+            className="text-input standup-date-input"
+            value={props.date}
+            onChange={(e) => e.target.value && props.onDate(e.target.value)}
+          />
+          <button className="btn-ghost icon" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
+            ›
+          </button>
+          {!isToday && (
+            <button className="btn-ghost" onClick={() => props.onDate(today)}>
+              Today
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="standup-grid">
+        <StandupField
+          label="Yesterday"
+          hint="What did you get done?"
+          value={s.yesterday}
+          onChange={(v) => props.onPatch({ yesterday: v })}
+        />
+        <StandupField
+          label="Today"
+          hint="What are you working on?"
+          value={s.today}
+          onChange={(v) => props.onPatch({ today: v })}
+        />
+        <StandupField
+          label="Blockers"
+          hint="Anything in the way?"
+          value={s.blockers}
+          onChange={(v) => props.onPatch({ blockers: v })}
+          tone="warn"
+        />
+      </div>
+
+      {props.history.length > 0 && (
+        <div className="standup-history">
+          <span className="planner-label">Standup history</span>
+          <div className="standup-history-list">
+            {props.history.map((h) => (
+              <StandupHistoryCard
+                key={h.date}
+                standup={h}
+                active={h.date === props.date}
+                onEdit={() => props.onEditHistory(h.date)}
+                onDelete={() => props.onDeleteHistory(h.date)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StandupField(props: {
+  label: string
+  hint: string
+  value: string
+  onChange: (v: string) => void
+  tone?: 'warn'
+}) {
+  return (
+    <div className={`standup-field ${props.tone ?? ''}`}>
+      <span className="standup-field-label">{props.label}</span>
+      <textarea
+        className="text-input standup-textarea"
+        rows={4}
+        placeholder={props.hint}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+      />
+    </div>
+  )
+}
+
+function StandupHistoryCard(props: {
+  standup: DailyStandup
+  active: boolean
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const h = props.standup
+  const preview = (h.today || h.yesterday || h.blockers || '').replace(/\s+/g, ' ').slice(0, 90)
+  return (
+    <div className={`standup-hcard ${props.active ? 'active' : ''}`}>
+      <div className="standup-hcard-head" onClick={() => setOpen((v) => !v)}>
+        <span className="standup-hcard-date">{fmtDate(h.date)}</span>
+        {!open && preview && <span className="standup-hcard-preview">{preview}</span>}
+        {h.blockers.trim() && <span className="standup-blocked-dot" title="Had blockers" />}
+        <button
+          className="btn-ghost small"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onEdit()
+          }}
+          title="Load into the editor"
+        >
+          Edit
+        </button>
+        <button
+          className="task-del"
+          onClick={(e) => {
+            e.stopPropagation()
+            props.onDelete()
+          }}
+          title="Delete standup"
+        >
+          ×
+        </button>
+      </div>
+      {open && (
+        <div className="standup-hcard-body">
+          {h.yesterday.trim() && <StandupReadRow label="Yesterday" text={h.yesterday} />}
+          {h.today.trim() && <StandupReadRow label="Today" text={h.today} />}
+          {h.blockers.trim() && <StandupReadRow label="Blockers" text={h.blockers} tone="warn" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StandupReadRow({ label, text, tone }: { label: string; text: string; tone?: 'warn' }) {
+  return (
+    <div className={`standup-read ${tone ?? ''}`}>
+      <span className="standup-read-label">{label}</span>
+      <p>{text}</p>
+    </div>
   )
 }
 
