@@ -112,3 +112,47 @@ export async function commit(cwd: string, message: string): Promise<CommitResult
   const res = await git(cwd, ['commit', '-m', message])
   return { ok: res.code === 0, message: (res.stdout || res.stderr).trim() }
 }
+
+export interface GitCommit {
+  hash: string
+  /** ISO date "YYYY-MM-DD". */
+  date: string
+  author: string
+  subject: string
+}
+
+/**
+ * Recent commits, newest first, for a standup digest. When `authorOnly`, filters to the
+ * repo's configured user (user.email) so a shared repo still yields the caller's work.
+ * Returns [] for a non-repo or on any failure — callers treat git as best-effort context.
+ * Fields are separated by the 0x1F unit-separator (emitted via git's %x1f) so commit
+ * subjects containing spaces or pipes parse cleanly.
+ */
+export async function getLog(cwd: string, sinceDays = 3, authorOnly = true): Promise<GitCommit[]> {
+  if (!cwd || !fs.existsSync(cwd)) return []
+  const inside = await git(cwd, ['rev-parse', '--is-inside-work-tree'])
+  if (inside.stdout.trim() !== 'true') return []
+
+  const args = [
+    'log',
+    `--since=${sinceDays} days ago`,
+    '--date=short',
+    '--pretty=format:%h%x1f%ad%x1f%an%x1f%s',
+    '--max-count=80'
+  ]
+  if (authorOnly) {
+    const emailRes = await git(cwd, ['config', 'user.email'])
+    const email = emailRes.stdout.trim()
+    if (email) args.push(`--author=${email}`)
+  }
+
+  const res = await git(cwd, args)
+  if (res.code !== 0 || !res.stdout.trim()) return []
+  const commits: GitCommit[] = []
+  for (const line of res.stdout.split('\n')) {
+    if (!line.trim()) continue
+    const [hash, date, author, subject] = line.split('\x1f')
+    if (subject) commits.push({ hash, date, author, subject })
+  }
+  return commits
+}

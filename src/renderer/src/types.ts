@@ -852,6 +852,20 @@ declare global {
       sprintGet: (id: string) => Promise<Sprint | null>
       sprintSave: (sprint: Sprint) => Promise<Sprint>
       sprintDelete: (id: string) => Promise<Sprint[]>
+      standupGenerate: (payload: {
+        projectPath?: string
+        date: string
+        boardSummary?: string
+        model?: string
+        accountId?: string
+      }) => Promise<{
+        ok: boolean
+        data?: { yesterday?: string; today?: string; blockers?: string }
+        error?: string
+        raw?: string
+        costUsd: number
+        commitCount: number
+      }>
 
       // Claude permissions & hooks
       getClaudePermissions: () => Promise<ClaudePermissions>

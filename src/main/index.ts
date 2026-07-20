@@ -36,7 +36,7 @@ import {
   compareCheckpoints,
   exportPatch
 } from './checkpoints'
-import { getStatus, getDiff, stageFile, unstageFile, stageAll, commit } from './git'
+import { getStatus, getDiff, stageFile, unstageFile, stageAll, commit, getLog } from './git'
 import { listCommands } from './commands'
 import {
   listHosts,
@@ -1290,6 +1290,107 @@ ipcMain.handle(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
       return { ok: false as const, error: msg, costUsd: 0 }
+    }
+  }
+)
+
+// ─── Standup generation (git log + board state → draft standup) ─────────────────
+
+function buildStandupPrompt(
+  date: string,
+  commits: { date: string; subject: string }[],
+  boardSummary?: string
+): string {
+  const commitLines =
+    commits.length > 0
+      ? commits.map((c) => `  - ${c.date}: ${c.subject}`).join('\n')
+      : '  (no recent commits found)'
+  const board = boardSummary?.trim() ? `\n\nCurrent sprint board:\n${boardSummary.trim()}` : ''
+  return `You are helping a developer write their daily standup for ${date}. Base it on their recent git commits and current sprint board. Be concise, concrete, and write in first person, plain past/present tense — no fluff.
+
+Recent git commits (newest first, author-filtered):
+${commitLines}${board}
+
+Treat commits dated on or just before ${date} as "yesterday" work, and in-progress board items as "today". Respond with ONLY a single JSON object, no markdown fences, no prose outside the JSON:
+{
+  "yesterday": "<what got done — 1-4 short bullet-like sentences separated by newlines>",
+  "today": "<what you plan to work on today>",
+  "blockers": "<blockers if any are evident, otherwise an empty string>"
+}`
+}
+
+ipcMain.handle(
+  'standup:generate',
+  async (
+    _,
+    payload: {
+      projectPath?: string
+      date: string
+      boardSummary?: string
+      model?: string
+      accountId?: string
+    }
+  ) => {
+    const abort = new AbortController()
+    const env = buildSubprocessEnv()
+    const configDir = accountConfigDir(payload.accountId)
+    if (configDir) {
+      env.CLAUDE_CONFIG_DIR = configDir
+      delete env.ANTHROPIC_API_KEY
+    }
+    const model = payload.model || getConfig().defaultModel
+    let commits: { date: string; subject: string }[] = []
+    try {
+      if (payload.projectPath) {
+        commits = (await getLog(payload.projectPath, 3, true)).map((c) => ({ date: c.date, subject: c.subject }))
+      }
+    } catch {
+      /* git is best-effort context — a failure just means no commits in the digest */
+    }
+    try {
+      const query = await getQuery()
+      const stream = query({
+        prompt: buildPrompt(buildStandupPrompt(payload.date, commits, payload.boardSummary), undefined, undefined, '') as string,
+        options: {
+          ...sdkExecutable(),
+          model,
+          cwd: os.homedir(),
+          env,
+          abortController: abort,
+          permissionMode: 'bypassPermissions',
+          allowedTools: [],
+          settingSources: []
+        }
+      })
+      let text = ''
+      let costUsd = 0
+      let isError = false
+      let errorText: string | undefined
+      for await (const message of stream) {
+        if (message.type === 'assistant') {
+          const content = (message as any).message?.content ?? []
+          for (const block of content) {
+            if (block.type === 'text') text += block.text
+          }
+        } else if (message.type === 'result') {
+          const m = message as any
+          costUsd = m.total_cost_usd ?? 0
+          if (m.subtype !== 'success') {
+            isError = true
+            errorText = m.result ?? m.subtype
+          }
+        }
+      }
+      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd, commitCount: commits.length }
+      try {
+        const data = extractJson(text)
+        return { ok: true as const, data, costUsd, commitCount: commits.length }
+      } catch {
+        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: text, costUsd, commitCount: commits.length }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false as const, error: msg, costUsd: 0, commitCount: commits.length }
     }
   }
 )

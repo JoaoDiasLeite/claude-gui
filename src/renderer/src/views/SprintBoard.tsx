@@ -60,7 +60,7 @@ export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode:
   )
 }
 
-export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
+export default function SprintBoard({ mode, onMode, defaultModel, defaultAccountId }: SprintBoardProps) {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -69,6 +69,8 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [sprintModal, setSprintModal] = useState<'new' | 'edit' | null>(null)
   const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
+  const [genBusy, setGenBusy] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const active = sprints.find((s) => s.id === activeId) ?? null
@@ -105,7 +107,14 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
   }
 
   // ─── Sprint CRUD ──────────────────────────────────────────────────────────
-  const createSprint = (draft: { name: string; goal: string; startDate: string; endDate: string; status: SprintStatus }) => {
+  const createSprint = (draft: {
+    name: string
+    goal: string
+    startDate: string
+    endDate: string
+    status: SprintStatus
+    projectPath?: string
+  }) => {
     const now = Date.now()
     const s: Sprint = {
       id: uid(),
@@ -114,6 +123,7 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
       startDate: draft.startDate,
       endDate: draft.endDate,
       status: draft.status,
+      projectPath: draft.projectPath,
       items: [],
       standups: [],
       createdAt: now,
@@ -177,6 +187,41 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
     })
   const deleteStandup = (date: string) =>
     mutate((s) => ({ ...s, standups: s.standups.filter((st) => st.date !== date) }))
+
+  // Draft a standup from git commits + the current board, then fill the day's fields.
+  const generateStandup = async () => {
+    if (!active || genBusy) return
+    setGenBusy(true)
+    setGenError(null)
+    const summarize = (st: ItemStatus, label: string) => {
+      const rows = active.items.filter((i) => i.status === st)
+      return rows.length ? `${label}:\n${rows.map((i) => `  - ${i.title}`).join('\n')}` : ''
+    }
+    const boardSummary = [
+      summarize('in-progress', 'In progress'),
+      summarize('done', 'Done'),
+      summarize('todo', 'To do')
+    ]
+      .filter(Boolean)
+      .join('\n')
+    const res = await window.electronAPI.standupGenerate({
+      projectPath: active.projectPath,
+      date: standupDate,
+      boardSummary,
+      model: defaultModel,
+      accountId: defaultAccountId
+    })
+    setGenBusy(false)
+    if (!res.ok || !res.data) {
+      setGenError(res.error || 'Could not generate a standup.')
+      return
+    }
+    patchStandup(standupDate, {
+      yesterday: res.data.yesterday ?? '',
+      today: res.data.today ?? '',
+      blockers: res.data.blockers ?? ''
+    })
+  }
 
   // ─── Metrics ──────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -314,6 +359,10 @@ export default function SprintBoard({ mode, onMode }: SprintBoardProps) {
             onPatch={(patch) => patchStandup(standupDate, patch)}
             onEditHistory={setStandupDate}
             onDeleteHistory={deleteStandup}
+            onGenerate={generateStandup}
+            genBusy={genBusy}
+            genError={genError}
+            hasProject={!!active.projectPath}
           />
         </div>
       )}
@@ -571,7 +620,14 @@ function ItemModal(props: {
 function SprintModal(props: {
   mode: 'new' | 'edit'
   sprint: Sprint | null
-  onCreate: (draft: { name: string; goal: string; startDate: string; endDate: string; status: SprintStatus }) => void
+  onCreate: (draft: {
+    name: string
+    goal: string
+    startDate: string
+    endDate: string
+    status: SprintStatus
+    projectPath?: string
+  }) => void
   onPatch: (patch: Partial<Sprint>) => void
   onDelete: () => void
   onClose: () => void
@@ -583,6 +639,15 @@ function SprintModal(props: {
   const [startDate, setStartDate] = useState(props.sprint?.startDate ?? today)
   const [endDate, setEndDate] = useState(props.sprint?.endDate ?? addDays(today, 13))
   const [status, setStatus] = useState<SprintStatus>(props.sprint?.status ?? 'active')
+  const [projectPath, setProjectPath] = useState<string | undefined>(props.sprint?.projectPath)
+
+  const pickFolder = async () => {
+    const folder = await window.electronAPI.openFolder()
+    if (folder) {
+      setProjectPath(folder)
+      commitEdit({ projectPath: folder })
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
@@ -671,6 +736,31 @@ function SprintModal(props: {
               ))}
             </div>
           </div>
+          <div className="task-modal-field">
+            <span className="task-modal-label">Project folder</span>
+            <div className="sprint-project-row">
+              <span className="sprint-project-path" title={projectPath}>
+                {projectPath || 'None — standups use the board only'}
+              </span>
+              <button className="assist-btn" onClick={pickFolder}>
+                {projectPath ? 'Change' : 'Choose'}
+              </button>
+              {projectPath && (
+                <button
+                  className="btn-text danger"
+                  onClick={() => {
+                    setProjectPath(undefined)
+                    commitEdit({ projectPath: undefined })
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <span className="sprint-project-hint">
+              A git repo lets “Generate” read your recent commits for the standup.
+            </span>
+          </div>
         </div>
         <div className="task-modal-foot">
           {isEdit ? (
@@ -683,7 +773,7 @@ function SprintModal(props: {
           ) : (
             <button
               className="assist-btn primary"
-              onClick={() => props.onCreate({ name, goal, startDate, endDate, status })}
+              onClick={() => props.onCreate({ name, goal, startDate, endDate, status, projectPath })}
             >
               Create sprint
             </button>
@@ -712,6 +802,10 @@ function StandupSection(props: {
   onPatch: (patch: Partial<Omit<DailyStandup, 'date'>>) => void
   onEditHistory: (date: string) => void
   onDeleteHistory: (date: string) => void
+  onGenerate: () => void
+  genBusy: boolean
+  genError: string | null
+  hasProject: boolean
 }) {
   const today = ymd(new Date())
   const s = props.standup
@@ -738,8 +832,22 @@ function StandupSection(props: {
               Today
             </button>
           )}
+          <button
+            className="assist-btn primary"
+            onClick={props.onGenerate}
+            disabled={props.genBusy}
+            title={
+              props.hasProject
+                ? 'Draft this standup from your git commits and board'
+                : 'Draft from your board (set a project folder in Sprint settings to include git commits)'
+            }
+          >
+            <Spark /> {props.genBusy ? 'Generating…' : 'Generate'}
+          </button>
         </div>
       </div>
+
+      {props.genError && <div className="assist-error standup-error">{props.genError}</div>}
 
       <div className="standup-grid">
         <StandupField
@@ -865,6 +973,14 @@ function GearIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  )
+}
+
+function Spark() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
     </svg>
   )
 }

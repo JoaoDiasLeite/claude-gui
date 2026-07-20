@@ -178,6 +178,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sprintGet: (id: string) => ipcRenderer.invoke('sprint:get', id),
   sprintSave: (sprint: unknown) => ipcRenderer.invoke('sprint:save', sprint),
   sprintDelete: (id: string) => ipcRenderer.invoke('sprint:delete', id),
+  standupGenerate: (payload: unknown) => ipcRenderer.invoke('standup:generate', payload),
 
   // Claude permissions & hooks (edit ~/.claude/settings.json)
   getClaudePermissions: () => ipcRenderer.invoke('config:get-permissions'),
