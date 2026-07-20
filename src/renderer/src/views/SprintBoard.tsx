@@ -313,18 +313,16 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
             />
           )}
           {active && (
-            <button
-              className="assist-btn"
-              onClick={() => setBackfillOpen(true)}
-              title="Import open GitLab issues into the backlog (uses this project's GitLab MCP)"
-            >
-              <ImportIcon /> Backfill
-            </button>
-          )}
-          {active && (
-            <button className="assist-btn" onClick={() => setSprintModal('edit')} title="Sprint settings">
-              <GearIcon /> Settings
-            </button>
+            <Menu
+              triggerClass="assist-btn sb-icon-btn"
+              triggerTitle="More sprint actions"
+              triggerContent={<MoreIcon />}
+              align="right"
+              items={[
+                { label: 'Backfill from GitLab', icon: <ImportIcon />, onClick: () => setBackfillOpen(true) },
+                { label: 'Sprint settings', icon: <GearIcon />, onClick: () => setSprintModal('edit') }
+              ]}
+            />
           )}
           <button className="assist-btn primary" onClick={() => setSprintModal('new')}>
             + New sprint
@@ -942,36 +940,36 @@ function StandupSection(props: {
               Today
             </button>
           )}
-          {props.onDiscuss && (
+          <div className="sb-split">
             <button
-              className="assist-btn"
-              onClick={props.onDiscuss}
-              title="Talk through your day with Claude in a light chat (no repo access)"
+              className="assist-btn primary sb-split-main"
+              onClick={props.onGenerate}
+              disabled={props.genBusy}
+              title={
+                props.hasProject
+                  ? 'Draft this standup from your git commits and board'
+                  : 'Draft from your board (set a project folder in Sprint settings to include git commits)'
+              }
             >
-              <ChatIcon /> Discuss
+              <Spark /> {props.genBusy ? 'Generating…' : 'Generate'}
             </button>
-          )}
-          {props.onSchedule && (
-            <button
-              className="assist-btn"
-              onClick={props.onSchedule}
-              title="Create a daily standup routine (opens Routines to review and enable)"
-            >
-              <ClockIcon /> Schedule
-            </button>
-          )}
-          <button
-            className="assist-btn primary"
-            onClick={props.onGenerate}
-            disabled={props.genBusy}
-            title={
-              props.hasProject
-                ? 'Draft this standup from your git commits and board'
-                : 'Draft from your board (set a project folder in Sprint settings to include git commits)'
-            }
-          >
-            <Spark /> {props.genBusy ? 'Generating…' : 'Generate'}
-          </button>
+            {(props.onDiscuss || props.onSchedule) && (
+              <Menu
+                triggerClass="assist-btn primary sb-split-caret"
+                triggerTitle="More standup actions"
+                triggerContent={<CaretDownIcon />}
+                align="right"
+                items={[
+                  ...(props.onDiscuss
+                    ? [{ label: 'Discuss in chat', icon: <ChatIcon />, onClick: props.onDiscuss }]
+                    : []),
+                  ...(props.onSchedule
+                    ? [{ label: 'Schedule daily routine', icon: <ClockIcon />, onClick: props.onSchedule }]
+                    : [])
+                ]}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -1407,6 +1405,82 @@ function ImportIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  )
+}
+
+// A small click-outside dropdown, reused for the header overflow and the standup
+// split-button. Function declaration (hoisted) so the render above can reference it.
+interface MenuItem {
+  label: string
+  icon?: JSX.Element
+  onClick: () => void
+  danger?: boolean
+  disabled?: boolean
+}
+function Menu({
+  triggerClass,
+  triggerContent,
+  triggerTitle,
+  items,
+  align = 'right'
+}: {
+  triggerClass: string
+  triggerContent: JSX.Element
+  triggerTitle?: string
+  items: MenuItem[]
+  align?: 'left' | 'right'
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+  return (
+    <div className="sb-menu" ref={ref}>
+      <button className={triggerClass} title={triggerTitle} onClick={() => setOpen((v) => !v)}>
+        {triggerContent}
+      </button>
+      {open && (
+        <div className={`sb-menu-pop ${align}`}>
+          {items.map((it, i) => (
+            <button
+              key={i}
+              className={`sb-menu-item ${it.danger ? 'danger' : ''}`}
+              disabled={it.disabled}
+              onClick={() => {
+                setOpen(false)
+                it.onClick()
+              }}
+            >
+              {it.icon}
+              <span>{it.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MoreIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="12" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="19" cy="12" r="1.6" />
+    </svg>
+  )
+}
+
+function CaretDownIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="6 9 12 15 18 9" />
     </svg>
   )
 }
