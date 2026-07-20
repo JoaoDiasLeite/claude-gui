@@ -1395,6 +1395,96 @@ ipcMain.handle(
   }
 )
 
+// ─── Backlog backfill (GitLab MCP → sprint items) ───────────────────────────────
+
+function buildBacklogBackfillPrompt(instructions?: string): string {
+  const extra = instructions?.trim()
+    ? `\n\nAdditional filter / instructions from the user: ${instructions.trim()}`
+    : ''
+  return `You have access to this project's configured MCP servers, including a GitLab server. Using ONLY the GitLab MCP tools (and read-only file tools), fetch the currently OPEN issues for this project's GitLab repository so they can seed a sprint backlog. This is strictly READ-ONLY — do NOT create, edit, close, label, or comment on anything.${extra}
+
+Work out the correct GitLab project/repository from the git remote in the current directory or the MCP server's configured default. Respond with ONLY a single JSON object — no markdown fences, no prose outside the JSON:
+{
+  "items": [
+    { "title": "<issue title>", "points": <small integer story-point estimate, or null>, "notes": "<issue reference like #123 plus a one-line summary, or an empty string>" }
+  ]
+}
+If you cannot reach GitLab or there are no open issues, return { "items": [] }.`
+}
+
+ipcMain.handle(
+  'sprint:backfill',
+  async (
+    _,
+    payload: { projectPath?: string; instructions?: string; model?: string; accountId?: string }
+  ) => {
+    if (!payload.projectPath) {
+      return { ok: false as const, error: 'Set a project folder on the sprint first (Sprint settings) so the GitLab MCP can be located.', costUsd: 0 }
+    }
+    const mcpServers = mcpServersForProject(payload.projectPath)
+    if (!mcpServers || Object.keys(mcpServers).length === 0) {
+      return { ok: false as const, error: 'No MCP servers are configured for this project in Claude Code. Add the GitLab MCP to this project, then try again.', costUsd: 0 }
+    }
+    const abort = new AbortController()
+    const env = buildSubprocessEnv()
+    const configDir = accountConfigDir(payload.accountId)
+    if (configDir) {
+      env.CLAUDE_CONFIG_DIR = configDir
+      delete env.ANTHROPIC_API_KEY
+    }
+    const model = payload.model || getConfig().defaultModel
+    // Allow every configured MCP server plus read-only file tools — never the mutating
+    // built-ins (Bash/Write/Edit), so a bypassPermissions run can't touch the repo.
+    const allowedTools = [...Object.keys(mcpServers).map((n) => `mcp__${n}`), 'Read', 'Grep', 'Glob']
+    try {
+      const query = await getQuery()
+      const stream = query({
+        prompt: buildPrompt(buildBacklogBackfillPrompt(payload.instructions), undefined, undefined, '') as string,
+        options: {
+          ...sdkExecutable(),
+          model,
+          cwd: payload.projectPath,
+          env,
+          abortController: abort,
+          permissionMode: 'bypassPermissions',
+          allowedTools,
+          settingSources: ['project', 'local'],
+          mcpServers: mcpServers as Record<string, never>
+        }
+      })
+      let text = ''
+      let costUsd = 0
+      let isError = false
+      let errorText: string | undefined
+      for await (const message of stream) {
+        if (message.type === 'assistant') {
+          const content = (message as any).message?.content ?? []
+          for (const block of content) {
+            if (block.type === 'text') text += block.text
+          }
+        } else if (message.type === 'result') {
+          const m = message as any
+          costUsd = m.total_cost_usd ?? 0
+          if (m.subtype !== 'success') {
+            isError = true
+            errorText = m.result ?? m.subtype
+          }
+        }
+      }
+      if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
+      try {
+        const data = extractJson(text)
+        return { ok: true as const, data, costUsd }
+      } catch {
+        return { ok: false as const, error: 'Could not parse Claude’s response as JSON.', raw: text, costUsd }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return { ok: false as const, error: msg, costUsd: 0 }
+    }
+  }
+)
+
 // ─── Agent suggestions (history digest) ────────────────────────────────────
 
 const AGENT_ICON_OPTIONS = ['🤖', '🧠', '🔧', '🔍', '📝', '🚀', '🛡️', '⚡', '📊', '🧪']

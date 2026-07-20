@@ -72,6 +72,7 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
   const [overCol, setOverCol] = useState<ItemStatus | null>(null)
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [sprintModal, setSprintModal] = useState<'new' | 'edit' | null>(null)
+  const [backfillOpen, setBackfillOpen] = useState(false)
   const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
@@ -165,6 +166,24 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
     }))
   const deleteItem = (id: string) => mutate((s) => ({ ...s, items: s.items.filter((i) => i.id !== id) }))
   const moveItem = (id: string, status: ItemStatus) => updateItem(id, { status })
+
+  // Append imported issues (from the GitLab backfill) as fresh To-do items.
+  const addBacklogItems = (rows: { title: string; points?: number | null; notes?: string }[]) =>
+    mutate((s) => ({
+      ...s,
+      items: [
+        ...s.items,
+        ...rows.map((r) => ({
+          id: uid(),
+          title: r.title.trim(),
+          notes: r.notes?.trim() || null,
+          status: 'todo' as ItemStatus,
+          points: typeof r.points === 'number' && r.points > 0 ? r.points : null,
+          createdAt: Date.now(),
+          completedAt: null
+        }))
+      ]
+    }))
 
   // ─── Standups (one per date, upserted in place) ─────────────────────────────
   const standupFor = (date: string): DailyStandup =>
@@ -292,6 +311,15 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
               activeId={activeId}
               onSelect={setActiveId}
             />
+          )}
+          {active && (
+            <button
+              className="assist-btn"
+              onClick={() => setBackfillOpen(true)}
+              title="Import open GitLab issues into the backlog (uses this project's GitLab MCP)"
+            >
+              <ImportIcon /> Backfill
+            </button>
           )}
           {active && (
             <button className="assist-btn" onClick={() => setSprintModal('edit')} title="Sprint settings">
@@ -457,6 +485,16 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
             setEditingItemId(null)
           }}
           onClose={() => setEditingItemId(null)}
+        />
+      )}
+
+      {backfillOpen && active && (
+        <BacklogBackfillModal
+          sprint={active}
+          defaultModel={defaultModel}
+          defaultAccountId={defaultAccountId}
+          onAdd={addBacklogItems}
+          onClose={() => setBackfillOpen(false)}
         />
       )}
     </div>
@@ -1161,6 +1199,161 @@ function MiniRing({ pct }: { pct: number }) {
       </svg>
       <span className="mini-ring-num">{p}%</span>
     </div>
+  )
+}
+
+// ─── Backlog backfill from GitLab MCP ──────────────────────────────────────────
+function BacklogBackfillModal(props: {
+  sprint: Sprint
+  defaultModel: string
+  defaultAccountId: string
+  onAdd: (rows: { title: string; points?: number | null; notes?: string }[]) => void
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [items, setItems] = useState<{ title: string; points?: number | null; notes?: string }[]>([])
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [instructions, setInstructions] = useState('')
+
+  const existing = useMemo(
+    () => new Set(props.sprint.items.map((i) => i.title.trim().toLowerCase())),
+    [props.sprint]
+  )
+  const isDup = (title: string) => existing.has(title.trim().toLowerCase())
+
+  const run = async (instr?: string) => {
+    setBusy(true)
+    setError(null)
+    const res = await window.electronAPI.sprintBackfill({
+      projectPath: props.sprint.projectPath,
+      instructions: instr,
+      model: props.defaultModel,
+      accountId: props.defaultAccountId
+    })
+    setBusy(false)
+    if (!res.ok || !res.data) {
+      setError(res.error || 'Could not fetch issues.')
+      setItems([])
+      return
+    }
+    const fetched = (res.data.items ?? []).filter((i) => i && i.title && i.title.trim())
+    setItems(fetched)
+    // Pre-select everything that isn't already on the board.
+    setSelected(new Set(fetched.map((f, i) => (isDup(f.title) ? -1 : i)).filter((i) => i >= 0)))
+  }
+
+  useEffect(() => {
+    run()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const toggle = (i: number) =>
+    setSelected((prev) => {
+      const n = new Set(prev)
+      n.has(i) ? n.delete(i) : n.add(i)
+      return n
+    })
+
+  const addSelected = () => {
+    const chosen = items.filter((_, i) => selected.has(i))
+    if (chosen.length) props.onAdd(chosen)
+    props.onClose()
+  }
+
+  return createPortal(
+    <div className="task-modal-overlay" onClick={props.onClose}>
+      <div className="task-modal backfill-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="task-modal-head">
+          <span className="task-modal-heading">
+            <ImportIcon /> Backfill backlog from GitLab
+          </span>
+          <button className="chip-x lg" onClick={props.onClose}>×</button>
+        </div>
+        <div className="task-modal-body">
+          <div className="backfill-filter">
+            <input
+              className="text-input"
+              placeholder="Optional filter — e.g. label:bug, milestone “Sprint 14”…"
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !busy && run(instructions)}
+              disabled={busy}
+            />
+            <button className="assist-btn" onClick={() => run(instructions)} disabled={busy}>
+              {busy ? 'Fetching…' : 'Fetch'}
+            </button>
+          </div>
+
+          {busy && (
+            <div className="assist-loading">
+              <div className="view-spinner" />
+              <span>Asking Claude to read your open GitLab issues…</span>
+            </div>
+          )}
+
+          {error && !busy && <div className="assist-error">{error}</div>}
+
+          {!busy && !error && items.length === 0 && (
+            <p className="burndown-empty">No open issues came back. Try adjusting the filter above.</p>
+          )}
+
+          {!busy && items.length > 0 && (
+            <>
+              <div className="backfill-actions-row">
+                <span className="backfill-count">{selected.size} of {items.length} selected</span>
+                <div className="backfill-selbtns">
+                  <button className="btn-ghost small" onClick={() => setSelected(new Set(items.map((_, i) => i)))}>All</button>
+                  <button className="btn-ghost small" onClick={() => setSelected(new Set())}>None</button>
+                </div>
+              </div>
+              <div className="backfill-list">
+                {items.map((it, i) => {
+                  const dup = isDup(it.title)
+                  return (
+                    <label key={i} className={`backfill-row ${dup ? 'dup' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(i)}
+                        onChange={() => toggle(i)}
+                      />
+                      <span className="backfill-row-body">
+                        <span className="backfill-row-title">{it.title}</span>
+                        {it.notes?.trim() && <span className="backfill-row-notes">{it.notes}</span>}
+                      </span>
+                      {typeof it.points === 'number' && it.points > 0 && (
+                        <span className="sprint-points">{it.points} pts</span>
+                      )}
+                      {dup && <span className="backfill-dup-tag">already added</span>}
+                    </label>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="task-modal-foot">
+          <button className="btn-text" onClick={props.onClose}>Cancel</button>
+          <button className="assist-btn primary" onClick={addSelected} disabled={busy || selected.size === 0}>
+            Add {selected.size || ''} to backlog
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+function ImportIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
   )
 }
 

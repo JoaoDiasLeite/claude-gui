@@ -866,6 +866,18 @@ declare global {
         costUsd: number
         commitCount: number
       }>
+      sprintBackfill: (payload: {
+        projectPath?: string
+        instructions?: string
+        model?: string
+        accountId?: string
+      }) => Promise<{
+        ok: boolean
+        data?: { items: { title: string; points?: number | null; notes?: string }[] }
+        error?: string
+        raw?: string
+        costUsd: number
+      }>
 
       // Claude permissions & hooks
       getClaudePermissions: () => Promise<ClaudePermissions>
