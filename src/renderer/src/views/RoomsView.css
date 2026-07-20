@@ -81,46 +81,20 @@
   padding: 2px 6px;
   outline: none;
 }
-.room-rename-btn {
+.room-menu-btn {
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   background: transparent;
   border: 1px solid transparent;
   color: var(--text-2);
-  font-size: 12px;
-  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.room-card-head:hover .room-rename-btn { opacity: 1; }
-.room-rename-btn:hover { background: var(--bg-1); border-color: var(--border-light); color: var(--text-0); }
-
-.room-reorder {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  gap: 1px;
-}
-.room-reorder-btn {
-  width: 16px;
-  height: 11px;
-  border-radius: 3px;
-  background: transparent;
-  border: none;
-  color: var(--text-2);
-  font-size: 8px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.room-reorder-btn:hover:not(:disabled) { color: var(--text-0); background: var(--bg-1); }
-.room-reorder-btn:disabled { opacity: 0.25; }
+.room-menu-btn:hover { background: var(--bg-1); border-color: var(--border-light); color: var(--text-0); }
 
 .room-card-count {
   font-size: 11px;

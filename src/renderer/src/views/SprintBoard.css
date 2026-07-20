@@ -28,62 +28,9 @@
   color: var(--accent-hover);
 }
 
-/* ─── Reusable dropdown menu (header overflow + standup split-button) ──────────── */
-.sb-menu {
-  position: relative;
-  display: inline-flex;
-}
+/* ─── Header overflow trigger + split button (menu styles live in Menu.css) ──────── */
 .sb-icon-btn {
   padding: 7px 9px;
-}
-.sb-menu-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  z-index: 60;
-  min-width: 200px;
-  max-width: 320px;
-  max-height: 340px;
-  overflow-y: auto;
-  background: var(--bg-1);
-  border: 1px solid var(--border-light);
-  border-radius: 11px;
-  padding: 5px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.sb-menu-pop.right { right: 0; }
-.sb-menu-pop.left { left: 0; }
-.sb-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-1);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
-}
-.sb-menu-item:hover:not(:disabled) {
-  background: var(--bg-hover);
-  color: var(--text-0);
-}
-.sb-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
-.sb-menu-item.danger { color: var(--error); }
-.sb-menu-item.active {
-  background: var(--accent-dim);
-  color: var(--text-0);
-}
-.sb-menu-item svg { flex-shrink: 0; opacity: 0.85; }
-.sb-menu-item > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Split button: a primary action joined to a caret that opens the menu. */

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AgentDef, ApprovalRequest, RoomsLayout, Session } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
 import ApprovalModal from '../components/ApprovalModal'
+import Menu, { MoreIcon } from '../components/Menu'
 import './views.css'
 import './RoomsView.css'
 
@@ -456,38 +457,21 @@ function RoomCard({
             {room.label}
           </div>
         )}
-        <button
-          className="room-rename-btn"
-          onClick={startEditing}
-          title="Rename room"
-          aria-label="Rename room"
-        >
-          ✎
-        </button>
-        <div className="room-reorder">
-          <button
-            className="room-reorder-btn"
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            title="Move room up"
-            aria-label="Move room up"
-          >
-            ▲
-          </button>
-          <button
-            className="room-reorder-btn"
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            title="Move room down"
-            aria-label="Move room down"
-          >
-            ▼
-          </button>
-        </div>
         <span className="room-card-count">{room.sessions.length}</span>
         <button className="room-add-btn" onClick={onAddClick} title="Deploy an agent into this room">
           +
         </button>
+        <Menu
+          triggerClass="room-menu-btn"
+          triggerTitle="Room actions"
+          triggerContent={<MoreIcon />}
+          align="right"
+          items={[
+            { label: 'Rename', onClick: startEditing },
+            { label: 'Move up', onClick: onMoveUp, disabled: !canMoveUp },
+            { label: 'Move down', onClick: onMoveDown, disabled: !canMoveDown }
+          ]}
+        />
       </div>
       <div className="room-floor">
         {room.sessions.length === 0 ? (

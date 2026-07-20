@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Sprint, SprintItem, DailyStandup, ItemStatus, SprintStatus, CCAccountStatus, ModelInfo } from '../types'
+import Menu, { MoreIcon, CaretDownIcon } from '../components/Menu'
 import './views.css'
 import './PlannerView.css'
 import './SprintBoard.css'
@@ -1408,83 +1409,6 @@ function ImportIcon() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="7 10 12 15 17 10" />
       <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  )
-}
-
-// A small click-outside dropdown, reused for the header overflow and the standup
-// split-button. Function declaration (hoisted) so the render above can reference it.
-interface MenuItem {
-  label: string
-  icon?: JSX.Element
-  onClick: () => void
-  danger?: boolean
-  disabled?: boolean
-  active?: boolean
-}
-function Menu({
-  triggerClass,
-  triggerContent,
-  triggerTitle,
-  items,
-  align = 'right'
-}: {
-  triggerClass: string
-  triggerContent: JSX.Element
-  triggerTitle?: string
-  items: MenuItem[]
-  align?: 'left' | 'right'
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
-  return (
-    <div className="sb-menu" ref={ref}>
-      <button className={triggerClass} title={triggerTitle} onClick={() => setOpen((v) => !v)}>
-        {triggerContent}
-      </button>
-      {open && (
-        <div className={`sb-menu-pop ${align}`}>
-          {items.map((it, i) => (
-            <button
-              key={i}
-              className={`sb-menu-item ${it.danger ? 'danger' : ''} ${it.active ? 'active' : ''}`}
-              disabled={it.disabled}
-              onClick={() => {
-                setOpen(false)
-                it.onClick()
-              }}
-            >
-              {it.icon}
-              <span>{it.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function MoreIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <circle cx="5" cy="12" r="1.6" />
-      <circle cx="12" cy="12" r="1.6" />
-      <circle cx="19" cy="12" r="1.6" />
-    </svg>
-  )
-}
-
-function CaretDownIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="6 9 12 15 18 9" />
     </svg>
   )
 }
