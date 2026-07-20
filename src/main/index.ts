@@ -27,6 +27,7 @@ import {
 } from './mcp'
 import { listAgents, saveAgent, deleteAgent, AgentDef } from './agents'
 import { listWeeks, getWeek, saveWeek, deleteWeek, WeekPlan } from './planner'
+import { listSprints, getSprint, saveSprint, deleteSprint, Sprint } from './sprints'
 import {
   createCheckpoint,
   listCheckpoints,
@@ -1071,6 +1072,13 @@ ipcMain.handle('planner:list', () => listWeeks())
 ipcMain.handle('planner:get', (_, weekStart: string) => getWeek(weekStart))
 ipcMain.handle('planner:save', (_, week: WeekPlan) => saveWeek(week))
 ipcMain.handle('planner:delete', (_, weekStart: string) => deleteWeek(weekStart))
+
+// ─── Sprints (Scrum board / standups / burndown) ───────────────────────────────
+
+ipcMain.handle('sprint:list', () => listSprints())
+ipcMain.handle('sprint:get', (_, id: string) => getSprint(id))
+ipcMain.handle('sprint:save', (_, sprint: Sprint) => saveSprint(sprint))
+ipcMain.handle('sprint:delete', (_, id: string) => deleteSprint(id))
 
 type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
 

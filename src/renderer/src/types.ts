@@ -591,6 +591,50 @@ export interface WeekPlan {
 
 export type PlannerAssistMode = 'review' | 'draft' | 'reflect' | 'rebalance' | 'import'
 
+// ─── Sprints (Scrum board / standups / burndown) ────────────────────────────────
+// Mirror of src/main/sprints.ts — keep both in sync.
+
+export type SprintStatus = 'planning' | 'active' | 'completed'
+export type ItemStatus = 'todo' | 'in-progress' | 'done'
+
+export interface SprintItem {
+  id: string
+  title: string
+  notes?: string | null
+  status: ItemStatus
+  /** Story points. null/undefined = unestimated (counts as 0 in burndown). */
+  points?: number | null
+  createdAt: number
+  /** Set the moment the item first enters 'done' — the burndown x-axis anchor. */
+  completedAt?: number | null
+}
+
+export interface DailyStandup {
+  /** ISO date "YYYY-MM-DD" — the key; one standup per date per sprint. */
+  date: string
+  yesterday: string
+  today: string
+  blockers: string
+  updatedAt: number
+}
+
+export interface Sprint {
+  id: string
+  name: string
+  goal?: string
+  /** ISO date "YYYY-MM-DD". */
+  startDate: string
+  /** ISO date "YYYY-MM-DD", inclusive. */
+  endDate: string
+  status: SprintStatus
+  items: SprintItem[]
+  standups: DailyStandup[]
+  /** Project folder standups/metrics default to (for git-log digest). */
+  projectPath?: string
+  createdAt: number
+  updatedAt: number
+}
+
 // ─── Slash commands & skills ──────────────────────────────────────────────────
 
 export interface SlashCommand {
@@ -802,6 +846,12 @@ declare global {
         model?: string
         accountId?: string
       }) => Promise<PlannerAssistResult>
+
+      // Sprints (Scrum board / standups / burndown)
+      sprintList: () => Promise<Sprint[]>
+      sprintGet: (id: string) => Promise<Sprint | null>
+      sprintSave: (sprint: Sprint) => Promise<Sprint>
+      sprintDelete: (id: string) => Promise<Sprint[]>
 
       // Claude permissions & hooks
       getClaudePermissions: () => Promise<ClaudePermissions>

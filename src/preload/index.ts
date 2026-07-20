@@ -173,6 +173,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   plannerDelete: (weekStart: string) => ipcRenderer.invoke('planner:delete', weekStart),
   plannerAssist: (payload: unknown) => ipcRenderer.invoke('planner:assist', payload),
 
+  // Sprints (Scrum board / standups / burndown)
+  sprintList: () => ipcRenderer.invoke('sprint:list'),
+  sprintGet: (id: string) => ipcRenderer.invoke('sprint:get', id),
+  sprintSave: (sprint: unknown) => ipcRenderer.invoke('sprint:save', sprint),
+  sprintDelete: (id: string) => ipcRenderer.invoke('sprint:delete', id),
+
   // Claude permissions & hooks (edit ~/.claude/settings.json)
   getClaudePermissions: () => ipcRenderer.invoke('config:get-permissions'),
   setClaudePermissions: (perms: unknown) => ipcRenderer.invoke('config:set-permissions', perms),
