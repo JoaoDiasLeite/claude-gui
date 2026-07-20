@@ -233,6 +233,15 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
     return { total, done, remaining: total - done, count: items.length, byCol, pct }
   }, [active])
 
+  // Whole days from today (inclusive) to the sprint's end; 0 once the end has passed.
+  const daysLeft = useMemo(() => {
+    if (!active) return 0
+    const today = parseYmd(ymd(new Date()))
+    const end = parseYmd(active.endDate)
+    const diff = Math.round((end.getTime() - today.getTime()) / 86400000)
+    return Math.max(0, diff + 1)
+  }, [active])
+
   const editingItem = active?.items.find((i) => i.id === editingItemId) ?? null
 
   return (
@@ -289,6 +298,40 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
         </div>
       ) : (
         <div className="view-scroll sprint-scroll">
+          <div className="planner-stats sprint-stats">
+            <div className="stat-card">
+              <div className="stat-ico sched"><Spark /></div>
+              <div className="stat-body">
+                <div className="stat-value">{stats.total}</div>
+                <div className="stat-label">Total points</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <MiniRing pct={stats.pct} />
+              <div className="stat-body">
+                <div className="stat-value">
+                  {stats.done}
+                  <span className="stat-sub">/{stats.total || 0}</span>
+                </div>
+                <div className="stat-label">Points done</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-ico deep">↓</div>
+              <div className="stat-body">
+                <div className="stat-value">{stats.remaining}</div>
+                <div className="stat-label">Remaining</div>
+              </div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-ico days">{daysLeft}</div>
+              <div className="stat-body">
+                <div className="stat-value">{daysLeft === 1 ? '1 day' : `${daysLeft} days`}</div>
+                <div className="stat-label">{daysLeft === 0 ? 'Sprint ended' : 'Left in sprint'}</div>
+              </div>
+            </div>
+          </div>
+
           {active.goal?.trim() && (
             <div className="sprint-goal">
               <span className="planner-label">Sprint goal</span>
@@ -350,6 +393,8 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
               )
             })}
           </div>
+
+          <BurndownChart sprint={active} total={stats.total} />
 
           <StandupSection
             date={standupDate}
@@ -964,6 +1009,112 @@ function StandupReadRow({ label, text, tone }: { label: string; text: string; to
     <div className={`standup-read ${tone ?? ''}`}>
       <span className="standup-read-label">{label}</span>
       <p>{text}</p>
+    </div>
+  )
+}
+
+// ─── Burndown chart (hand-rolled SVG, no chart deps) ────────────────────────────
+function BurndownChart({ sprint, total }: { sprint: Sprint; total: number }) {
+  const data = useMemo(() => {
+    const start = parseYmd(sprint.startDate)
+    const end = parseYmd(sprint.endDate)
+    const rawDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1
+    const n = Math.max(2, Math.min(rawDays, 60)) // guard: at least 2 points, cap runaway ranges
+    const todayStr = ymd(new Date())
+
+    // Points completed on or before each day, using completedAt (or the sprint start for
+    // legacy done items that predate completedAt tracking).
+    const doneOnOrBefore = (dayStr: string): number =>
+      sprint.items
+        .filter((i) => i.status === 'done')
+        .filter((i) => {
+          const when = i.completedAt ? ymd(new Date(i.completedAt)) : sprint.startDate
+          return when <= dayStr
+        })
+        .reduce((sum, i) => sum + pointsOf(i), 0)
+
+    const days: string[] = []
+    const ideal: number[] = []
+    const actual: (number | null)[] = []
+    for (let i = 0; i < n; i++) {
+      const dayStr = addDays(sprint.startDate, i)
+      days.push(dayStr)
+      ideal.push(total - (total * i) / (n - 1))
+      // Only draw the actual line through today — the future is unknown.
+      actual.push(dayStr <= todayStr ? total - doneOnOrBefore(dayStr) : null)
+    }
+    return { n, days, ideal, actual }
+  }, [sprint, total])
+
+  if (total === 0) {
+    return (
+      <div className="burndown">
+        <span className="planner-label">Burndown</span>
+        <p className="burndown-empty">Add story points to items to see the sprint burndown.</p>
+      </div>
+    )
+  }
+
+  const W = 640
+  const H = 240
+  const padL = 34
+  const padR = 12
+  const padT = 14
+  const padB = 26
+  const maxY = total
+  const x = (i: number) => padL + (i / (data.n - 1)) * (W - padL - padR)
+  const y = (v: number) => padT + (1 - v / maxY) * (H - padT - padB)
+
+  const idealPts = data.ideal.map((v, i) => `${x(i)},${y(v)}`).join(' ')
+  const actualPairs = data.actual
+    .map((v, i) => (v === null ? null : { i, v }))
+    .filter((p): p is { i: number; v: number } => p !== null)
+  const actualPts = actualPairs.map((p) => `${x(p.i)},${y(p.v)}`).join(' ')
+
+  // A couple of y gridlines (0, half, full) and sparse x labels (start / mid / end).
+  const yTicks = [0, Math.round(total / 2), total]
+  const xLabelIdx = [0, Math.floor((data.n - 1) / 2), data.n - 1]
+
+  return (
+    <div className="burndown">
+      <div className="burndown-head">
+        <span className="planner-label">Burndown</span>
+        <div className="burndown-legend">
+          <span className="bd-key ideal">Ideal</span>
+          <span className="bd-key actual">Actual</span>
+        </div>
+      </div>
+      <svg className="burndown-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Sprint burndown chart">
+        {yTicks.map((t) => (
+          <g key={t}>
+            <line className="bd-grid" x1={padL} y1={y(t)} x2={W - padR} y2={y(t)} />
+            <text className="bd-axis" x={padL - 6} y={y(t) + 3} textAnchor="end">{t}</text>
+          </g>
+        ))}
+        {xLabelIdx.map((i) => (
+          <text key={i} className="bd-axis" x={x(i)} y={H - 8} textAnchor="middle">
+            {parseYmd(data.days[i]).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+          </text>
+        ))}
+        <polyline className="bd-line ideal" points={idealPts} />
+        {actualPts && <polyline className="bd-line actual" points={actualPts} />}
+        {actualPairs.map((p) => (
+          <circle key={p.i} className="bd-dot" cx={x(p.i)} cy={y(p.v)} r={2.6} />
+        ))}
+      </svg>
+    </div>
+  )
+}
+
+function MiniRing({ pct }: { pct: number }) {
+  const p = Math.max(0, Math.min(100, pct))
+  return (
+    <div className="mini-ring">
+      <svg viewBox="0 0 36 36" width="40" height="40">
+        <circle className="ring-bg" cx="18" cy="18" r="15.9" />
+        <circle className="ring-fg good" cx="18" cy="18" r="15.9" strokeDasharray={`${p}, 100`} transform="rotate(-90 18 18)" />
+      </svg>
+      <span className="mini-ring-num">{p}%</span>
     </div>
   )
 }
