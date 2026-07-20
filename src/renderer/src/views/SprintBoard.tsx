@@ -311,6 +311,8 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
                 {parseYmd(active.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                 {' · '}
                 {stats.done}/{stats.total} pts · {stats.count} items
+                {' · '}
+                {daysLeft === 0 ? 'sprint ended' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
               </p>
             </div>
           )}
@@ -381,13 +383,6 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
               <div className="stat-body">
                 <div className="stat-value">{stats.remaining}</div>
                 <div className="stat-label">Remaining</div>
-              </div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-ico days">{daysLeft}</div>
-              <div className="stat-body">
-                <div className="stat-value">{daysLeft === 1 ? '1 day' : `${daysLeft} days`}</div>
-                <div className="stat-label">{daysLeft === 0 ? 'Sprint ended' : 'Left in sprint'}</div>
               </div>
             </div>
           </div>

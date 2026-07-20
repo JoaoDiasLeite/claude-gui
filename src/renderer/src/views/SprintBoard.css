@@ -346,19 +346,12 @@
 
 /* ─── Metrics strip ─────────────────────────────────────────────────────────── */
 .sprint-stats {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
 }
-@media (max-width: 920px) {
+@media (max-width: 720px) {
   .sprint-stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr;
   }
-}
-.stat-ico.days {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--accent-hover);
-  font-size: 15px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ─── Burndown chart ─────────────────────────────────────────────────────────── */
