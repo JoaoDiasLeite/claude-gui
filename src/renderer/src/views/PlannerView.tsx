@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAccountStatus, ModelInfo, SavedReview } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
+import SprintBoard, { PlannerModeToggle, PlannerMode } from './SprintBoard'
 import './views.css'
 import './PlannerView.css'
 
@@ -77,6 +78,14 @@ const emptyWeek = (weekStart: string): WeekPlan => ({
 })
 
 export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask, streaming }: PlannerProps) {
+  // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
+  const [mode, setMode] = useState<PlannerMode>(
+    () => (localStorage.getItem('planner.mode') === 'sprint' ? 'sprint' : 'week')
+  )
+  const changeMode = (m: PlannerMode) => {
+    setMode(m)
+    localStorage.setItem('planner.mode', m)
+  }
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()))
   const [week, setWeek] = useState<WeekPlan>(() => emptyWeek(mondayOf(new Date())))
   const [loading, setLoading] = useState(true)
@@ -331,20 +340,37 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
     6
   ).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
 
+  // Sprint mode hands off entirely to the Scrum board (it owns its own header + toggle).
+  if (mode === 'sprint') {
+    return (
+      <SprintBoard
+        mode={mode}
+        onMode={changeMode}
+        accounts={accounts}
+        models={models}
+        defaultModel={defaultModel}
+        defaultAccountId={defaultAccountId}
+      />
+    )
+  }
+
   return (
     <div className="view">
       <div className="view-header planner-header">
-        <div>
-          <h1>Planner</h1>
-          <p className="view-sub">
-            Week of {rangeLabel}
-            {stats.total > 0 && (
-              <>
-                {' · '}
-                {stats.done}/{stats.total} done
-              </>
-            )}
-          </p>
+        <div className="planner-title-wrap">
+          <PlannerModeToggle mode={mode} onMode={changeMode} />
+          <div>
+            <h1>Planner</h1>
+            <p className="view-sub">
+              Week of {rangeLabel}
+              {stats.total > 0 && (
+                <>
+                  {' · '}
+                  {stats.done}/{stats.total} done
+                </>
+              )}
+            </p>
+          </div>
         </div>
         <div className="planner-header-actions">
           <div className="week-nav">

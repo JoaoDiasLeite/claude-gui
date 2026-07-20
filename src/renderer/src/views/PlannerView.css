@@ -3,6 +3,11 @@
   flex-wrap: wrap;
   gap: 12px;
 }
+.planner-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
 .planner-header-actions {
   display: flex;
   align-items: center;
