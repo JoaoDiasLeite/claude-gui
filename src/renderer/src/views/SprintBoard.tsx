@@ -14,6 +14,10 @@ interface SprintBoardProps {
   models: ModelInfo[]
   defaultModel: string
   defaultAccountId: string
+  /** Open a light chat seeded with the standup context (talk through the day). */
+  onStandupChat?: (context: string, opener: string, name: string) => void
+  /** Create a daily standup routine and jump to Routines. */
+  onScheduleStandup?: (name: string, prompt: string, projectPath?: string) => void
 }
 
 // ─── Date helpers (local time, never round-trip through UTC) ────────────────────
@@ -60,7 +64,7 @@ export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode:
   )
 }
 
-export default function SprintBoard({ mode, onMode, defaultModel, defaultAccountId }: SprintBoardProps) {
+export default function SprintBoard({ mode, onMode, defaultModel, defaultAccountId, onStandupChat, onScheduleStandup }: SprintBoardProps) {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -221,6 +225,25 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
       today: res.data.today ?? '',
       blockers: res.data.blockers ?? ''
     })
+  }
+
+  // Open a light chat to talk through the day, seeded with the standup + board context.
+  const discussStandup = () => {
+    if (!active) return
+    const context = buildStandupContext(active, standupFor(standupDate), standupDate)
+    onStandupChat?.(
+      context,
+      "Let's talk through my day. Help me prioritise what to focus on today and think through how to clear any blockers.",
+      `Standup chat · ${fmtDate(standupDate)}`
+    )
+  }
+
+  // One-click create a daily standup routine for this sprint, then jump to Routines.
+  const scheduleStandup = () => {
+    if (!active) return
+    const prompt =
+      'Write my daily standup for today. Review my git commits from the last day in this project and summarise them, then produce three short sections — Yesterday (what got done), Today (what I plan to work on, inferred from recent/in-progress work), and Blockers (anything evident, otherwise say none). Be concise and concrete.'
+    onScheduleStandup?.(`Daily standup — ${active.name}`, prompt, active.projectPath)
   }
 
   // ─── Metrics ──────────────────────────────────────────────────────────────
@@ -408,6 +431,8 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
             genBusy={genBusy}
             genError={genError}
             hasProject={!!active.projectPath}
+            onDiscuss={onStandupChat ? discussStandup : undefined}
+            onSchedule={onScheduleStandup ? scheduleStandup : undefined}
           />
         </div>
       )}
@@ -851,6 +876,8 @@ function StandupSection(props: {
   genBusy: boolean
   genError: string | null
   hasProject: boolean
+  onDiscuss?: () => void
+  onSchedule?: () => void
 }) {
   const today = ymd(new Date())
   const s = props.standup
@@ -875,6 +902,24 @@ function StandupSection(props: {
           {!isToday && (
             <button className="btn-ghost" onClick={() => props.onDate(today)}>
               Today
+            </button>
+          )}
+          {props.onDiscuss && (
+            <button
+              className="assist-btn"
+              onClick={props.onDiscuss}
+              title="Talk through your day with Claude in a light chat (no repo access)"
+            >
+              <ChatIcon /> Discuss
+            </button>
+          )}
+          {props.onSchedule && (
+            <button
+              className="assist-btn"
+              onClick={props.onSchedule}
+              title="Create a daily standup routine (opens Routines to review and enable)"
+            >
+              <ClockIcon /> Schedule
             </button>
           )}
           <button
@@ -1134,4 +1179,46 @@ function Spark() {
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
     </svg>
   )
+}
+
+function ChatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+    </svg>
+  )
+}
+
+function ClockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </svg>
+  )
+}
+
+// Serialize the current standup + board into a compact context block for the discuss chat.
+function buildStandupContext(sprint: Sprint, standup: DailyStandup, date: string): string {
+  const lines: string[] = [
+    `You are helping me (a developer) talk through my day. Here is my current sprint and standup — keep answers concise and practical.`,
+    '',
+    `Sprint: ${sprint.name}`
+  ]
+  if (sprint.goal?.trim()) lines.push(`Goal: ${sprint.goal.trim()}`)
+  lines.push('', `Standup for ${date}:`)
+  lines.push(`  Yesterday: ${standup.yesterday.trim() || '(empty)'}`)
+  lines.push(`  Today: ${standup.today.trim() || '(empty)'}`)
+  lines.push(`  Blockers: ${standup.blockers.trim() || '(none)'}`)
+  lines.push('', 'Sprint board:')
+  const section = (st: ItemStatus, label: string) => {
+    const rows = sprint.items.filter((i) => i.status === st)
+    if (!rows.length) return
+    lines.push(`  ${label}:`)
+    for (const i of rows) lines.push(`    - ${i.title}${pointsOf(i) ? ` (${pointsOf(i)}p)` : ''}`)
+  }
+  section('in-progress', 'In progress')
+  section('todo', 'To do')
+  section('done', 'Done')
+  return lines.join('\n')
 }

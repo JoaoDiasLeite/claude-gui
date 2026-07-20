@@ -13,6 +13,10 @@ interface PlannerProps {
   defaultModel: string
   defaultAccountId: string
   onRunTask?: (task: PlannerTask) => void
+  /** Open a light chat seeded with the given context (used by the sprint standup). */
+  onStandupChat?: (context: string, opener: string, name: string) => void
+  /** Create a daily standup routine and jump to Routines. */
+  onScheduleStandup?: (name: string, prompt: string, projectPath?: string) => void
   streaming?: boolean
 }
 
@@ -77,7 +81,7 @@ const emptyWeek = (weekStart: string): WeekPlan => ({
   updatedAt: Date.now()
 })
 
-export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask, streaming }: PlannerProps) {
+export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask, onStandupChat, onScheduleStandup, streaming }: PlannerProps) {
   // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
   const [mode, setMode] = useState<PlannerMode>(
     () => (localStorage.getItem('planner.mode') === 'sprint' ? 'sprint' : 'week')
@@ -350,6 +354,8 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
         models={models}
         defaultModel={defaultModel}
         defaultAccountId={defaultAccountId}
+        onStandupChat={onStandupChat}
+        onScheduleStandup={onScheduleStandup}
       />
     )
   }

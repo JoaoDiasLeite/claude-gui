@@ -15,7 +15,8 @@ import {
   CCAccountStatus,
   PlannerTask,
   UsageLimits,
-  PlanUsageReport
+  PlanUsageReport,
+  ScheduledRun
 } from './types'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
@@ -969,6 +970,55 @@ export default function App() {
     window.electronAPI.sendAgent(buildAgentPayload(s, prompt))
   }
 
+  // Sprint standup → "Discuss" opens a light (tools-off) chat seeded with the day's
+  // standup + board as system context, so it's a cheap talk-it-through session that
+  // can't touch the repo. Mirrors runPlannerTask's spawn-and-fire flow.
+  const startStandupChat = useCallback(
+    (context: string, opener: string, name: string) => {
+      if (!ready) {
+        addTerm({ kind: 'error', text: 'Not authenticated — cannot start chat.' })
+        return
+      }
+      const s = newSession(undefined, defaultModel, defaultAccountId)
+      s.name = name
+      s.lightMode = true
+      s.systemPrompt = context
+      const userMsg: Message = { id: generateId(), role: 'user', content: opener, timestamp: Date.now() }
+      const assistantMsg: Message = { id: generateId(), role: 'assistant', content: '', toolCalls: [], timestamp: Date.now() }
+      s.messages = [userMsg, assistantMsg]
+      setSessions((prev) => [s, ...prev])
+      setActiveId(s.id)
+      setView('chat')
+      startRun(s.id)
+      setTerminalOpen(true)
+      addTermFor(s.id, { kind: 'user', text: opener.slice(0, 120) })
+      window.electronAPI.sendAgent(buildAgentPayload(s, opener))
+    },
+    [ready, defaultModel, defaultAccountId, startRun, addTerm, addTermFor, buildAgentPayload]
+  )
+
+  // Sprint standup → "Schedule" one-click creates a daily standup routine (read-only,
+  // starts disabled) and jumps to Routines so the user can review and enable it.
+  const createStandupRoutine = useCallback(
+    async (name: string, prompt: string, projectPath?: string) => {
+      const run: ScheduledRun = {
+        id: generateId(),
+        name,
+        prompt,
+        model: defaultModel,
+        projectPath,
+        accountId: defaultAccountId,
+        cadence: { kind: 'daily', time: '09:00' },
+        enabled: false,
+        createdAt: Date.now(),
+        toolAccess: 'read-only'
+      }
+      await window.electronAPI.schedulerUpsert(run)
+      setView('scheduled')
+    },
+    [defaultModel, defaultAccountId]
+  )
+
   // Rooms view: deploy an agent into a room (project folder) with a first prompt.
   // Builds the session exactly like runAgent does (agent's run options carried onto the
   // session) but — unlike runAgent — immediately fires the prompt, and stays on the Rooms
@@ -1248,6 +1298,8 @@ export default function App() {
               defaultModel={defaultModel}
               defaultAccountId={defaultAccountId}
               onRunTask={runPlannerTask}
+              onStandupChat={startStandupChat}
+              onScheduleStandup={createStandupRoutine}
             />
           )}
           {view === 'scheduled' && (
