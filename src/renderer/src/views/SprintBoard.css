@@ -160,6 +160,20 @@
 .sprint-status-dot.active { background: var(--success); box-shadow: 0 0 6px color-mix(in srgb, var(--success) 60%, transparent); }
 .sprint-status-dot.completed { background: var(--accent); }
 
+/* ─── Section tabs ─────────────────────────────────────────────────────────── */
+.seg-control.sprint-tabs {
+  align-self: flex-start;
+}
+.seg-control.sprint-tabs button {
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.seg-control.sprint-tabs button.on {
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+}
+
 /* ─── Scroll + goal ─────────────────────────────────────────────────────────── */
 .sprint-scroll {
   display: flex;

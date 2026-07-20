@@ -6,6 +6,7 @@ import './PlannerView.css'
 import './SprintBoard.css'
 
 export type PlannerMode = 'week' | 'sprint'
+type SprintSection = 'board' | 'standup' | 'burndown'
 
 interface SprintBoardProps {
   mode: PlannerMode
@@ -74,6 +75,16 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
   const [sprintModal, setSprintModal] = useState<'new' | 'edit' | null>(null)
   const [backfillOpen, setBackfillOpen] = useState(false)
   const [standupDate, setStandupDate] = useState(() => ymd(new Date()))
+  // Which section of the sprint is shown — persisted like the Week/Sprint mode.
+  const [section, setSection] = useState<SprintSection>(
+    () => (['board', 'standup', 'burndown'].includes(localStorage.getItem('sprint.section') || '')
+      ? (localStorage.getItem('sprint.section') as SprintSection)
+      : 'board')
+  )
+  const changeSection = (s: SprintSection) => {
+    setSection(s)
+    localStorage.setItem('sprint.section', s)
+  }
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -388,7 +399,17 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
             </div>
           )}
 
+          {/* Section tabs — keep the scroll focused on one thing at a time. */}
+          <div className="seg-control sprint-tabs">
+            {(['board', 'standup', 'burndown'] as SprintSection[]).map((s) => (
+              <button key={s} className={section === s ? 'on' : ''} onClick={() => changeSection(s)}>
+                {s === 'board' ? 'Board' : s === 'standup' ? 'Standup' : 'Burndown'}
+              </button>
+            ))}
+          </div>
+
           {/* Kanban board */}
+          {section === 'board' && (
           <div className="sprint-board">
             {COLUMNS.map((col) => {
               const colItems = stats.byCol(col.status)
@@ -442,9 +463,11 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
               )
             })}
           </div>
+          )}
 
-          <BurndownChart sprint={active} total={stats.total} />
+          {section === 'burndown' && <BurndownChart sprint={active} total={stats.total} />}
 
+          {section === 'standup' && (
           <StandupSection
             date={standupDate}
             onDate={setStandupDate}
@@ -460,6 +483,7 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
             onDiscuss={onStandupChat ? discussStandup : undefined}
             onSchedule={onScheduleStandup ? scheduleStandup : undefined}
           />
+          )}
         </div>
       )}
 
