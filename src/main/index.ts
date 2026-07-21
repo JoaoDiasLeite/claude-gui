@@ -2,9 +2,8 @@ import { app, BrowserWindow, ipcMain, dialog, Notification, globalShortcut } fro
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
-import { sdkExecutable } from './sdk-exe'
 import { resolvePolicy } from './ai-policy'
-import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
+import { getEngine } from './providers/registry'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -180,24 +179,6 @@ function resolveApprovalEverywhere(approvalId: string): void {
   sendToMainWindow('approval:resolved', approvalId)
   sendToToast('approval:resolved', approvalId)
   if (toastApprovals.size === 0) hideToast()
-}
-
-// The Agent SDK ships as ESM only. The main process is bundled to CommonJS, so a
-// static require() fails. Load it through a real dynamic import() that the bundler
-// can't rewrite to require() (hidden behind a Function constructor).
-const dynamicImport = new Function('specifier', 'return import(specifier)') as (
-  s: string
-) => Promise<unknown>
-
-let queryFn: typeof QueryFn | null = null
-async function getQuery(): Promise<typeof QueryFn> {
-  if (!queryFn) {
-    const mod = (await dynamicImport('@anthropic-ai/claude-agent-sdk')) as {
-      query: typeof QueryFn
-    }
-    queryFn = mod.query
-  }
-  return queryFn
 }
 
 const sessionsDir = path.join(app.getPath('userData'), 'sessions')
@@ -723,26 +704,22 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // failures (set in the catch / cleared on the normal completion path).
   let runErrored = false
   try {
-    const query = await getQuery()
-    const stream = query({
+    const stream = getEngine().run({
       prompt: buildPrompt(prompt, payload.images, payload.files, claudeSessionId ?? '') as string,
-      options: {
-        ...sdkExecutable(),
-        model: policy.model,
-        cwd,
-        env,
-        abortController: abort,
-        includePartialMessages: true,
-        settingSources: policy.settingSources,
-        permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',
-        ...(canUseTool ? { canUseTool } : {}),
-        ...(payload.systemPrompt ? { systemPrompt: payload.systemPrompt } : {}),
-        ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
-        ...(mcpServers && Object.keys(mcpServers).length
-          ? { mcpServers: mcpServers as Record<string, never> }
-          : {}),
-        ...(claudeSessionId ? { resume: claudeSessionId } : {})
-      }
+      model: policy.model,
+      cwd,
+      env,
+      abortController: abort,
+      includePartialMessages: true,
+      settingSources: policy.settingSources,
+      permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',
+      ...(canUseTool ? { canUseTool } : {}),
+      ...(payload.systemPrompt ? { systemPrompt: payload.systemPrompt } : {}),
+      ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
+      ...(mcpServers && Object.keys(mcpServers).length
+        ? { mcpServers: mcpServers as Record<string, never> }
+        : {}),
+      ...(claudeSessionId ? { resume: claudeSessionId } : {})
     })
 
     let capturedSessionId = claudeSessionId
@@ -1023,17 +1000,13 @@ ipcMain.handle(
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     const prompt = `Summarize the following conversation so it can seed a fresh session with minimal tokens while preserving everything needed to continue. Write a dense, structured brief (markdown) covering: the goal/task, key decisions and constraints, current state, important file paths or identifiers, and open next steps. Omit chit-chat. Output ONLY the summary.\n\n=== CONVERSATION ===\n${payload.transcript}`
     try {
-      const query = await getQuery()
-      const stream = query({
+      const stream = getEngine().run({
         prompt,
-        options: {
-          ...sdkExecutable(),
-          ...policy,
-          cwd: os.homedir(),
-          env,
-          abortController: abort,
-          permissionMode: 'bypassPermissions'
-        }
+        ...policy,
+        cwd: os.homedir(),
+        env,
+        abortController: abort,
+        permissionMode: 'bypassPermissions'
       })
       let text = ''
       let isError = false
@@ -1237,17 +1210,13 @@ ipcMain.handle(
     }
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     try {
-      const query = await getQuery()
-      const stream = query({
+      const stream = getEngine().run({
         prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, undefined, '') as string,
-        options: {
-          ...sdkExecutable(),
-          ...policy,
-          cwd: os.homedir(),
-          env,
-          abortController: abort,
-          permissionMode: 'bypassPermissions'
-        }
+        ...policy,
+        cwd: os.homedir(),
+        env,
+        abortController: abort,
+        permissionMode: 'bypassPermissions'
       })
 
       let text = ''
@@ -1338,17 +1307,13 @@ ipcMain.handle(
       /* git is best-effort context — a failure just means no commits in the digest */
     }
     try {
-      const query = await getQuery()
-      const stream = query({
+      const stream = getEngine().run({
         prompt: buildPrompt(buildStandupPrompt(payload.date, commits, payload.boardSummary), undefined, undefined, '') as string,
-        options: {
-          ...sdkExecutable(),
-          ...policy,
-          cwd: os.homedir(),
-          env,
-          abortController: abort,
-          permissionMode: 'bypassPermissions'
-        }
+        ...policy,
+        cwd: os.homedir(),
+        env,
+        abortController: abort,
+        permissionMode: 'bypassPermissions'
       })
       let text = ''
       let costUsd = 0
@@ -1492,18 +1457,14 @@ ipcMain.handle(
       mcpServerNames: Object.keys(mcpServers)
     })
     try {
-      const query = await getQuery()
-      const stream = query({
+      const stream = getEngine().run({
         prompt: buildPrompt(promptText, undefined, undefined, '') as string,
-        options: {
-          ...sdkExecutable(),
-          ...policy,
-          cwd: payload.projectPath || os.homedir(),
-          env,
-          abortController: abort,
-          permissionMode: 'bypassPermissions',
-          mcpServers: mcpServers as Record<string, never>
-        }
+        ...policy,
+        cwd: payload.projectPath || os.homedir(),
+        env,
+        abortController: abort,
+        permissionMode: 'bypassPermissions',
+        mcpServers: mcpServers as Record<string, never>
       })
       let text = ''
       let costUsd = 0
@@ -1657,17 +1618,13 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
   try {
     const { digest } = buildHistoryDigest()
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: 'claude-haiku-4-5' })
-    const query = await getQuery()
-    const stream = query({
+    const stream = getEngine().run({
       prompt: buildAgentSuggestPrompt(digest),
-      options: {
-        ...sdkExecutable(),
-        ...policy,
-        cwd: os.homedir(),
-        env,
-        abortController: abort,
-        permissionMode: 'bypassPermissions'
-      }
+      ...policy,
+      cwd: os.homedir(),
+      env,
+      abortController: abort,
+      permissionMode: 'bypassPermissions'
     })
 
     let text = ''

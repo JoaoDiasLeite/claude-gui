@@ -2,12 +2,11 @@ import { app, Notification } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
-import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import { buildSubprocessEnv } from './auth'
 import { accountConfigDir } from './accounts'
-import { sdkExecutable } from './sdk-exe'
 import { readJsonFile } from './json-file'
 import { resolvePolicy } from './ai-policy'
+import { getEngine } from './providers/registry'
 
 // ─── Data model ────────────────────────────────────────────────────────────
 
@@ -237,24 +236,6 @@ export function computeNextRun(run: ScheduledRun, fromTime: number): number {
   return fromTime + 60 * 60 * 1000
 }
 
-// ─── SDK loading (mirrors index.ts pattern) ──────────────────────────────────
-
-const dynamicImport = new Function('specifier', 'return import(specifier)') as (
-  s: string
-) => Promise<unknown>
-
-let queryFn: typeof QueryFn | null = null
-
-async function getQuery(): Promise<typeof QueryFn> {
-  if (!queryFn) {
-    const mod = (await dynamicImport('@anthropic-ai/claude-agent-sdk')) as {
-      query: typeof QueryFn
-    }
-    queryFn = mod.query
-  }
-  return queryFn
-}
-
 // ─── Headless execution ────────────────────────────────────────────────────
 
 const MAX_SUMMARY = 4000
@@ -263,8 +244,6 @@ const MAX_SUMMARY = 4000
 const HEADLESS_TIMEOUT_MS = 30 * 60 * 1000
 
 async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summary: string; costUsd: number }> {
-  const query = await getQuery()
-
   const cwd = run.projectPath && fs.existsSync(run.projectPath) ? run.projectPath : os.homedir()
 
   const env = buildSubprocessEnv()
@@ -296,8 +275,8 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
   })
 
   try {
-    const streamOptions: Parameters<typeof query>[0]['options'] = {
-      ...sdkExecutable(),
+    const stream = getEngine().run({
+      prompt: run.prompt,
       ...policy,
       cwd,
       env,
@@ -307,9 +286,7 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
       // tools from context entirely — they cannot be invoked even under bypassPermissions.
       permissionMode: 'bypassPermissions',
       includePartialMessages: false
-    }
-
-    const stream = query({ prompt: run.prompt, options: streamOptions })
+    })
 
     for await (const message of stream) {
       if ((message as any).type === 'assistant') {
