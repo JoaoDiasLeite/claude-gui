@@ -1,12 +1,14 @@
 import type { AiEngine } from './types'
 import { claudeEngine } from './claude'
+import { codexEngine } from './codex'
+import { geminiEngine } from './gemini'
 
-/**
- * Engine registry. B2 wires only Claude; B3/B4 register OpenAI and Gemini here
- * so `getEngine(providerId)` returns the right adapter with no call-site change.
- */
+/** Engine registry — `getEngine(providerId)` returns the right adapter with no
+ * call-site change. */
 const engines: Record<string, AiEngine> = {
-  [claudeEngine.id]: claudeEngine
+  [claudeEngine.id]: claudeEngine,
+  [codexEngine.id]: codexEngine,
+  [geminiEngine.id]: geminiEngine
 }
 
 /** The default engine when a call site doesn't specify a provider. */

@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   accountsSetDefault: (id: string) => ipcRenderer.invoke('accounts:set-default', id),
   accountsLogin: (id: string) => ipcRenderer.invoke('accounts:login', id),
 
+  // Agent CLI login status (Codex / Gemini)
+  agentCliStatus: (id: string) => ipcRenderer.invoke('agentcli:status', id),
+  agentCliLogin: (id: string) => ipcRenderer.invoke('agentcli:login', id),
+
   // Agent
   sendAgent: (payload: unknown) => ipcRenderer.send('agent:send', payload),
   stopAgent: (appSessionId: string) => ipcRenderer.invoke('agent:stop', appSessionId),

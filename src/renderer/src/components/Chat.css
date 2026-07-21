@@ -151,6 +151,13 @@
 .approve-toggle.auto:hover {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
+.approve-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.approve-toggle:disabled:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
 
 .attachments {
   display: flex;

@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
 import { resolvePolicy } from './ai-policy'
 import { getEngine } from './providers/registry'
+import { collectText } from './providers/collect'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -17,7 +18,7 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, MODELS, UsageLimits, UiPrefs, SystemPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, MODELS, UsageLimits, UiPrefs, SystemPrefs } from './config'
 import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
 import {
   listMcpServers,
@@ -60,6 +61,7 @@ import {
   setDefaultAccount,
   loginAccount
 } from './accounts'
+import { checkAgentCliStatus, loginAgentCli, AgentCliId } from './agent-clis'
 import {
   listScheduledRuns,
   upsertScheduledRun,
@@ -134,6 +136,14 @@ function routeLaunchAction(action: LaunchAction | null): void {
 
 // In-flight agent runs keyed by app session id, so we can stop them.
 const activeRuns = new Map<string, AbortController>()
+
+// The provider that last ran each app session. A resume token is provider-specific
+// (a Claude session id ≠ a Codex thread id ≠ a Gemini session id), so if a session
+// switches provider mid-conversation we must NOT feed the old provider's token to
+// the new engine — we start it fresh instead. (Reload-then-immediately-switch can't
+// be detected here since the token's origin provider isn't persisted; that rare
+// case falls back to the engine rejecting an unknown token.)
+const sessionProvider = new Map<string, string>()
 
 // True while the main window is destroyed/hidden/minimized/unfocused. When a run
 // needs attention (approval, completion) in this state we surface it out-of-window
@@ -497,6 +507,11 @@ ipcMain.handle('accounts:remove', (_, id: string) => removeAccount(id))
 ipcMain.handle('accounts:set-default', (_, id: string) => setDefaultAccount(id))
 ipcMain.handle('accounts:login', (_, id: string) => loginAccount(id))
 
+// ─── Agent CLI login status (Codex / Gemini) ─────────────────────────────────
+
+ipcMain.handle('agentcli:status', (_, id: AgentCliId) => checkAgentCliStatus(id))
+ipcMain.handle('agentcli:login', (_, id: AgentCliId) => loginAgentCli(id))
+
 // ─── Agent run ─────────────────────────────────────────────────────────────
 
 interface SendPayload {
@@ -700,11 +715,18 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       }
     : undefined
 
+  // Drop a resume token that belongs to a different provider than this run targets.
+  const providerId = providerFor(policy.model)
+  const prevProvider = sessionProvider.get(appSessionId)
+  const resumeToken =
+    claudeSessionId && (!prevProvider || prevProvider === providerId) ? claudeSessionId : undefined
+  sessionProvider.set(appSessionId, providerId)
+
   // Whether the run ended in error, so the pill's grace period can be longer for
   // failures (set in the catch / cleared on the normal completion path).
   let runErrored = false
   try {
-    const stream = getEngine().run({
+    const stream = getEngine(providerId).run({
       prompt: buildPrompt(prompt, payload.images, payload.files, claudeSessionId ?? '') as string,
       model: policy.model,
       cwd,
@@ -719,100 +741,80 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       ...(mcpServers && Object.keys(mcpServers).length
         ? { mcpServers: mcpServers as Record<string, never> }
         : {}),
-      ...(claudeSessionId ? { resume: claudeSessionId } : {})
+      ...(resumeToken ? { resume: resumeToken } : {})
     })
 
     let capturedSessionId = claudeSessionId
 
     for await (const message of stream) {
-      // Capture the Claude Code session id for resume.
-      if ('session_id' in message && message.session_id) {
-        capturedSessionId = message.session_id as string
-      }
-
       switch (message.type) {
-        case 'system': {
-          const m = message as unknown as { subtype?: string; tools?: string[] }
-          if (m.subtype === 'init') {
-            send('agent:event', {
-              appSessionId,
-              kind: 'system',
-              claudeSessionId: capturedSessionId,
-              tools: m.tools ?? []
-            })
-          }
+        case 'init': {
+          if (message.sessionId) capturedSessionId = message.sessionId
+          send('agent:event', {
+            appSessionId,
+            kind: 'system',
+            claudeSessionId: capturedSessionId,
+            tools: message.tools
+          })
           break
         }
 
-        case 'stream_event': {
-          const ev = (message as unknown as { event?: any }).event
-          if (!ev) break
-          if (ev.type === 'content_block_delta') {
-            if (ev.delta?.type === 'text_delta') {
-              send('agent:event', { appSessionId, kind: 'text', content: ev.delta.text })
-            } else if (ev.delta?.type === 'thinking_delta') {
-              send('agent:event', { appSessionId, kind: 'thinking', content: ev.delta.thinking })
-            }
-          }
+        case 'text-delta': {
+          send('agent:event', { appSessionId, kind: 'text', content: message.text })
           break
         }
 
-        case 'assistant': {
-          const content = (message as any).message?.content ?? []
-          for (const block of content) {
-            if (block.type === 'tool_use') {
-              send('agent:event', {
-                appSessionId,
-                kind: 'tool-use',
-                tool: block.name,
-                input: block.input,
-                toolId: block.id
-              })
-              // Cheap live status for the pill; the hidden window just ignores it.
-              sendToPill('pill:update', { state: 'running', tool: block.name })
-            }
-          }
+        case 'thinking-delta': {
+          send('agent:event', { appSessionId, kind: 'thinking', content: message.text })
           break
         }
 
-        case 'user': {
-          const content = (message as any).message?.content ?? []
-          for (const block of content) {
-            if (block.type === 'tool_result') {
-              const text =
-                typeof block.content === 'string'
-                  ? block.content
-                  : Array.isArray(block.content)
-                    ? block.content.map((c: any) => c.text ?? '').join('')
-                    : ''
-              send('agent:event', {
-                appSessionId,
-                kind: 'tool-result',
-                toolId: block.tool_use_id,
-                content: text.slice(0, 50000),
-                isError: !!block.is_error
-              })
-            }
-          }
+        case 'tool-use': {
+          send('agent:event', {
+            appSessionId,
+            kind: 'tool-use',
+            tool: message.name,
+            input: message.input,
+            toolId: message.id
+          })
+          // Cheap live status for the pill; the hidden window just ignores it.
+          sendToPill('pill:update', { state: 'running', tool: message.name })
+          break
+        }
+
+        case 'tool-result': {
+          send('agent:event', {
+            appSessionId,
+            kind: 'tool-result',
+            toolId: message.toolUseId,
+            content: message.content,
+            isError: message.isError
+          })
           break
         }
 
         case 'result': {
-          const m = message as any
+          if (message.sessionId) capturedSessionId = message.sessionId
           // Cue the taskbar if the user has stepped away while this run finished.
-          flagAttention(m.subtype !== 'success' ? 'error' : 'success')
-          sendToPill('pill:update', { state: m.subtype !== 'success' ? 'error' : 'done' })
+          flagAttention(message.isError ? 'error' : 'success')
+          sendToPill('pill:update', { state: message.isError ? 'error' : 'done' })
           send('agent:done', {
             appSessionId,
             claudeSessionId: capturedSessionId,
-            costUsd: m.total_cost_usd ?? 0,
-            isError: m.subtype !== 'success',
-            errorText: m.subtype !== 'success' ? m.result ?? m.subtype : undefined,
-            inputTokens: m.usage?.input_tokens ?? 0,
-            outputTokens: m.usage?.output_tokens ?? 0,
-            cacheReadTokens: m.usage?.cache_read_input_tokens ?? 0,
-            cacheCreationTokens: m.usage?.cache_creation_input_tokens ?? 0
+            costUsd: message.costUsd,
+            isError: message.isError,
+            errorText: message.errorText,
+            inputTokens: message.usage.inputTokens,
+            outputTokens: message.usage.outputTokens,
+            cacheReadTokens: message.usage.cacheReadTokens,
+            cacheCreationTokens: message.usage.cacheCreationTokens
           })
+          break
+        }
+
+        case 'error': {
+          flagAttention('error')
+          send('agent:error', { appSessionId, error: message.message })
           break
         }
       }
@@ -1000,7 +1002,7 @@ ipcMain.handle(
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     const prompt = `Summarize the following conversation so it can seed a fresh session with minimal tokens while preserving everything needed to continue. Write a dense, structured brief (markdown) covering: the goal/task, key decisions and constraints, current state, important file paths or identifiers, and open next steps. Omit chit-chat. Output ONLY the summary.\n\n=== CONVERSATION ===\n${payload.transcript}`
     try {
-      const stream = getEngine().run({
+      const stream = getEngine(providerFor(policy.model)).run({
         prompt,
         ...policy,
         cwd: os.homedir(),
@@ -1008,22 +1010,7 @@ ipcMain.handle(
         abortController: abort,
         permissionMode: 'bypassPermissions'
       })
-      let text = ''
-      let isError = false
-      let errorText: string | undefined
-      for await (const message of stream) {
-        if (message.type === 'assistant') {
-          for (const block of (message as any).message?.content ?? []) {
-            if (block.type === 'text') text += block.text
-          }
-        } else if (message.type === 'result') {
-          const m = message as any
-          if (m.subtype !== 'success') {
-            isError = true
-            errorText = m.result ?? m.subtype
-          }
-        }
-      }
+      const { text, isError, errorText } = await collectText(stream)
       if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.' }
       return { ok: true as const, summary: text.trim() }
     } catch (err: unknown) {
@@ -1210,7 +1197,7 @@ ipcMain.handle(
     }
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     try {
-      const stream = getEngine().run({
+      const stream = getEngine(providerFor(policy.model)).run({
         prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, undefined, '') as string,
         ...policy,
         cwd: os.homedir(),
@@ -1219,25 +1206,7 @@ ipcMain.handle(
         permissionMode: 'bypassPermissions'
       })
 
-      let text = ''
-      let costUsd = 0
-      let isError = false
-      let errorText: string | undefined
-      for await (const message of stream) {
-        if (message.type === 'assistant') {
-          const content = (message as any).message?.content ?? []
-          for (const block of content) {
-            if (block.type === 'text') text += block.text
-          }
-        } else if (message.type === 'result') {
-          const m = message as any
-          costUsd = m.total_cost_usd ?? 0
-          if (m.subtype !== 'success') {
-            isError = true
-            errorText = m.result ?? m.subtype
-          }
-        }
-      }
+      const { text, costUsd, isError, errorText } = await collectText(stream)
 
       if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
       try {
@@ -1307,7 +1276,7 @@ ipcMain.handle(
       /* git is best-effort context — a failure just means no commits in the digest */
     }
     try {
-      const stream = getEngine().run({
+      const stream = getEngine(providerFor(policy.model)).run({
         prompt: buildPrompt(buildStandupPrompt(payload.date, commits, payload.boardSummary), undefined, undefined, '') as string,
         ...policy,
         cwd: os.homedir(),
@@ -1315,25 +1284,7 @@ ipcMain.handle(
         abortController: abort,
         permissionMode: 'bypassPermissions'
       })
-      let text = ''
-      let costUsd = 0
-      let isError = false
-      let errorText: string | undefined
-      for await (const message of stream) {
-        if (message.type === 'assistant') {
-          const content = (message as any).message?.content ?? []
-          for (const block of content) {
-            if (block.type === 'text') text += block.text
-          }
-        } else if (message.type === 'result') {
-          const m = message as any
-          costUsd = m.total_cost_usd ?? 0
-          if (m.subtype !== 'success') {
-            isError = true
-            errorText = m.result ?? m.subtype
-          }
-        }
-      }
+      const { text, costUsd, isError, errorText } = await collectText(stream)
       if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd, commitCount: commits.length }
       try {
         const data = extractJson(text)
@@ -1457,34 +1408,16 @@ ipcMain.handle(
       mcpServerNames: Object.keys(mcpServers)
     })
     try {
-      const stream = getEngine().run({
+      const stream = getEngine(providerFor(policy.model)).run({
         prompt: buildPrompt(promptText, undefined, undefined, '') as string,
         ...policy,
         cwd: payload.projectPath || os.homedir(),
         env,
         abortController: abort,
         permissionMode: 'bypassPermissions',
-        mcpServers: mcpServers as Record<string, never>
+        mcpServers: mcpServers as Record<string, unknown>
       })
-      let text = ''
-      let costUsd = 0
-      let isError = false
-      let errorText: string | undefined
-      for await (const message of stream) {
-        if (message.type === 'assistant') {
-          const content = (message as any).message?.content ?? []
-          for (const block of content) {
-            if (block.type === 'text') text += block.text
-          }
-        } else if (message.type === 'result') {
-          const m = message as any
-          costUsd = m.total_cost_usd ?? 0
-          if (m.subtype !== 'success') {
-            isError = true
-            errorText = m.result ?? m.subtype
-          }
-        }
-      }
+      const { text, costUsd, isError, errorText } = await collectText(stream)
       if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
       try {
         const data = extractJson(text)
@@ -1618,7 +1551,7 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
   try {
     const { digest } = buildHistoryDigest()
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: 'claude-haiku-4-5' })
-    const stream = getEngine().run({
+    const stream = getEngine(providerFor(policy.model)).run({
       prompt: buildAgentSuggestPrompt(digest),
       ...policy,
       cwd: os.homedir(),
@@ -1627,25 +1560,7 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
       permissionMode: 'bypassPermissions'
     })
 
-    let text = ''
-    let costUsd = 0
-    let isError = false
-    let errorText: string | undefined
-    for await (const message of stream) {
-      if (message.type === 'assistant') {
-        const content = (message as any).message?.content ?? []
-        for (const block of content) {
-          if (block.type === 'text') text += block.text
-        }
-      } else if (message.type === 'result') {
-        const m = message as any
-        costUsd = m.total_cost_usd ?? 0
-        if (m.subtype !== 'success') {
-          isError = true
-          errorText = m.result ?? m.subtype
-        }
-      }
-    }
+    const { text, costUsd, isError, errorText } = await collectText(stream)
 
     if (isError) return { ok: false as const, error: errorText || 'Claude returned an error.', costUsd }
     try {

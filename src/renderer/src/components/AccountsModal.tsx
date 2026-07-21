@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CCAccountStatus } from '../types'
+import { AgentCliStatus, CCAccountStatus } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
 import './AccountsModal.css'
 
@@ -9,6 +9,8 @@ interface Props {
   onChanged: () => void
 }
 
+const AGENT_CLI_LABEL: Record<AgentCliStatus['id'], string> = { codex: 'Codex', gemini: 'Gemini' }
+
 export default function AccountsModal({ onClose, onChanged }: Props) {
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultId, setDefaultId] = useState('default')
@@ -17,6 +19,8 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [loginCmd, setLoginCmd] = useState<{ id: string; command: string } | null>(null)
+  const [cliStatuses, setCliStatuses] = useState<AgentCliStatus[]>([])
+  const [cliLoginCmd, setCliLoginCmd] = useState<{ id: string; command: string } | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
@@ -27,8 +31,22 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
     onChanged()
   }
 
+  const refreshCliStatuses = async () => {
+    const [codex, gemini] = await Promise.all([
+      window.electronAPI.agentCliStatus('codex'),
+      window.electronAPI.agentCliStatus('gemini')
+    ])
+    setCliStatuses([codex, gemini])
+  }
+
+  const loginCli = async (id: AgentCliStatus['id']) => {
+    const res = await window.electronAPI.agentCliLogin(id)
+    setCliLoginCmd({ id, command: res.command })
+  }
+
   useEffect(() => {
     refresh()
+    refreshCliStatuses()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -90,7 +108,7 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h3 id="accounts-modal-title">Claude accounts</h3>
+          <h3 id="accounts-modal-title">Accounts</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" />
@@ -194,6 +212,60 @@ export default function AccountsModal({ onClose, onChanged }: Props) {
               Add &amp; log in
             </button>
           </div>
+
+          <h4 className="accounts-section-title">Other engines</h4>
+          <p className="field-hint">
+            Codex and Gemini reuse their own CLI&rsquo;s login — no API key needed here.
+          </p>
+
+          <div className="account-rows">
+            {cliStatuses.map((s) => (
+              <div className="account-row" key={s.id}>
+                <span className={`account-dot ${s.loggedIn ? 'ok' : 'warn'}`} />
+                <div className="account-row-body">
+                  <div className="account-row-name">
+                    {AGENT_CLI_LABEL[s.id]}
+                    {!s.installed && <span className="status-pill warn">Not installed</span>}
+                    {s.installed && !s.loggedIn && <span className="status-pill warn">Not logged in</span>}
+                  </div>
+                  <div className="account-row-meta">
+                    {s.loggedIn ? [s.email, s.plan].filter(Boolean).join(' · ') || 'Logged in' : s.detail}
+                  </div>
+                </div>
+                <div className="account-row-actions">
+                  {s.installed && (
+                    <button className="btn-text" onClick={() => loginCli(s.id)}>
+                      {s.loggedIn ? 'Re-login' : 'Log in'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {cliLoginCmd && (
+            <div className="login-hint">
+              <div className="login-hint-title">Finish logging in</div>
+              <p className="field-hint">
+                A terminal should have opened — complete the login there, then click Refresh. If
+                no terminal opened, run this command yourself:
+              </p>
+              <code className="login-cmd">{cliLoginCmd.command}</code>
+              <div className="login-hint-actions">
+                <button
+                  className="btn-primary small"
+                  onClick={() => {
+                    refreshCliStatuses()
+                  }}
+                >
+                  Refresh status
+                </button>
+                <button className="btn-text" onClick={() => setCliLoginCmd(null)}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-footer">

@@ -82,12 +82,15 @@ export interface TermLine {
   text: string
 }
 
+export type ProviderId = 'claude' | 'codex' | 'gemini'
+
 export interface ModelInfo {
   id: string
   label: string
   inputPrice: number
   outputPrice: number
   context: string
+  provider: ProviderId
 }
 
 export interface UsageLimits {
@@ -507,6 +510,15 @@ export interface AccountList {
   defaultAccountId: string
 }
 
+export interface AgentCliStatus {
+  id: 'codex' | 'gemini'
+  installed: boolean
+  loggedIn: boolean
+  detail?: string
+  email?: string
+  plan?: string
+}
+
 export type AgentEvent =
   | { appSessionId: string; kind: 'system'; claudeSessionId?: string; tools: string[] }
   | { appSessionId: string; kind: 'text'; content: string }
@@ -760,6 +772,10 @@ declare global {
       accountsRemove: (id: string) => Promise<AccountList>
       accountsSetDefault: (id: string) => Promise<AccountList>
       accountsLogin: (id: string) => Promise<{ launched: boolean; command: string }>
+
+      // Agent CLI login status (Codex / Gemini)
+      agentCliStatus: (id: 'codex' | 'gemini') => Promise<AgentCliStatus>
+      agentCliLogin: (id: 'codex' | 'gemini') => Promise<{ launched: boolean; command: string }>
 
       // Agent
       sendAgent: (payload: {

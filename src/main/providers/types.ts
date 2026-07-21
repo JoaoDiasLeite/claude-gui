@@ -4,23 +4,68 @@ import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
  * Provider-neutral engine seam.
  *
  * Every AI run in the app is described by an `EngineRequest` and executed by an
- * `AiEngine`. Today the only engine is Claude (wrapping the Agent SDK), but the
- * request shape is deliberately provider-agnostic so OpenAI/Gemini engines can
- * drop in behind the same interface without touching call sites.
+ * `AiEngine`, which yields a stream of `EngineMessage`s. `EngineMessage` is a real
+ * provider-neutral union — NOT derived from the Claude Agent SDK's own message
+ * shape — so Codex/Gemini engines can emit into it without knowing anything about
+ * Anthropic's Messages-API conventions (content blocks split across `assistant`/
+ * `user` message types, `stream_event` deltas, etc). `claude.ts` is the one place
+ * that SDK-shape knowledge lives; it maps SDK messages into this union.
  *
- * The request fields intentionally line up 1:1 with the `ResolvedPolicy` returned
- * by ai-policy.ts (model / settingSources / allowedTools / disallowedTools /
- * maxTurns), so a call site can spread a policy straight into a request.
+ * The shape mirrors what `claude-stream.ts`'s `handleStreamLine` already produces
+ * for the WSL/SSH remote backends, so all three paths (local SDK, WSL, SSH) — and,
+ * going forward, Codex/Gemini — converge on one wire format the renderer consumes
+ * uniformly.
  */
 
-// Derive the exact SDK option/prompt/message types from the SDK's own `query`
-// signature, so the seam stays in lockstep with the installed SDK version
-// without hand-maintaining a parallel type.
+export interface EngineUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+}
+
+export const ZERO_USAGE: EngineUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0
+}
+
+export type EngineMessage =
+  | { type: 'init'; sessionId?: string; tools: string[] }
+  | { type: 'text-delta'; text: string }
+  | { type: 'thinking-delta'; text: string }
+  | { type: 'tool-use'; id: string; name: string; input: unknown }
+  | { type: 'tool-result'; toolUseId: string; content: string; isError: boolean }
+  | {
+      type: 'result'
+      sessionId?: string
+      isError: boolean
+      errorText?: string
+      costUsd: number
+      usage: EngineUsage
+    }
+  | { type: 'error'; message: string }
+
+/** Decision returned from a tool-approval request. Same shape regardless of which
+ * underlying mechanism raised it (SDK `canUseTool` callback, or a future engine's
+ * own approval protocol). */
+export type CanUseToolResult =
+  | { behavior: 'allow'; updatedInput: Record<string, unknown> }
+  | { behavior: 'deny'; message: string }
+
+export type CanUseTool = (
+  toolName: string,
+  input: Record<string, unknown>
+) => Promise<CanUseToolResult>
+
+// Derive the prompt/options types the Claude engine still needs from the SDK's own
+// `query` signature, so that seam stays in lockstep with the installed SDK version
+// without hand-maintaining a parallel type. Non-Claude engines only ever see the
+// plain-string branch of `prompt` and treat `settingSources`/`permissionMode` as
+// advisory (Claude-Code-specific concepts with no equivalent in other CLIs).
 type SdkOptions = NonNullable<Parameters<typeof QueryFn>[0]['options']>
 type SdkPrompt = Parameters<typeof QueryFn>[0]['prompt']
-type SdkQuery = ReturnType<typeof QueryFn>
-/** The message type yielded by a query stream (SDKMessage), extracted structurally. */
-export type EngineMessage = SdkQuery extends AsyncIterable<infer M> ? M : never
 
 export interface EngineRequest {
   /** Plain string (fast path) or the structured streaming-input generator for images. */
@@ -37,18 +82,22 @@ export interface EngineRequest {
   disallowedTools?: string[]
   /** Agentic-turn cap. Omit for uncapped (interactive chat). */
   maxTurns?: number
-  mcpServers?: SdkOptions['mcpServers']
+  /** MCP servers to expose, keyed by name. Shape is engine-specific until each
+   * engine's own MCP config translation lands. */
+  mcpServers?: Record<string, unknown>
   systemPrompt?: SdkOptions['systemPrompt']
-  /** Claude Code session id to resume. */
+  /** Opaque resume token from a previous run's `EngineMessage` (type 'init'/'result')
+   * `sessionId`. Each engine interprets its own token — a Claude Code session id, a
+   * codex thread id, a gemini session id, etc. */
   resume?: string
   /** Stream partial assistant deltas (interactive chat wants this; headless does not). */
   includePartialMessages?: boolean
   /** Per-tool approval callback (interactive 'ask' mode). */
-  canUseTool?: SdkOptions['canUseTool']
+  canUseTool?: CanUseTool
 }
 
 export interface AiEngine {
   readonly id: string
-  /** Execute the request, yielding normalized messages (SDKMessage-shaped). */
+  /** Execute the request, yielding normalized messages. */
   run(req: EngineRequest): AsyncIterable<EngineMessage>
 }

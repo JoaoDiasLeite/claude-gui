@@ -4,6 +4,8 @@ import * as path from 'path'
 import * as os from 'os'
 import { readJsonFile } from './json-file'
 
+export type ProviderId = 'claude' | 'codex' | 'gemini'
+
 export interface ModelInfo {
   id: string
   label: string
@@ -11,19 +13,38 @@ export interface ModelInfo {
   inputPrice: number
   outputPrice: number
   context: string
+  provider: ProviderId
 }
 
 export const MODELS: ModelInfo[] = [
-  { id: 'claude-opus-4-8', label: 'Opus 4.8', inputPrice: 5, outputPrice: 25, context: '1M' },
-  { id: 'claude-opus-4-7', label: 'Opus 4.7', inputPrice: 5, outputPrice: 25, context: '1M' },
-  { id: 'claude-opus-4-6', label: 'Opus 4.6', inputPrice: 5, outputPrice: 25, context: '1M' },
-  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', inputPrice: 3, outputPrice: 15, context: '1M' },
-  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', inputPrice: 1, outputPrice: 5, context: '200K' },
-  { id: 'claude-fable-5', label: 'Fable 5', inputPrice: 10, outputPrice: 50, context: '1M' }
+  { id: 'claude-opus-4-8', label: 'Opus 4.8', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
+  { id: 'claude-opus-4-7', label: 'Opus 4.7', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
+  { id: 'claude-opus-4-6', label: 'Opus 4.6', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
+  { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', inputPrice: 3, outputPrice: 15, context: '1M', provider: 'claude' },
+  { id: 'claude-haiku-4-5', label: 'Haiku 4.5', inputPrice: 1, outputPrice: 5, context: '200K', provider: 'claude' },
+  { id: 'claude-fable-5', label: 'Fable 5', inputPrice: 10, outputPrice: 50, context: '1M', provider: 'claude' },
+  // Codex ids + context size confirmed locally via `codex debug models` (the
+  // installed CLI's own catalog). Pricing is not in that catalog — sourced from
+  // several converging third-party trackers (OpenAI's own pricing page 403'd a
+  // direct fetch); worth a spot-check against platform.openai.com/pricing later.
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', inputPrice: 5, outputPrice: 30, context: '272K', provider: 'codex' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', inputPrice: 2.5, outputPrice: 15, context: '272K', provider: 'codex' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', inputPrice: 1, outputPrice: 6, context: '272K', provider: 'codex' },
+  { id: 'gpt-5.4', label: 'GPT-5.4', inputPrice: 2.5, outputPrice: 15, context: '272K', provider: 'codex' },
+  // Gemini ids/pricing from ai.google.dev's own model + pricing docs (not
+  // locally confirmed — Gemini CLI has no offline catalog command like codex's,
+  // and this machine isn't logged into Gemini yet to verify against a live call).
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro', inputPrice: 2, outputPrice: 12, context: '1M', provider: 'gemini' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash', inputPrice: 0.5, outputPrice: 3, context: '1M', provider: 'gemini' }
 ]
 
 export function priceFor(modelId: string): ModelInfo {
   return MODELS.find((m) => modelId.startsWith(m.id)) ?? MODELS[0]
+}
+
+export function providerFor(modelId: string | undefined): ProviderId {
+  if (!modelId) return 'claude'
+  return priceFor(modelId).provider
 }
 
 export interface UsageLimits {

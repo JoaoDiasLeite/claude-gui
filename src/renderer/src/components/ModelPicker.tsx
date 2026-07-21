@@ -116,7 +116,9 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
                   )}
                 </div>
                 <div className="model-picker-item-meta">
-                  {m.context} · ${m.inputPrice}/${m.outputPrice} per Mtok
+                  {m.inputPrice === 0 && m.outputPrice === 0
+                    ? 'Coming soon'
+                    : `${m.context} · $${m.inputPrice}/$${m.outputPrice} per Mtok`}
                 </div>
               </button>
             ))}

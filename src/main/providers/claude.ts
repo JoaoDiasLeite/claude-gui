@@ -1,6 +1,6 @@
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import { sdkExecutable } from '../sdk-exe'
-import type { AiEngine, EngineRequest } from './types'
+import type { AiEngine, EngineMessage, EngineRequest } from './types'
 
 /**
  * Claude engine — wraps the Agent SDK `query()`.
@@ -26,6 +26,91 @@ async function getQuery(): Promise<typeof QueryFn> {
   return queryFn
 }
 
+/**
+ * This is the one place that knows the Claude Agent SDK's message shape — content
+ * blocks split across `assistant`/`user` message types, `stream_event` deltas,
+ * `result` usage fields. Everything else in the app consumes the neutral
+ * `EngineMessage` union instead.
+ */
+function* mapSdkMessage(message: any, sawPartial: { value: boolean }): Iterable<EngineMessage> {
+  switch (message.type) {
+    case 'system': {
+      if (message.subtype === 'init') {
+        yield { type: 'init', sessionId: message.session_id, tools: message.tools ?? [] }
+      }
+      break
+    }
+
+    case 'stream_event': {
+      const ev = message.event
+      if (!ev) break
+      if (ev.type === 'content_block_delta') {
+        if (ev.delta?.type === 'text_delta' && ev.delta.text) {
+          sawPartial.value = true
+          yield { type: 'text-delta', text: ev.delta.text }
+        } else if (ev.delta?.type === 'thinking_delta' && ev.delta.thinking) {
+          sawPartial.value = true
+          yield { type: 'thinking-delta', text: ev.delta.thinking }
+        }
+      }
+      break
+    }
+
+    case 'assistant': {
+      const content = message.message?.content ?? []
+      for (const block of content) {
+        if (block.type === 'tool_use') {
+          yield { type: 'tool-use', id: block.id, name: block.name, input: block.input }
+        } else if (!sawPartial.value && block.type === 'text' && block.text) {
+          // No partials available for this run — emit the full text once.
+          yield { type: 'text-delta', text: block.text }
+        } else if (!sawPartial.value && block.type === 'thinking' && block.thinking) {
+          yield { type: 'thinking-delta', text: block.thinking }
+        }
+      }
+      break
+    }
+
+    case 'user': {
+      const content = message.message?.content ?? []
+      for (const block of content) {
+        if (block.type === 'tool_result') {
+          const text =
+            typeof block.content === 'string'
+              ? block.content
+              : Array.isArray(block.content)
+                ? block.content.map((c: any) => c.text ?? '').join('')
+                : ''
+          yield {
+            type: 'tool-result',
+            toolUseId: block.tool_use_id,
+            content: text.slice(0, 50000),
+            isError: !!block.is_error
+          }
+        }
+      }
+      break
+    }
+
+    case 'result': {
+      yield {
+        type: 'result',
+        sessionId: message.session_id,
+        isError: message.subtype !== 'success',
+        errorText: message.subtype !== 'success' ? (message.result ?? message.subtype) : undefined,
+        costUsd: message.total_cost_usd ?? 0,
+        usage: {
+          inputTokens: message.usage?.input_tokens ?? 0,
+          outputTokens: message.usage?.output_tokens ?? 0,
+          cacheReadTokens: message.usage?.cache_read_input_tokens ?? 0,
+          cacheCreationTokens: message.usage?.cache_creation_input_tokens ?? 0
+        }
+      }
+      break
+    }
+  }
+}
+
 export const claudeEngine: AiEngine = {
   id: 'claude',
   async *run(req: EngineRequest) {
@@ -45,7 +130,7 @@ export const claudeEngine: AiEngine = {
       ...(req.allowedTools ? { allowedTools: req.allowedTools } : {}),
       ...(req.disallowedTools ? { disallowedTools: req.disallowedTools } : {}),
       ...(req.maxTurns !== undefined ? { maxTurns: req.maxTurns } : {}),
-      ...(req.mcpServers ? { mcpServers: req.mcpServers } : {}),
+      ...(req.mcpServers ? { mcpServers: req.mcpServers as Record<string, never> } : {}),
       ...(req.systemPrompt ? { systemPrompt: req.systemPrompt } : {}),
       ...(req.resume ? { resume: req.resume } : {}),
       ...(req.includePartialMessages !== undefined
@@ -55,8 +140,9 @@ export const claudeEngine: AiEngine = {
     }
 
     const stream = query({ prompt: req.prompt, options })
+    const sawPartial = { value: false }
     for await (const message of stream) {
-      yield message
+      yield* mapSdkMessage(message, sawPartial)
     }
   }
 }

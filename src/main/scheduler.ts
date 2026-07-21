@@ -6,7 +6,10 @@ import { buildSubprocessEnv } from './auth'
 import { accountConfigDir } from './accounts'
 import { readJsonFile } from './json-file'
 import { resolvePolicy } from './ai-policy'
+import { providerFor } from './config'
 import { getEngine } from './providers/registry'
+import { collectText } from './providers/collect'
+import { mcpServersForProject } from './mcp'
 
 // ─── Data model ────────────────────────────────────────────────────────────
 
@@ -274,8 +277,13 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
     requestedModel: run.model
   })
 
+  // Claude gets MCP servers for free via settingSources' own project-file discovery;
+  // Codex/Gemini have no equivalent, so pass the same project's servers explicitly —
+  // harmless no-op for Claude, the only way Codex/Gemini routines see MCP tools at all.
+  const mcpServers = mcpServersForProject(run.projectPath)
+
   try {
-    const stream = getEngine().run({
+    const stream = getEngine(providerFor(policy.model)).run({
       prompt: run.prompt,
       ...policy,
       cwd,
@@ -285,26 +293,16 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
       // For read-only routines, disallowedTools (from the policy) removes mutating
       // tools from context entirely — they cannot be invoked even under bypassPermissions.
       permissionMode: 'bypassPermissions',
-      includePartialMessages: false
+      includePartialMessages: false,
+      ...(Object.keys(mcpServers).length ? { mcpServers } : {})
     })
 
-    for await (const message of stream) {
-      if ((message as any).type === 'assistant') {
-        const content = (message as any).message?.content ?? []
-        for (const block of content) {
-          if (block.type === 'text') {
-            summary += block.text
-          }
-        }
-      }
-      if ((message as any).type === 'result') {
-        const m = message as any
-        costUsd = m.total_cost_usd ?? 0
-        if (m.subtype !== 'success') {
-          ok = false
-          if (m.result) summary = m.result
-        }
-      }
+    const collected = await collectText(stream)
+    summary = collected.text
+    costUsd = collected.costUsd
+    if (collected.isError) {
+      ok = false
+      if (collected.errorText) summary = collected.errorText
     }
   } catch (err) {
     ok = false
