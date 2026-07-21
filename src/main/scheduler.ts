@@ -4,10 +4,10 @@ import * as path from 'path'
 import * as os from 'os'
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import { buildSubprocessEnv } from './auth'
-import { getConfig } from './config'
 import { accountConfigDir } from './accounts'
 import { sdkExecutable } from './sdk-exe'
 import { readJsonFile } from './json-file'
+import { resolvePolicy } from './ai-policy'
 
 // ─── Data model ────────────────────────────────────────────────────────────
 
@@ -255,23 +255,6 @@ async function getQuery(): Promise<typeof QueryFn> {
   return queryFn
 }
 
-// ─── Read-only tool restriction ────────────────────────────────────────────
-
-/**
- * Tools that can mutate the filesystem or execute arbitrary commands.
- * These are removed from context (via disallowedTools) for read-only routines,
- * so they cannot be invoked regardless of permission mode.
- */
-const MUTATING_TOOLS_FOR_SCHEDULER = [
-  'Bash',
-  'Write',
-  'Edit',
-  'MultiEdit',
-  'NotebookEdit',
-  'KillShell',
-  'KillBash'
-]
-
 // ─── Headless execution ────────────────────────────────────────────────────
 
 const MAX_SUMMARY = 4000
@@ -281,9 +264,7 @@ const HEADLESS_TIMEOUT_MS = 30 * 60 * 1000
 
 async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summary: string; costUsd: number }> {
   const query = await getQuery()
-  const config = getConfig()
 
-  const model = run.model || config.defaultModel
   const cwd = run.projectPath && fs.existsSync(run.projectPath) ? run.projectPath : os.homedir()
 
   const env = buildSubprocessEnv()
@@ -309,25 +290,23 @@ async function executeHeadless(run: ScheduledRun): Promise<{ ok: boolean; summar
         ? 'read-only'  // legacy: any explicit allowedTools list → treat as read-only intent
         : 'full'
 
+  const policy = resolvePolicy({
+    profile: effectiveAccess === 'read-only' ? 'routine-readonly' : 'routine-full',
+    requestedModel: run.model
+  })
+
   try {
     const streamOptions: Parameters<typeof query>[0]['options'] = {
       ...sdkExecutable(),
-      model,
+      ...policy,
       cwd,
       env,
       abortController: abort,
       // Non-interactive: bypass all permission prompts.
-      // For read-only routines, disallowedTools removes mutating tools from context
-      // entirely — they cannot be invoked even under bypassPermissions.
+      // For read-only routines, disallowedTools (from the policy) removes mutating
+      // tools from context entirely — they cannot be invoked even under bypassPermissions.
       permissionMode: 'bypassPermissions',
-      // Routines do real work in their project, so project settings load — but the
-      // user tier stays out (global plugin/skill marketplaces bloat every turn).
-      settingSources: ['project'],
       includePartialMessages: false
-    }
-
-    if (effectiveAccess === 'read-only') {
-      streamOptions.disallowedTools = MUTATING_TOOLS_FOR_SCHEDULER
     }
 
     const stream = query({ prompt: run.prompt, options: streamOptions })

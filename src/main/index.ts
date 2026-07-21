@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { hardenWebContents } from './window-security'
 import { sdkExecutable } from './sdk-exe'
+import { resolvePolicy } from './ai-policy'
 import type { query as QueryFn } from '@anthropic-ai/claude-agent-sdk'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -669,7 +670,10 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   }
 
   const cwd = projectPath && fs.existsSync(projectPath) ? projectPath : os.homedir()
-  const model = payload.model || getConfig().defaultModel
+  const policy = resolvePolicy({
+    profile: payload.lightMode ? 'interactive-light' : 'interactive-chat',
+    requestedModel: payload.model
+  })
 
   // Account: a non-default account points the engine at its own CLAUDE_CONFIG_DIR (its own
   // subscription login). Strip any API key so the account's OAuth login is what's used.
@@ -680,14 +684,6 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     delete env.ANTHROPIC_API_KEY
   }
   const mcpServers = payload.useMcp ? mcpServersForProject(projectPath) : undefined
-  // Control which settings tiers load. Omitting this loads user+project+local
-  // (CLI default), which pulls global plugin/skill marketplaces into every turn's
-  // context. Light mode = full isolation ([]); normal chats keep this project's
-  // settings/CLAUDE.md and settings.local.json (per-project permission allowlists,
-  // consulted before canUseTool) but drop the user tier where those plugins live.
-  const settingSources: ('user' | 'project' | 'local')[] = payload.lightMode
-    ? []
-    : ['project', 'local']
   const askMode = payload.approvalMode !== 'auto' && payload.permissionMode !== 'bypassPermissions'
 
   // In 'ask' mode, prompt the renderer before any mutating tool runs.
@@ -732,12 +728,12 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       prompt: buildPrompt(prompt, payload.images, payload.files, claudeSessionId ?? '') as string,
       options: {
         ...sdkExecutable(),
-        model,
+        model: policy.model,
         cwd,
         env,
         abortController: abort,
         includePartialMessages: true,
-        settingSources,
+        settingSources: policy.settingSources,
         permissionMode: askMode ? 'default' : payload.permissionMode ?? 'acceptEdits',
         ...(canUseTool ? { canUseTool } : {}),
         ...(payload.systemPrompt ? { systemPrompt: payload.systemPrompt } : {}),
@@ -1024,7 +1020,7 @@ ipcMain.handle(
       env.CLAUDE_CONFIG_DIR = configDir
       delete env.ANTHROPIC_API_KEY
     }
-    const model = payload.model || getConfig().defaultModel
+    const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     const prompt = `Summarize the following conversation so it can seed a fresh session with minimal tokens while preserving everything needed to continue. Write a dense, structured brief (markdown) covering: the goal/task, key decisions and constraints, current state, important file paths or identifiers, and open next steps. Omit chit-chat. Output ONLY the summary.\n\n=== CONVERSATION ===\n${payload.transcript}`
     try {
       const query = await getQuery()
@@ -1032,14 +1028,11 @@ ipcMain.handle(
         prompt,
         options: {
           ...sdkExecutable(),
-          model,
+          ...policy,
           cwd: os.homedir(),
           env,
           abortController: abort,
-          permissionMode: 'bypassPermissions',
-          allowedTools: [],
-          // Pure reasoning — no settings tiers, so plugins/skills never load.
-          settingSources: []
+          permissionMode: 'bypassPermissions'
         }
       })
       let text = ''
@@ -1242,21 +1235,18 @@ ipcMain.handle(
       env.CLAUDE_CONFIG_DIR = configDir
       delete env.ANTHROPIC_API_KEY
     }
-    const model = payload.model || getConfig().defaultModel
+    const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     try {
       const query = await getQuery()
       const stream = query({
         prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, undefined, '') as string,
         options: {
           ...sdkExecutable(),
-          model,
+          ...policy,
           cwd: os.homedir(),
           env,
           abortController: abort,
-          permissionMode: 'bypassPermissions',
-          // Pure reasoning — no tools, no MCP, no file access, no settings tiers.
-          allowedTools: [],
-          settingSources: []
+          permissionMode: 'bypassPermissions'
         }
       })
 
@@ -1338,7 +1328,7 @@ ipcMain.handle(
       env.CLAUDE_CONFIG_DIR = configDir
       delete env.ANTHROPIC_API_KEY
     }
-    const model = payload.model || getConfig().defaultModel
+    const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
     let commits: { date: string; subject: string }[] = []
     try {
       if (payload.projectPath) {
@@ -1353,13 +1343,11 @@ ipcMain.handle(
         prompt: buildPrompt(buildStandupPrompt(payload.date, commits, payload.boardSummary), undefined, undefined, '') as string,
         options: {
           ...sdkExecutable(),
-          model,
+          ...policy,
           cwd: os.homedir(),
           env,
           abortController: abort,
-          permissionMode: 'bypassPermissions',
-          allowedTools: [],
-          settingSources: []
+          permissionMode: 'bypassPermissions'
         }
       })
       let text = ''
@@ -1498,22 +1486,22 @@ ipcMain.handle(
       env.CLAUDE_CONFIG_DIR = configDir
       delete env.ANTHROPIC_API_KEY
     }
-    // Allow every configured MCP server plus read-only file tools — never the mutating
-    // built-ins (Bash/Write/Edit), so a bypassPermissions run can't touch the repo.
-    const allowedTools = [...Object.keys(mcpServers).map((n) => `mcp__${n}`), 'Read', 'Grep', 'Glob']
+    const policy = resolvePolicy({
+      profile: 'mcp-ask',
+      requestedModel: payload.model,
+      mcpServerNames: Object.keys(mcpServers)
+    })
     try {
       const query = await getQuery()
       const stream = query({
         prompt: buildPrompt(promptText, undefined, undefined, '') as string,
         options: {
           ...sdkExecutable(),
-          model,
+          ...policy,
           cwd: payload.projectPath || os.homedir(),
           env,
           abortController: abort,
           permissionMode: 'bypassPermissions',
-          allowedTools,
-          settingSources: ['project', 'local'],
           mcpServers: mcpServers as Record<string, never>
         }
       })
@@ -1668,19 +1656,17 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
   }
   try {
     const { digest } = buildHistoryDigest()
+    const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: 'claude-haiku-4-5' })
     const query = await getQuery()
     const stream = query({
       prompt: buildAgentSuggestPrompt(digest),
       options: {
         ...sdkExecutable(),
-        model: 'claude-haiku-4-5',
+        ...policy,
         cwd: os.homedir(),
         env,
         abortController: abort,
-        permissionMode: 'bypassPermissions',
-        // Pure reasoning — no tools, no MCP, no file access, no settings tiers.
-        allowedTools: [],
-        settingSources: []
+        permissionMode: 'bypassPermissions'
       }
     })
 
