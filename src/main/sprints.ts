@@ -80,10 +80,8 @@ function fileFor(id: string): string {
 /** Backfill optional fields so older saved sprints stay valid as the shape grows. */
 function normalize(s: Sprint): Sprint {
   return {
-    status: 'active',
-    items: [],
-    standups: [],
     ...s,
+    status: s.status ?? 'active',
     items: Array.isArray(s.items) ? s.items : [],
     standups: Array.isArray(s.standups) ? s.standups : []
   }
