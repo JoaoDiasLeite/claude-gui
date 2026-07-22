@@ -767,11 +767,13 @@ export default function App() {
   // The provider the app-wide default model belongs to — drives which account store the
   // sidebar's account picker is scoped to.
   const defaultProvider: ProviderId = models.find((m) => defaultModel.startsWith(m.id))?.provider ?? 'claude'
-  // The active chat's provider and that provider's account — drives which CLI the embedded
-  // terminal launches and under which account.
+  // The active chat's provider and that provider's account. Drives which CLI the embedded
+  // terminal launches and under which account, and which account the sidebar row, its
+  // usage badge and the session list are scoped to — so opening a chat bound to another
+  // account moves the whole sidebar onto it rather than disagreeing with what's on screen.
   const activeChatProvider: ProviderId =
     models.find((m) => (activeSession?.model || defaultModel).startsWith(m.id))?.provider ?? 'claude'
-  const terminalAccountId =
+  const activeChatAccountId =
     activeChatProvider === 'codex'
       ? (activeSession?.codexAccountId ?? codexDefaultAccountId)
       : activeChatProvider === 'gemini'
@@ -1261,7 +1263,8 @@ export default function App() {
             auth={auth}
             accounts={accounts}
             models={models}
-            defaultProvider={defaultProvider}
+            selectedProvider={activeChatProvider}
+            selectedAccountId={activeChatAccountId}
             codexAccounts={codexAccounts}
             geminiAccounts={geminiAccounts}
             codexDefaultAccountId={codexDefaultAccountId}
@@ -1316,7 +1319,7 @@ export default function App() {
               currentModel={activeSession?.model || defaultModel}
               onModelChange={setSessionModel}
               terminalProvider={activeChatProvider}
-              terminalAccountId={terminalAccountId}
+              terminalAccountId={activeChatAccountId}
               defaultChatView={ui?.defaultChatView ?? 'chat'}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}

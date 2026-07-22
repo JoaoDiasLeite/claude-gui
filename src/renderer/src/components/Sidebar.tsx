@@ -69,8 +69,14 @@ interface Props {
   accounts: CCAccountStatus[]
   /** Model catalog — used to resolve a model id to its provider. */
   models: ModelInfo[]
-  /** Provider the app-wide default model belongs to — scopes the account picker & session list. */
-  defaultProvider: ProviderId
+  /** Provider currently in effect — the ACTIVE chat's provider, falling back to the
+   *  app-wide default model's provider when there's no active chat. Scopes the account
+   *  row, its usage badge, and the session list. */
+  selectedProvider: ProviderId
+  /** Account currently in effect within `selectedProvider` — the active chat's account,
+   *  falling back to that provider's default. Opening a chat bound to another account
+   *  (e.g. from Projects) therefore moves the row, badge and list onto that account. */
+  selectedAccountId?: string
   codexAccounts: ProviderAccountStatus[]
   geminiAccounts: ProviderAccountStatus[]
   codexDefaultAccountId?: string
@@ -121,7 +127,8 @@ export default function Sidebar({
   auth,
   accounts,
   models,
-  defaultProvider,
+  selectedProvider,
+  selectedAccountId,
   codexAccounts,
   geminiAccounts,
   codexDefaultAccountId,
@@ -217,25 +224,30 @@ export default function Sidebar({
         ? 'API key'
         : 'No API key'
 
-  // Surface the DEFAULT account for whichever provider the app-wide default model
-  // currently belongs to — account selection is app-level, not per-chat. The Claude
-  // default account also counts as ready when the global connection is (e.g. an API
-  // key), even if its own OAuth file isn't present; other accounts are ready only once
-  // logged in (or already flagged as the machine default).
-  const currentClaudeId = defaultAccountId ?? 'default'
-  const currentCodexId = codexDefaultAccountId ?? 'default'
-  const currentGeminiId = geminiDefaultAccountId ?? 'default'
+  // Surface the account currently IN EFFECT: the active chat's account, falling back to
+  // the default account of whichever provider the app-wide default model belongs to. That
+  // way opening a chat bound to another account (e.g. from Projects) moves the row, its
+  // usage badge and the session list onto that account instead of silently disagreeing
+  // with the chat on screen. The Claude default account also counts as ready when the
+  // global connection is (e.g. an API key), even if its own OAuth file isn't present;
+  // other accounts are ready only once logged in (or already flagged as the machine
+  // default).
+  const idFor = (provider: ProviderId, fallback?: string): string =>
+    (provider === selectedProvider ? selectedAccountId : undefined) ?? fallback ?? 'default'
+  const currentClaudeId = idFor('claude', defaultAccountId)
+  const currentCodexId = idFor('codex', codexDefaultAccountId)
+  const currentGeminiId = idFor('gemini', geminiDefaultAccountId)
   const currentAccount =
-    defaultProvider === 'codex'
+    selectedProvider === 'codex'
       ? codexAccounts.find((a) => a.id === currentCodexId)
-      : defaultProvider === 'gemini'
+      : selectedProvider === 'gemini'
         ? geminiAccounts.find((a) => a.id === currentGeminiId)
         : accounts.find((a) => a.id === currentClaudeId)
   const ready = currentAccount
     ? currentAccount.isDefault
-      ? currentAccount.loggedIn || (defaultProvider === 'claude' && authReady)
+      ? currentAccount.loggedIn || (selectedProvider === 'claude' && authReady)
       : currentAccount.loggedIn
-    : defaultProvider === 'claude' && authReady
+    : selectedProvider === 'claude' && authReady
   const accountDetail = currentAccount?.loggedIn
     ? [currentAccount.email, currentAccount.plan].filter(Boolean).join(' · ')
     : ''
@@ -317,12 +329,12 @@ export default function Sidebar({
         : (s.accountId ?? 'default')
   }
   const currentAccountId =
-    defaultProvider === 'codex' ? currentCodexId : defaultProvider === 'gemini' ? currentGeminiId : currentClaudeId
-  // The selected account's own 5h-window usage, shown as a badge on the collapsed row.
+    selectedProvider === 'codex' ? currentCodexId : selectedProvider === 'gemini' ? currentGeminiId : currentClaudeId
+  // The in-effect account's own 5h-window usage, shown as a badge on the collapsed row.
   // Only Claude accounts have real plan-usage data.
-  const currentUsage = defaultProvider === 'claude' ? accountUsage?.[currentAccountId] : undefined
+  const currentUsage = selectedProvider === 'claude' ? accountUsage?.[currentAccountId] : undefined
   const visibleSessions = sessions.filter(
-    (s) => s.messages.length > 0 && provOf(s.model) === defaultProvider && acctOf(s) === currentAccountId
+    (s) => s.messages.length > 0 && provOf(s.model) === selectedProvider && acctOf(s) === currentAccountId
   )
 
   // ── Session search ──────────────────────────────────────────────────────
@@ -377,7 +389,7 @@ export default function Sidebar({
           aria-expanded={isAccountPicker ? accountMenuOpen : undefined}
         >
           <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
-          {currentAccount && <ProviderIcon provider={defaultProvider} />}
+          {currentAccount && <ProviderIcon provider={selectedProvider} />}
           <span className="auth-label">{statusLabel}</span>
           {currentUsage && (
             <span
@@ -426,7 +438,7 @@ export default function Sidebar({
                     <div className={`account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
                     {list.map((a) => {
                       const usage = provider === 'claude' ? accountUsage?.[a.id] : undefined
-                      const selected = provider === defaultProvider && a.id === currentId
+                      const selected = provider === selectedProvider && a.id === currentId
                       return (
                         <button
                           key={a.id}
