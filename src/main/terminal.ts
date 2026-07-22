@@ -4,6 +4,9 @@ import * as fs from 'fs'
 import * as os from 'os'
 import { buildSubprocessEnv } from './auth'
 import { accountConfigDir, resolveClaudeBin } from './accounts'
+import { providerAccountEnv } from './provider-accounts'
+import { resolveCodex } from './providers/cli-resolve'
+import { getSshTerminalCommand } from './ssh'
 
 /**
  * Embedded real terminal (PTY) support, so the user can run the actual interactive
@@ -14,10 +17,20 @@ import { accountConfigDir, resolveClaudeBin } from './accounts'
  * boundary — every function is defensive and returns a failure shape instead.
  */
 
-type ShellKind = 'pwsh' | 'powershell' | 'cmd' | 'unix' | 'wsl'
+type ShellKind = 'pwsh' | 'powershell' | 'cmd' | 'unix' | 'wsl' | 'ssh'
 
 const terminals = new Map<string, pty.IPty>()
 const shellKinds = new Map<string, ShellKind>()
+// Remote-path/claude-path hints for SSH terminals, used by startCliInTerminal.
+const sshMeta = new Map<string, { remotePath?: string; claudePath?: string }>()
+// Deferred kills scheduled by a renderer effect cleanup. A StrictMode dev remount
+// (mount -> cleanup -> mount) cancels its own deferred kill when create() reuses the
+// still-live pty; a real close/switch has no follow-up create, so the kill fires.
+const pendingKills = new Map<string, ReturnType<typeof setTimeout>>()
+// Ids whose pty has already had its provider CLI auto-started, so a second
+// terminalStartCli call against the same live pty (e.g. from a StrictMode remount) is a
+// no-op instead of typing the launch command twice.
+const launched = new Set<string>()
 
 const SAFE_ID_RE = /^[A-Za-z0-9_-]+$/
 
@@ -27,9 +40,14 @@ function isSafeId(id: unknown): id is string {
 
 export interface CreateTerminalOptions {
   cwd?: string
+  /** The account id for the chat's provider (Claude account, CODEX_HOME account, or Gemini account). */
   accountId?: string
   /** If set, run the shell inside this WSL distro (matches a WSL chat's environment). */
   wslDistro?: string
+  /** If set, connect over SSH to this stored host id (matches a remote chat's environment). */
+  remoteHostId?: string
+  /** Which CLI this terminal is for. Defaults to 'claude'. */
+  provider?: 'claude' | 'codex' | 'gemini'
   cols: number
   rows: number
 }
@@ -45,6 +63,19 @@ function hasPwsh(): boolean {
     pwshAvailable = false
   }
   return pwshAvailable
+}
+
+// Best-effort PATH lookup for a bare command, used only for a diagnostic message —
+// never for deciding whether to launch (that check would race the pty's own PATH).
+function hasCommand(cmd: string): boolean {
+  try {
+    const result = spawnSync(process.platform === 'win32' ? 'where' : 'which', [cmd], {
+      stdio: 'ignore'
+    })
+    return result.status === 0
+  } catch {
+    return false
+  }
 }
 
 function pickShell(): { shell: string; kind: ShellKind } {
@@ -72,6 +103,20 @@ export function createTerminal(
   onExit: (id: string, exitCode: number) => void
 ): { ok: boolean; shell?: string } {
   if (!isSafeId(id)) return { ok: false }
+
+  const pendingKill = pendingKills.get(id)
+  if (pendingKill) {
+    clearTimeout(pendingKill)
+    pendingKills.delete(id)
+  }
+  const existing = terminals.get(id)
+  if (existing) {
+    // Benign re-create for an id that already has a live pty (StrictMode remount, or a
+    // redundant renderer create call). Reuse it rather than spawning a duplicate.
+    return { ok: true, shell: shellKinds.get(id) }
+  }
+  launched.delete(id)
+
   try {
     const env: Record<string, string> = { ...buildSubprocessEnv() }
     // Strip Claude Code's own runtime/session env vars. Otherwise a `claude` launched in
@@ -102,7 +147,19 @@ export function createTerminal(
         ? opts.cwd
         : undefined
 
-    if (wslDistro && process.platform === 'win32') {
+    if (opts.remoteHostId) {
+      // Remote SSH → hand off to the system ssh CLI with the stored host's connection
+      // details. Windows/WSL env (CLAUDE_CONFIG_DIR, CLAUDE_BIN, provider account env) is
+      // meaningless on the remote box, so leave it unset; the remote's own PATH/login
+      // resolves the CLI.
+      const ssh = getSshTerminalCommand(opts.remoteHostId)
+      if (!ssh) return { ok: false }
+      shell = ssh.shell
+      shellArgs = ssh.args
+      kind = 'ssh'
+      spawnCwd = os.homedir()
+      sshMeta.set(id, { remotePath: ssh.remotePath, claudePath: ssh.claudePath })
+    } else if (wslDistro && process.platform === 'win32') {
       // WSL → run inside that distro so it uses the distro's own claude, login, and session.
       // Windows CLAUDE_CONFIG_DIR/CLAUDE_BIN are meaningless in WSL, so leave them unset.
       shell = 'wsl.exe'
@@ -115,12 +172,17 @@ export function createTerminal(
       shell = picked.shell
       kind = picked.kind
       spawnCwd = opts.cwd && fs.existsSync(opts.cwd) ? opts.cwd : os.homedir()
-      const configDir = accountConfigDir(opts.accountId)
-      if (configDir) {
-        env.CLAUDE_CONFIG_DIR = configDir
-        delete env.ANTHROPIC_API_KEY
+      const provider = opts.provider ?? 'claude'
+      if (provider === 'claude') {
+        const configDir = accountConfigDir(opts.accountId)
+        if (configDir) {
+          env.CLAUDE_CONFIG_DIR = configDir
+          delete env.ANTHROPIC_API_KEY
+        }
+        env.CLAUDE_BIN = resolveClaudeBin()
+      } else {
+        Object.assign(env, providerAccountEnv(provider, opts.accountId))
       }
-      env.CLAUDE_BIN = resolveClaudeBin()
     }
 
     const p = pty.spawn(shell, shellArgs, {
@@ -136,6 +198,13 @@ export function createTerminal(
       onExit(id, e.exitCode)
       terminals.delete(id)
       shellKinds.delete(id)
+      sshMeta.delete(id)
+      launched.delete(id)
+      const t = pendingKills.get(id)
+      if (t) {
+        clearTimeout(t)
+        pendingKills.delete(id)
+      }
     })
 
     terminals.set(id, p)
@@ -174,6 +243,12 @@ export function resizeTerminal(id: string, cols: number, rows: number): void {
 
 export function killTerminal(id: string): { ok: boolean } {
   if (!isSafeId(id)) return { ok: false }
+  const t = pendingKills.get(id)
+  if (t) {
+    clearTimeout(t)
+    pendingKills.delete(id)
+  }
+  launched.delete(id)
   const p = terminals.get(id)
   if (!p) return { ok: false }
   try {
@@ -183,7 +258,22 @@ export function killTerminal(id: string): { ok: boolean } {
   }
   terminals.delete(id)
   shellKinds.delete(id)
+  sshMeta.delete(id)
   return { ok: true }
+}
+
+// Schedule a kill instead of running it immediately, so a renderer effect cleanup that's
+// about to be immediately followed by a re-create for the same id (React StrictMode's
+// dev-only mount -> cleanup -> mount) doesn't tear down a pty that's about to be reused.
+// A real close/session-switch has no follow-up create, so the kill fires after the delay.
+export function killTerminalDeferred(id: string): void {
+  if (!isSafeId(id)) return
+  if (pendingKills.has(id)) return
+  const t = setTimeout(() => {
+    pendingKills.delete(id)
+    killTerminal(id)
+  }, 250)
+  pendingKills.set(id, t)
 }
 
 // Only characters found in Claude Code session ids (UUID-like) — guards against injecting
@@ -192,24 +282,87 @@ function safeResumeId(v: unknown): string | null {
   return typeof v === 'string' && /^[A-Za-z0-9-]{1,128}$/.test(v) ? v : null
 }
 
-export function startClaudeInTerminal(id: string, resumeSessionId?: string): { ok: boolean } {
+// Quote a single token for inclusion in a PowerShell command line: wrap in single
+// quotes, doubling any embedded single quote (PowerShell's own escaping rule).
+function quotePwsh(token: string): string {
+  return `'${token.replace(/'/g, "''")}'`
+}
+
+// Quote a single token for inclusion in a cmd.exe command line.
+function quoteCmd(token: string): string {
+  return `"${token}"`
+}
+
+// Quote a single token for inclusion in a POSIX shell command line.
+function quoteUnix(token: string): string {
+  return `'${token.replace(/'/g, `'\\''`)}'`
+}
+
+export function startCliInTerminal(
+  id: string,
+  provider: 'claude' | 'codex' | 'gemini',
+  resumeSessionId?: string
+): { ok: boolean } {
   if (!isSafeId(id)) return { ok: false }
   const p = terminals.get(id)
   const kind = shellKinds.get(id)
   if (!p || !kind) return { ok: false }
-  // Resume the chat's own Claude Code session when we have its id, else start fresh.
-  const resume = safeResumeId(resumeSessionId)
-  const arg = resume ? ` --resume ${resume}` : ''
+  if (launched.has(id)) return { ok: true }
+  launched.add(id)
   try {
+    if (provider === 'claude') {
+      // Resume the chat's own Claude Code session when we have its id, else start fresh.
+      const resume = safeResumeId(resumeSessionId)
+      const arg = resume ? ` --resume ${resume}` : ''
+      if (kind === 'pwsh' || kind === 'powershell') {
+        p.write(`& $env:CLAUDE_BIN${arg}\r`)
+      } else if (kind === 'cmd') {
+        p.write(`"%CLAUDE_BIN%"${arg}\r`)
+      } else if (kind === 'wsl') {
+        // Inside WSL: use the distro's own claude on PATH (Windows CLAUDE_BIN doesn't apply).
+        p.write(`claude${arg}\n`)
+      } else if (kind === 'ssh') {
+        // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
+        // `claude` on its PATH), from the working directory the host was set up for.
+        const meta = sshMeta.get(id)
+        const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
+        p.write(`${cd}${meta?.claudePath || 'claude'}${arg}\n`)
+      } else {
+        p.write(`"$CLAUDE_BIN"${arg}\n`)
+      }
+      return { ok: true }
+    }
+
+    // Codex/Gemini launch fresh — no resume support in these CLIs' interactive mode.
+
+    // Gemini chats open Antigravity (Google's latest agentic CLI) instead of the older
+    // `gemini` CLI. Its launch command is `agy` — a bare command resolved from PATH by
+    // the interactive shell (including a Windows .cmd shim), so no node-entry resolution
+    // is needed.
+    if (provider === 'gemini') {
+      p.write(`agy${kind === 'pwsh' || kind === 'powershell' || kind === 'cmd' ? '\r' : '\n'}`)
+      return { ok: true }
+    }
+
+    if (kind === 'wsl' || kind === 'ssh') {
+      // Use the distro's/remote's own CLI on PATH — the Windows node-entry resolution
+      // doesn't apply there. WSL/SSH chats are Claude-only in practice; handled defensively.
+      p.write(`${provider}\n`)
+      return { ok: true }
+    }
+
+    const { command, prefixArgs } = resolveCodex()
+    // A bare `codex` (no resolved node entry) depends on it being on this process's PATH —
+    // silently unlike the npm-entry path, so check and say so instead of a bare shell.
+    if (command === 'codex' && prefixArgs.length === 0 && !hasCommand('codex')) {
+      p.write(`\r\n\x1b[33mcodex not found on PATH — install with: npm i -g @openai/codex\x1b[0m\r\n`)
+    }
     if (kind === 'pwsh' || kind === 'powershell') {
-      p.write(`& $env:CLAUDE_BIN${arg}\r`)
+      p.write(`& ${[command, ...prefixArgs].map(quotePwsh).join(' ')}\r`)
     } else if (kind === 'cmd') {
-      p.write(`"%CLAUDE_BIN%"${arg}\r`)
-    } else if (kind === 'wsl') {
-      // Inside WSL: use the distro's own claude on PATH (Windows CLAUDE_BIN doesn't apply).
-      p.write(`claude${arg}\n`)
+      p.write(`${[command, ...prefixArgs].map(quoteCmd).join(' ')}\r`)
     } else {
-      p.write(`"$CLAUDE_BIN"${arg}\n`)
+      p.write(`${[command, ...prefixArgs].map(quoteUnix).join(' ')}\n`)
     }
     return { ok: true }
   } catch {
@@ -218,6 +371,9 @@ export function startClaudeInTerminal(id: string, resumeSessionId?: string): { o
 }
 
 export function killAllTerminals(): void {
+  for (const t of pendingKills.values()) clearTimeout(t)
+  pendingKills.clear()
+  launched.clear()
   for (const [id, p] of terminals) {
     try {
       p.kill()
@@ -226,5 +382,6 @@ export function killAllTerminals(): void {
     }
     terminals.delete(id)
     shellKinds.delete(id)
+    sshMeta.delete(id)
   }
 }

@@ -15,9 +15,22 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '0.5.1',
+    date: '2026-07-22',
+    tag: 'latest',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'Chat terminal no longer flashes a spurious "process exited" line and a bare shell on open — a duplicate pty spawned by React\'s dev double-mount is now reused instead of being killed and recreated.',
+          'The embedded terminal now opens the shell that matches the chat\'s environment — local, WSL, or an interactive SSH session for remote chats — and launches the right provider CLI inside it, with a clear message if a CLI can\'t be found instead of a bare shell.',
+        ],
+      },
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-07-20',
-    tag: 'latest',
     sections: [
       {
         title: 'Features',

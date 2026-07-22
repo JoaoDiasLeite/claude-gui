@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { Session, ModelInfo, Attachment, SlashCommand } from '../types'
+import { Session, ModelInfo, Attachment, SlashCommand, ProviderId } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
 import ChatTerminal from './ChatTerminal'
@@ -61,8 +61,12 @@ interface Props {
   models: ModelInfo[]
   currentModel: string
   onModelChange: (modelId: string) => void
-  /** The account this chat is bound to — read-only here; forwarded to ChatTerminal. */
-  currentAccount?: string
+  /** The active chat's provider — forwarded to ChatTerminal to launch the right CLI. */
+  terminalProvider: ProviderId
+  /** The account (for terminalProvider) this chat is bound to — forwarded to ChatTerminal. */
+  terminalAccountId?: string
+  /** Which panel a chat opens in the first time it's seen (the "Open new chats in" pref). */
+  defaultChatView: 'chat' | 'terminal'
   onOpenClaudeMd: () => void
   autoApprove: boolean
   onToggleAutoApprove: () => void
@@ -89,7 +93,9 @@ export default function Chat({
   models,
   currentModel,
   onModelChange,
-  currentAccount,
+  terminalProvider,
+  terminalAccountId,
+  defaultChatView,
   onOpenClaudeMd,
   autoApprove,
   onToggleAutoApprove,
@@ -108,6 +114,13 @@ export default function Chat({
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [markdownCopied, setMarkdownCopied] = useState(false)
   const [markdownSaved, setMarkdownSaved] = useState(false)
+  // Which provider's model the active chat is running — the model picker filters to it.
+  const activeProvider = models.find((m) => currentModel.startsWith(m.id))?.provider ?? 'claude'
+  const CONTEXT_FILE: Record<typeof activeProvider, string> = {
+    claude: 'CLAUDE.md',
+    codex: 'AGENTS.md',
+    gemini: 'GEMINI.md'
+  }
   // Per-chat terminal toggle, keyed by session id so each chat remembers its own state.
   const [termOpenById, setTermOpenById] = useState<Record<string, boolean>>({})
   const termOpen = !!(session && termOpenById[session.id])
@@ -115,6 +128,12 @@ export default function Chat({
     if (!session) return
     setTermOpenById((prev) => ({ ...prev, [session.id]: !prev[session.id] }))
   }
+  // Seed a session's terminal state from the "default view" pref the first time it's seen.
+  useEffect(() => {
+    if (!session) return
+    if (session.id in termOpenById) return
+    setTermOpenById((prev) => ({ ...prev, [session.id]: defaultChatView === 'terminal' }))
+  }, [session, defaultChatView, termOpenById])
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   // Transient inline feedback (e.g. rejected attachment); clears itself after ~4s.
@@ -551,12 +570,17 @@ export default function Chat({
                 <button disabled={isEmpty} onClick={() => { setExportMenuOpen(false); onExportSession('html') }}>Export as HTML</button>
                 <div className="header-menu-divider" />
                 <button onClick={() => { setExportMenuOpen(false); onOpenCheckpoints() }}>Checkpoints…</button>
-                <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit CLAUDE.md</button>
+                <button onClick={() => { setExportMenuOpen(false); onOpenClaudeMd() }}>Edit {CONTEXT_FILE[activeProvider]}</button>
               </div>
             )}
           </div>
-          {models.length > 0 && (
-            <ModelPicker models={models} value={currentModel} onChange={onModelChange} compact />
+          {models.some((m) => m.provider === activeProvider) && (
+            <ModelPicker
+              models={models.filter((m) => m.provider === activeProvider)}
+              value={currentModel}
+              onChange={onModelChange}
+              compact
+            />
           )}
           {!ready && (
             <button className="header-btn warning" onClick={onOpenSettings}>
@@ -611,8 +635,10 @@ export default function Chat({
           key={session.id}
           terminalId={`chatterm_${session.id}`}
           cwd={session.projectPath}
-          accountId={currentAccount}
+          accountId={terminalAccountId}
+          provider={terminalProvider}
           wslDistro={session.wslDistro}
+          remoteHostId={session.remoteHostId}
           resumeSessionId={session.claudeSessionId}
           onClose={toggleTerminal}
         />

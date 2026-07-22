@@ -18,7 +18,8 @@ import {
   buildSubprocessEnv,
   AuthMode
 } from './auth'
-import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, MODELS, UsageLimits, UiPrefs, SystemPrefs } from './config'
+import { loadConfig, getConfig, setDefaultModel, setLimits, setUiPrefs, setSystemPrefs, getClaudeSettings, getClaudePermissions, setClaudePermissions, getClaudeHooks, setClaudeHooks, providerFor, UsageLimits, UiPrefs, SystemPrefs } from './config'
+import { buildModelsCatalog } from './models-catalog'
 import { getAllProjects, listSessions, readSession, getUsage, listSources, searchSessions } from './claude-data'
 import {
   listMcpServers,
@@ -63,6 +64,17 @@ import {
 } from './accounts'
 import { checkAgentCliStatus, loginAgentCli, AgentCliId } from './agent-clis'
 import {
+  loadProviderAccounts,
+  listProviderAccountStatus,
+  providerAccountEnv,
+  addProviderAccount,
+  renameProviderAccount,
+  removeProviderAccount,
+  setDefaultProviderAccount,
+  loginProviderAccount,
+  AgentProvider
+} from './provider-accounts'
+import {
   listScheduledRuns,
   upsertScheduledRun,
   deleteScheduledRun,
@@ -76,7 +88,8 @@ import {
   writeTerminal,
   resizeTerminal,
   killTerminal,
-  startClaudeInTerminal,
+  killTerminalDeferred,
+  startCliInTerminal,
   killAllTerminals
 } from './terminal'
 import { createOverlayWindow, hideOverlay, toggleOverlay, registerOverlayShortcut, reregisterOverlayShortcut, overlayShortcut } from './overlay'
@@ -298,6 +311,7 @@ app.whenReady().then(() => {
   ensureDirs()
   loadAuthState()
   loadAccounts()
+  loadProviderAccounts()
   loadConfig()
   startScheduler()
   app.on('browser-window-created', (_, window) => optimizer.watchWindowShortcuts(window))
@@ -512,6 +526,24 @@ ipcMain.handle('accounts:login', (_, id: string) => loginAccount(id))
 ipcMain.handle('agentcli:status', (_, id: AgentCliId) => checkAgentCliStatus(id))
 ipcMain.handle('agentcli:login', (_, id: AgentCliId) => loginAgentCli(id))
 
+// ─── Provider accounts (multiple Codex / Gemini logins) ─────────────────────
+
+ipcMain.handle('provider-accounts:list', (_, provider: AgentProvider) => listProviderAccountStatus(provider))
+ipcMain.handle('provider-accounts:add', (_, provider: AgentProvider, name: string) => addProviderAccount(provider, name))
+ipcMain.handle('provider-accounts:rename', (_, provider: AgentProvider, id: string, name: string) => {
+  renameProviderAccount(provider, id, name)
+  return listProviderAccountStatus(provider)
+})
+ipcMain.handle('provider-accounts:remove', (_, provider: AgentProvider, id: string) => {
+  removeProviderAccount(provider, id)
+  return listProviderAccountStatus(provider)
+})
+ipcMain.handle('provider-accounts:set-default', (_, provider: AgentProvider, id: string) => {
+  setDefaultProviderAccount(provider, id)
+  return listProviderAccountStatus(provider)
+})
+ipcMain.handle('provider-accounts:login', (_, provider: AgentProvider, id: string) => loginProviderAccount(provider, id))
+
 // ─── Agent run ─────────────────────────────────────────────────────────────
 
 interface SendPayload {
@@ -542,6 +574,10 @@ interface SendPayload {
   wslDistro?: string
   /** Which Claude Code account (config dir) to run under. Undefined = machine default. */
   accountId?: string
+  /** Which Codex account to run under, when the active model is a Codex model. */
+  codexAccountId?: string
+  /** Which Gemini account to run under, when the active model is a Gemini model. */
+  geminiAccountId?: string
 }
 
 /**
@@ -717,6 +753,10 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
   // Drop a resume token that belongs to a different provider than this run targets.
   const providerId = providerFor(policy.model)
+  // Non-Claude accounts have no CLAUDE_CONFIG_DIR equivalent to fall back on — inject
+  // their own env override (CODEX_HOME / fake HOME) when the active model needs one.
+  if (providerId === 'codex') Object.assign(env, providerAccountEnv('codex', payload.codexAccountId))
+  else if (providerId === 'gemini') Object.assign(env, providerAccountEnv('gemini', payload.geminiAccountId))
   const prevProvider = sessionProvider.get(appSessionId)
   const resumeToken =
     claudeSessionId && (!prevProvider || prevProvider === providerId) ? claudeSessionId : undefined
@@ -881,7 +921,7 @@ ipcMain.handle('config:get', () => ({
   ...getConfig(),
   claudeSettings: getClaudeSettings()
 }))
-ipcMain.handle('config:models', () => MODELS)
+ipcMain.handle('config:models', () => buildModelsCatalog())
 ipcMain.handle('config:set-default-model', (_, modelId: string) => {
   setDefaultModel(modelId)
   return getConfig()
@@ -970,7 +1010,19 @@ ipcMain.handle('scheduler:run-now', (_, id: string) => runScheduledRunNow(id))
 
 ipcMain.handle(
   'terminal:create',
-  (_, id: string, opts: { cwd?: string; accountId?: string; cols: number; rows: number }) =>
+  (
+    _,
+    id: string,
+    opts: {
+      cwd?: string
+      accountId?: string
+      wslDistro?: string
+      remoteHostId?: string
+      provider?: 'claude' | 'codex' | 'gemini'
+      cols: number
+      rows: number
+    }
+  ) =>
     createTerminal(
       id,
       opts,
@@ -983,8 +1035,11 @@ ipcMain.on('terminal:resize', (_, id: string, cols: number, rows: number) =>
   resizeTerminal(id, cols, rows)
 )
 ipcMain.handle('terminal:kill', (_, id: string) => killTerminal(id))
-ipcMain.handle('terminal:start-claude', (_, id: string, resumeSessionId?: string) =>
-  startClaudeInTerminal(id, resumeSessionId)
+ipcMain.on('terminal:kill-deferred', (_, id: string) => killTerminalDeferred(id))
+ipcMain.handle(
+  'terminal:start-cli',
+  (_, id: string, provider: 'claude' | 'codex' | 'gemini', resumeSessionId?: string) =>
+    startCliInTerminal(id, provider, resumeSessionId)
 )
 
 // ─── Chat compaction (summarize a long session into a fresh one) ───────────────
@@ -1577,17 +1632,35 @@ ipcMain.handle('agents:suggest', async (_, payload: { accountId?: string } = {})
 
 // ─── CLAUDE.md ──────────────────────────────────────────────────────────────
 
-ipcMain.handle('claudemd:read', (_, projectPath?: string) => {
-  const targets: { scope: string; path: string }[] = []
-  if (projectPath) targets.push({ scope: 'project', path: path.join(projectPath, 'CLAUDE.md') })
-  targets.push({ scope: 'global', path: path.join(os.homedir(), '.claude', 'CLAUDE.md') })
-  return targets.map((t) => ({
-    scope: t.scope,
-    path: t.path,
-    exists: fs.existsSync(t.path),
-    content: fs.existsSync(t.path) ? fs.readFileSync(t.path, 'utf-8') : ''
-  }))
-})
+const CONTEXT_FILE: Record<'claude' | 'codex' | 'gemini', string> = {
+  claude: 'CLAUDE.md',
+  codex: 'AGENTS.md',
+  gemini: 'GEMINI.md'
+}
+const CONTEXT_GLOBAL_DIR: Record<'claude' | 'codex' | 'gemini', string> = {
+  claude: '.claude',
+  codex: '.codex',
+  gemini: '.gemini'
+}
+
+ipcMain.handle(
+  'claudemd:read',
+  (_, projectPath?: string, provider: 'claude' | 'codex' | 'gemini' = 'claude') => {
+    const fileName = CONTEXT_FILE[provider]
+    const targets: { scope: string; path: string }[] = []
+    if (projectPath) targets.push({ scope: 'project', path: path.join(projectPath, fileName) })
+    targets.push({
+      scope: 'global',
+      path: path.join(os.homedir(), CONTEXT_GLOBAL_DIR[provider], fileName)
+    })
+    return targets.map((t) => ({
+      scope: t.scope,
+      path: t.path,
+      exists: fs.existsSync(t.path),
+      content: fs.existsSync(t.path) ? fs.readFileSync(t.path, 'utf-8') : ''
+    }))
+  }
+)
 
 ipcMain.handle('claudemd:write', (_, filePath: string, content: string) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true })

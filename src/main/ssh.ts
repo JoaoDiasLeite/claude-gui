@@ -108,6 +108,27 @@ function getHost(id: string): SshHost | null {
   return readHosts().find((h) => h.id === id) ?? null
 }
 
+/**
+ * Build an interactive `ssh` CLI invocation for a stored host, for the embedded terminal
+ * to spawn directly (distinct from the headless ssh2 connection `runRemote` uses for
+ * one-shot `claude -p` calls). Password auth has no non-interactive flag here — the user
+ * is prompted by `ssh` itself inside the terminal.
+ */
+export function getSshTerminalCommand(
+  hostId: string
+): { shell: string; args: string[]; remotePath?: string; claudePath?: string } | null {
+  const h = getHost(hostId)
+  if (!h) return null
+  const args: string[] = ['-t']
+  if (h.port && h.port !== 22) args.push('-p', String(h.port))
+  if (h.authType === 'key' && h.privateKeyPath) {
+    args.push('-i', h.privateKeyPath, '-o', 'IdentitiesOnly=yes')
+  }
+  args.push('-o', 'StrictHostKeyChecking=accept-new')
+  args.push(`${h.username}@${h.host}`)
+  return { shell: 'ssh', args, remotePath: h.remotePath, claudePath: h.claudePath }
+}
+
 export function testConnection(id: string): Promise<{ ok: boolean; message: string }> {
   const host = getHost(id)
   if (!host) return Promise.resolve({ ok: false, message: 'Host not found' })

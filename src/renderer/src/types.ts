@@ -55,6 +55,12 @@ export interface Session {
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
+  /** Which Codex account this chat runs under, when its model is a Codex model. */
+  codexAccountId?: string
+  codexAccountName?: string
+  /** Which Gemini account this chat runs under, when its model is a Gemini model. */
+  geminiAccountId?: string
+  geminiAccountName?: string
   /**
    * Set when this session was forked from another chat. Drives the "branched from …"
    * divider shown after the copied messages. `atMessageId` is the id of the last
@@ -91,6 +97,8 @@ export interface ModelInfo {
   outputPrice: number
   context: string
   provider: ProviderId
+  /** True when this entry came from live catalog discovery, not our bundled/user data. */
+  discovered?: boolean
 }
 
 export interface UsageLimits {
@@ -106,6 +114,8 @@ export interface UiPrefs {
   density: 'comfortable' | 'compact'
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
+  /** Which panel new chats open in. */
+  defaultChatView: 'chat' | 'terminal'
 }
 
 export interface SystemPrefs {
@@ -263,6 +273,8 @@ export interface AccountPlanUsage {
   envs?: string[]
   /** True when this identity includes the machine-default login. */
   isDefault?: boolean
+  /** Managed account ids (accounts.ts) sharing this identity — matches `Session.accountId`. */
+  accountIds?: string[]
   /** 'default' | account id | 'wsl:<distro>' */
   accountKey: string
   /** Display name: the account name, or the distro name for WSL sources. */
@@ -519,6 +531,35 @@ export interface AgentCliStatus {
   plan?: string
 }
 
+export type AgentProvider = 'codex' | 'gemini'
+
+export interface ProviderAccountStatus {
+  id: string
+  name: string
+  provider: AgentProvider
+  configDir: string | null
+  isDefault: boolean
+  loggedIn: boolean
+  email?: string
+  plan?: string
+}
+
+export interface ProviderAccountList {
+  accounts: ProviderAccountStatus[]
+  defaultAccountId: string
+}
+
+/** Common shape AccountPicker renders — CCAccountStatus and ProviderAccountStatus
+ *  both satisfy it structurally. */
+export interface AccountOption {
+  id: string
+  name: string
+  isDefault?: boolean
+  loggedIn: boolean
+  email?: string
+  plan?: string
+}
+
 export type AgentEvent =
   | { appSessionId: string; kind: 'system'; claudeSessionId?: string; tools: string[] }
   | { appSessionId: string; kind: 'text'; content: string }
@@ -683,9 +724,14 @@ export interface PlannerAssistResult {
 
 export interface TerminalCreateOptions {
   cwd?: string
+  /** The account id for the chat's provider (Claude account, CODEX_HOME account, or Gemini account). */
   accountId?: string
   /** Run inside this WSL distro (for WSL-backed chats). */
   wslDistro?: string
+  /** Connect over SSH to this remote host id (for remote-backed chats). */
+  remoteHostId?: string
+  /** Which CLI this terminal is for. Defaults to 'claude'. */
+  provider?: ProviderId
   cols: number
   rows: number
 }
@@ -773,9 +819,20 @@ declare global {
       accountsSetDefault: (id: string) => Promise<AccountList>
       accountsLogin: (id: string) => Promise<{ launched: boolean; command: string }>
 
-      // Agent CLI login status (Codex / Gemini)
+      // Agent CLI login status (Codex / Gemini) — machine-default login only
       agentCliStatus: (id: 'codex' | 'gemini') => Promise<AgentCliStatus>
       agentCliLogin: (id: 'codex' | 'gemini') => Promise<{ launched: boolean; command: string }>
+
+      // Provider accounts (multiple Codex / Gemini logins)
+      providerAccountsList: (provider: AgentProvider) => Promise<ProviderAccountList>
+      providerAccountsAdd: (provider: AgentProvider, name: string) => Promise<ProviderAccountStatus>
+      providerAccountsRename: (provider: AgentProvider, id: string, name: string) => Promise<ProviderAccountList>
+      providerAccountsRemove: (provider: AgentProvider, id: string) => Promise<ProviderAccountList>
+      providerAccountsSetDefault: (provider: AgentProvider, id: string) => Promise<ProviderAccountList>
+      providerAccountsLogin: (
+        provider: AgentProvider,
+        id: string
+      ) => Promise<{ launched: boolean; command: string }>
 
       // Agent
       sendAgent: (payload: {
@@ -794,6 +851,8 @@ declare global {
         remoteHostId?: string
         wslDistro?: string
         accountId?: string
+        codexAccountId?: string
+        geminiAccountId?: string
       }) => void
       stopAgent: (appSessionId: string) => Promise<{ stopped: boolean }>
       onAgentEvent: (cb: (data: AgentEvent) => void) => () => void
@@ -927,7 +986,7 @@ declare global {
       setClaudeHooks: (hooks: ClaudeHooks) => Promise<WriteResult & { hooks?: ClaudeHooks }>
 
       // CLAUDE.md
-      claudeMdRead: (projectPath?: string) => Promise<ClaudeMdFile[]>
+      claudeMdRead: (projectPath?: string, provider?: ProviderId) => Promise<ClaudeMdFile[]>
       claudeMdWrite: (filePath: string, content: string) => Promise<{ success: boolean }>
 
       // Checkpoints
@@ -1001,7 +1060,12 @@ declare global {
       terminalWrite: (id: string, data: string) => void
       terminalResize: (id: string, cols: number, rows: number) => void
       terminalKill: (id: string) => Promise<{ ok: boolean }>
-      terminalStartClaude: (id: string, resumeSessionId?: string) => Promise<{ ok: boolean }>
+      terminalKillDeferred: (id: string) => void
+      terminalStartCli: (
+        id: string,
+        provider: ProviderId,
+        resumeSessionId?: string
+      ) => Promise<{ ok: boolean }>
       onTerminalData: (cb: (data: TerminalDataEvent) => void) => () => void
       onTerminalExit: (cb: (data: TerminalExitEvent) => void) => () => void
     }

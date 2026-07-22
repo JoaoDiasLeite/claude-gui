@@ -74,9 +74,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   accountsSetDefault: (id: string) => ipcRenderer.invoke('accounts:set-default', id),
   accountsLogin: (id: string) => ipcRenderer.invoke('accounts:login', id),
 
-  // Agent CLI login status (Codex / Gemini)
+  // Agent CLI login status (Codex / Gemini) — machine-default login only
   agentCliStatus: (id: string) => ipcRenderer.invoke('agentcli:status', id),
   agentCliLogin: (id: string) => ipcRenderer.invoke('agentcli:login', id),
+
+  // Provider accounts (multiple Codex / Gemini logins)
+  providerAccountsList: (provider: string) => ipcRenderer.invoke('provider-accounts:list', provider),
+  providerAccountsAdd: (provider: string, name: string) =>
+    ipcRenderer.invoke('provider-accounts:add', provider, name),
+  providerAccountsRename: (provider: string, id: string, name: string) =>
+    ipcRenderer.invoke('provider-accounts:rename', provider, id, name),
+  providerAccountsRemove: (provider: string, id: string) =>
+    ipcRenderer.invoke('provider-accounts:remove', provider, id),
+  providerAccountsSetDefault: (provider: string, id: string) =>
+    ipcRenderer.invoke('provider-accounts:set-default', provider, id),
+  providerAccountsLogin: (provider: string, id: string) =>
+    ipcRenderer.invoke('provider-accounts:login', provider, id),
 
   // Agent
   sendAgent: (payload: unknown) => ipcRenderer.send('agent:send', payload),
@@ -192,7 +205,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setClaudeHooks: (hooks: unknown) => ipcRenderer.invoke('config:set-hooks', hooks),
 
   // CLAUDE.md
-  claudeMdRead: (projectPath?: string) => ipcRenderer.invoke('claudemd:read', projectPath),
+  claudeMdRead: (projectPath?: string, provider?: string) =>
+    ipcRenderer.invoke('claudemd:read', projectPath, provider),
   claudeMdWrite: (filePath: string, content: string) =>
     ipcRenderer.invoke('claudemd:write', filePath, content),
 
@@ -269,8 +283,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   terminalResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.send('terminal:resize', id, cols, rows),
   terminalKill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
-  terminalStartClaude: (id: string, resumeSessionId?: string) =>
-    ipcRenderer.invoke('terminal:start-claude', id, resumeSessionId),
+  terminalKillDeferred: (id: string) => ipcRenderer.send('terminal:kill-deferred', id),
+  terminalStartCli: (id: string, provider: string, resumeSessionId?: string) =>
+    ipcRenderer.invoke('terminal:start-cli', id, provider, resumeSessionId),
   onTerminalData: (cb: (data: unknown) => void) => {
     const fn = (_: unknown, data: unknown) => cb(data)
     ipcRenderer.on('terminal:data', fn)
