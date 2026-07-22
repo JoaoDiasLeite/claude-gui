@@ -304,6 +304,13 @@ export default function SettingsModal({
                     <button className={ui.fontSize === 'lg' ? 'on' : ''} onClick={() => onSetUi({ fontSize: 'lg' })}>L</button>
                   </div>
                 </div>
+                <div className="seg-field">
+                  <span>Open new chats in</span>
+                  <div className="seg-control">
+                    <button className={ui.defaultChatView === 'chat' ? 'on' : ''} onClick={() => onSetUi({ defaultChatView: 'chat' })}>Chat</button>
+                    <button className={ui.defaultChatView === 'terminal' ? 'on' : ''} onClick={() => onSetUi({ defaultChatView: 'terminal' })}>Terminal</button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

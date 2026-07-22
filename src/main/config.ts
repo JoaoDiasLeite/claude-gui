@@ -60,6 +60,8 @@ export interface UiPrefs {
   density: 'comfortable' | 'compact'
   fontSize: 'sm' | 'md' | 'lg'
   onboarded: boolean
+  /** Which panel new chats open in. */
+  defaultChatView: 'chat' | 'terminal'
 }
 
 export interface SystemPrefs {
@@ -87,7 +89,7 @@ let config: AppConfig = {
   // 0 = no personal budget set (no % bar shown). These are user budgets, NOT Anthropic
   // plan limits, which are metered server-side and not readable locally.
   limits: { hourUsd: 0, sessionUsd: 0, weekUsd: 0 },
-  ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false },
+  ui: { theme: 'dark', palette: 'warm-rust', density: 'comfortable', fontSize: 'md', onboarded: false, defaultChatView: 'chat' },
   system: { openAtLogin: false, startMinimized: false, closeToTray: true, overlayShortcut: '', explorerContextMenu: false }
 }
 

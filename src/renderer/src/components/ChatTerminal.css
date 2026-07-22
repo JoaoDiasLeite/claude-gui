@@ -61,19 +61,22 @@
   color: var(--accent);
 }
 
-.chat-terminal-btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-contrast, #fff);
-}
-
-.chat-terminal-btn.primary:hover {
-  filter: brightness(1.08);
-  color: var(--accent-contrast, #fff);
-}
-
 .chat-terminal-btn.icon {
   padding: 3px 5px;
+}
+
+.chat-terminal-fontsize {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 2px;
+}
+
+.chat-terminal-fontsize-value {
+  font-size: 11px;
+  color: var(--text-dim, var(--text));
+  min-width: 1.5em;
+  text-align: center;
 }
 
 .chat-terminal-host-wrap {
