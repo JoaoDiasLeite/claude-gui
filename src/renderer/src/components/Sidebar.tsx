@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { Session, AuthStatus, CCAccountStatus } from '../types'
+import { createPortal } from 'react-dom'
+import { Session, AuthStatus, CCAccountStatus, ProviderAccountStatus, ProviderId, ModelInfo } from '../types'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -23,6 +24,31 @@ function shortModelLabel(id: string): string {
     .replace(/^([a-z])/, (c) => c.toUpperCase())
 }
 
+// A small monochrome glyph shown before an account name to signal its provider —
+// simplified brand marks (Claude spark / Codex hexagon / Gemini sparkle), no colors,
+// inheriting currentColor so they stay subtle against the row text.
+function ProviderIcon({ provider }: { provider: ProviderId }) {
+  if (provider === 'codex') {
+    return (
+      <svg className="provider-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+        <polygon points="12 3 20 7.5 20 16.5 12 21 4 16.5 4 7.5" />
+      </svg>
+    )
+  }
+  if (provider === 'gemini') {
+    return (
+      <svg className="provider-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3c0 4.5-4.5 9-9 9 4.5 0 9 4.5 9 9 0-4.5 4.5-9 9-9-4.5 0-9-4.5-9-9z" />
+      </svg>
+    )
+  }
+  return (
+    <svg className="provider-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M12 4v16M5 8l14 8M19 8l-14 8" />
+    </svg>
+  )
+}
+
 interface Props {
   sessions: Session[]
   activeId: string
@@ -41,12 +67,22 @@ interface Props {
   onOpenSettings: () => void
   auth: AuthStatus | null
   accounts: CCAccountStatus[]
-  /** Switch the APP-LEVEL default account (used for new chats). */
-  onAccountChange: (accountId: string) => void
+  /** Model catalog — used to resolve a model id to its provider. */
+  models: ModelInfo[]
+  /** Provider the app-wide default model belongs to — scopes the account picker & session list. */
+  defaultProvider: ProviderId
+  codexAccounts: ProviderAccountStatus[]
+  geminiAccounts: ProviderAccountStatus[]
+  codexDefaultAccountId?: string
+  geminiDefaultAccountId?: string
+  /** Switch the APP-LEVEL default account (used for new chats) for the given provider. */
+  onPickAccount: (provider: ProviderId, accountId: string) => void
   /** Open the accounts manager (from the picker's footer). */
   onManageAccounts: () => void
-  /** Default account's live plan session (5h) window, for the ambient badge. */
-  planSession?: { utilization: number; resetsAt?: string }
+  /** Per-account 5h-window usage, keyed by managed account id — shown inside the picker dropdown. */
+  accountUsage?: Record<string, { utilization: number; resetsAt?: string }>
+  /** Jump to the Projects view (all historical chats, across accounts). */
+  onExploreProjects: () => void
   /** App-wide default model/account — session badges only render when a session diverges from these. */
   defaultModel?: string
   defaultAccountId?: string
@@ -84,9 +120,16 @@ export default function Sidebar({
   onOpenSettings,
   auth,
   accounts,
-  onAccountChange,
+  models,
+  defaultProvider,
+  codexAccounts,
+  geminiAccounts,
+  codexDefaultAccountId,
+  geminiDefaultAccountId,
+  onPickAccount,
   onManageAccounts,
-  planSession,
+  accountUsage,
+  onExploreProjects,
   defaultModel,
   defaultAccountId
 }: Props) {
@@ -94,7 +137,13 @@ export default function Sidebar({
   // App-level account picker (the account row). Only toggles when there's more than
   // one account and the row is in the ready state; otherwise the row opens Settings.
   const [accountMenuOpen, setAccountMenuOpen] = useState(false)
+  // The menu renders in a portal with position: fixed so the sidebar's overflow:hidden
+  // (and the nav rail's stacking context) can't clip it — the old absolutely-positioned
+  // menu was cut off / hidden behind the left nav rail.
+  const [accountMenuPos, setAccountMenuPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const accountRef = useRef<HTMLDivElement>(null)
+  const accountBtnRef = useRef<HTMLButtonElement>(null)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState<number>(() => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
@@ -168,53 +217,113 @@ export default function Sidebar({
         ? 'API key'
         : 'No API key'
 
-  // Surface the DEFAULT account (used for new chats) — account selection is app-level,
-  // not per-chat. The default account also counts as ready when the global connection is
-  // (e.g. an API key), even if its own OAuth file isn't present; other accounts are ready
-  // only once logged in.
-  const defaultAccount = accounts.find((a) => a.id === defaultAccountId)
-  const accountReady = defaultAccount
-    ? defaultAccount.isDefault
-      ? defaultAccount.loggedIn || authReady
-      : defaultAccount.loggedIn
-    : authReady
-  const ready = accountReady
-  const accountDetail = defaultAccount?.loggedIn
-    ? [defaultAccount.email, defaultAccount.plan].filter(Boolean).join(' · ')
+  // Surface the DEFAULT account for whichever provider the app-wide default model
+  // currently belongs to — account selection is app-level, not per-chat. The Claude
+  // default account also counts as ready when the global connection is (e.g. an API
+  // key), even if its own OAuth file isn't present; other accounts are ready only once
+  // logged in (or already flagged as the machine default).
+  const currentClaudeId = defaultAccountId ?? 'default'
+  const currentCodexId = codexDefaultAccountId ?? 'default'
+  const currentGeminiId = geminiDefaultAccountId ?? 'default'
+  const currentAccount =
+    defaultProvider === 'codex'
+      ? codexAccounts.find((a) => a.id === currentCodexId)
+      : defaultProvider === 'gemini'
+        ? geminiAccounts.find((a) => a.id === currentGeminiId)
+        : accounts.find((a) => a.id === currentClaudeId)
+  const ready = currentAccount
+    ? currentAccount.isDefault
+      ? currentAccount.loggedIn || (defaultProvider === 'claude' && authReady)
+      : currentAccount.loggedIn
+    : defaultProvider === 'claude' && authReady
+  const accountDetail = currentAccount?.loggedIn
+    ? [currentAccount.email, currentAccount.plan].filter(Boolean).join(' · ')
     : ''
   // The pill shows just the account name — email/plan live in the tooltip, so the
   // ~200px row never ellipsizes mid-email against the usage badge.
-  const statusLabel = defaultAccount
-    ? defaultAccount.name + (ready ? '' : ' · not logged in')
+  const statusLabel = currentAccount
+    ? currentAccount.name + (ready ? '' : ' · not logged in')
     : authLabel
-  // The row doubles as a default-account picker when there's more than one account and
-  // it's connected; otherwise it just opens connection settings.
-  const isAccountPicker = accounts.length > 1 && ready
+  // The row doubles as a (grouped, cross-provider) account picker whenever more than one
+  // account exists anywhere — Codex/Gemini always have a default, so this lets users
+  // switch providers even before Claude has multiple logins. Otherwise it just opens
+  // connection settings.
+  const totalAccounts = accounts.length + codexAccounts.length + geminiAccounts.length
+  const isAccountPicker = totalAccounts > 1
   const statusTitle =
     (accountDetail ? `${accountDetail} — ` : '') +
     (isAccountPicker ? 'Switch default account' : 'Open connection settings')
 
-  // Close the account picker on outside click / Escape (mirrors AccountPicker).
+  // Toggle the (portaled) account picker, anchoring the fixed-position menu under the
+  // account row. Closing just flips the flag.
+  const toggleAccountMenu = () => {
+    if (accountMenuOpen) {
+      setAccountMenuOpen(false)
+      return
+    }
+    const r = accountBtnRef.current?.getBoundingClientRect()
+    if (!r) return
+    setAccountMenuPos({ top: r.bottom + 4, left: r.left, width: r.width })
+    setAccountMenuOpen(true)
+  }
+
+  // Close the account picker on outside click / Escape (mirrors AccountPicker). The menu
+  // lives outside `accountRef` (portal), so check both refs before dismissing. A fixed
+  // menu doesn't follow its anchor, so also close on outside scroll / resize.
   useEffect(() => {
     if (!accountMenuOpen) return
     const onDoc = (e: MouseEvent) => {
-      if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountMenuOpen(false)
+      const t = e.target as Node
+      if (accountRef.current?.contains(t) || accountMenuRef.current?.contains(t)) return
+      setAccountMenuOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setAccountMenuOpen(false)
     }
+    const onScroll = (e: Event) => {
+      if (e.target instanceof Node && accountMenuRef.current?.contains(e.target)) return
+      setAccountMenuOpen(false)
+    }
+    const onResize = () => setAccountMenuOpen(false)
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onResize)
     return () => {
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onResize)
     }
   }, [accountMenuOpen])
 
   // Blank "New chat" drafts (no messages yet) stay out of the list — the Sessions
   // section only appears once at least one chat has real content. The active draft
   // is already on screen in the main area, so listing it adds nothing.
-  const visibleSessions = sessions.filter((s) => s.messages.length > 0)
+  //
+  // Chats are also scoped to the selected provider + account: a chat is permanently
+  // bound to the provider/account that created it, so switching either swaps the
+  // visible history. Older chats without an accountId fall under that provider's
+  // machine-default account ('default'). Everything (across accounts) remains
+  // reachable via "Explore all chats" → Projects.
+  const provOf = (modelId?: string): ProviderId =>
+    models.find((m) => (modelId ?? '').startsWith(m.id))?.provider ?? 'claude'
+  const acctOf = (s: Session): string => {
+    const p = provOf(s.model)
+    return p === 'codex'
+      ? (s.codexAccountId ?? 'default')
+      : p === 'gemini'
+        ? (s.geminiAccountId ?? 'default')
+        : (s.accountId ?? 'default')
+  }
+  const currentAccountId =
+    defaultProvider === 'codex' ? currentCodexId : defaultProvider === 'gemini' ? currentGeminiId : currentClaudeId
+  // The selected account's own 5h-window usage, shown as a badge on the collapsed row.
+  // Only Claude accounts have real plan-usage data.
+  const currentUsage = defaultProvider === 'claude' ? accountUsage?.[currentAccountId] : undefined
+  const visibleSessions = sessions.filter(
+    (s) => s.messages.length > 0 && provOf(s.model) === defaultProvider && acctOf(s) === currentAccountId
+  )
 
   // ── Session search ──────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('')
@@ -260,20 +369,22 @@ export default function Sidebar({
     <div className="sidebar" style={{ width, flex: '0 0 auto' }}>
       <div className="sidebar-account" ref={accountRef}>
         <button
+          ref={accountBtnRef}
           className={`auth-status ${ready ? 'ok' : 'warn'}`}
-          onClick={isAccountPicker ? () => setAccountMenuOpen((v) => !v) : onOpenSettings}
+          onClick={isAccountPicker ? toggleAccountMenu : onOpenSettings}
           title={statusTitle}
           aria-haspopup={isAccountPicker ? 'listbox' : undefined}
           aria-expanded={isAccountPicker ? accountMenuOpen : undefined}
         >
           <span className={`auth-dot ${ready ? 'ok' : 'warn'}`} />
+          {currentAccount && <ProviderIcon provider={defaultProvider} />}
           <span className="auth-label">{statusLabel}</span>
-          {planSession && (
+          {currentUsage && (
             <span
-              className={`plan-badge ${planSession.utilization >= 90 ? 'danger' : planSession.utilization >= 70 ? 'warn' : 'ok'}`}
-              title={`Plan session window: ${planSession.utilization.toFixed(0)}% used${planSession.resetsAt ? ` · ${fmtReset(planSession.resetsAt)}` : ''}`}
+              className={`plan-badge ${currentUsage.utilization >= 90 ? 'danger' : currentUsage.utilization >= 70 ? 'warn' : 'ok'}`}
+              title={`${statusLabel} — plan session window: ${currentUsage.utilization.toFixed(0)}% used${currentUsage.resetsAt ? ` · ${fmtReset(currentUsage.resetsAt)}` : ''}`}
             >
-              {planSession.utilization.toFixed(0)}%
+              {currentUsage.utilization.toFixed(0)}%
             </span>
           )}
           {isAccountPicker && (
@@ -283,46 +394,92 @@ export default function Sidebar({
           )}
           {!ready && <span className="auth-cta">Connect</span>}
         </button>
-        {isAccountPicker && accountMenuOpen && (
-          <div className="account-picker-menu sidebar-account-menu" role="listbox">
-            {accounts.map((a) => (
-              <button
-                key={a.id}
-                className={`account-picker-item ${a.id === defaultAccountId ? 'selected' : ''}`}
-                role="option"
-                aria-selected={a.id === defaultAccountId}
-                onClick={() => {
-                  onAccountChange(a.id)
-                  setAccountMenuOpen(false)
-                }}
-              >
-                <div className="account-picker-item-main">
-                  <span className={`account-dot ${a.loggedIn ? 'ok' : 'warn'}`} />
-                  <span className="account-picker-item-name">{a.name}</span>
-                  {a.id === defaultAccountId && (
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </div>
-                <div className="account-picker-item-meta">
-                  {a.loggedIn
-                    ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
-                    : 'Not logged in'}
-                </div>
-              </button>
-            ))}
-            <button
-              className="account-picker-manage"
-              onClick={() => {
-                setAccountMenuOpen(false)
-                onManageAccounts()
+        {isAccountPicker && accountMenuOpen && accountMenuPos &&
+          createPortal(
+            <div
+              className="account-picker-menu sidebar-account-menu"
+              role="listbox"
+              ref={accountMenuRef}
+              style={{
+                position: 'fixed',
+                top: accountMenuPos.top,
+                left: accountMenuPos.left,
+                right: 'auto',
+                minWidth: Math.max(accountMenuPos.width, 220),
+                zIndex: 200
               }}
             >
-              Manage accounts…
-            </button>
-          </div>
-        )}
+              {(() => {
+                let seenGroup = false
+                return (
+                  [
+                    ['Claude', 'claude' as ProviderId, accounts, currentClaudeId],
+                    ['Codex', 'codex' as ProviderId, codexAccounts, currentCodexId],
+                    ['Gemini', 'gemini' as ProviderId, geminiAccounts, currentGeminiId]
+                  ] as const
+                ).map(([label, provider, list, currentId]) => {
+                  if (list.length === 0) return null
+                  const isFirstGroup = !seenGroup
+                  seenGroup = true
+                  return (
+                  <div key={provider}>
+                    <div className={`account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
+                    {list.map((a) => {
+                      const usage = provider === 'claude' ? accountUsage?.[a.id] : undefined
+                      const selected = provider === defaultProvider && a.id === currentId
+                      return (
+                        <button
+                          key={a.id}
+                          className={`account-picker-item ${selected ? 'selected' : ''}`}
+                          role="option"
+                          aria-selected={selected}
+                          onClick={() => {
+                            onPickAccount(provider, a.id)
+                            setAccountMenuOpen(false)
+                          }}
+                        >
+                          <div className="account-picker-item-main">
+                            <span className={`account-dot ${a.loggedIn ? 'ok' : 'warn'}`} />
+                            <ProviderIcon provider={provider} />
+                            <span className="account-picker-item-name">{a.name}</span>
+                            {usage && (
+                              <span
+                                className={`plan-badge ${usage.utilization >= 90 ? 'danger' : usage.utilization >= 70 ? 'warn' : 'ok'}`}
+                                title={`Plan session window: ${usage.utilization.toFixed(0)}% used${usage.resetsAt ? ` · ${fmtReset(usage.resetsAt)}` : ''}`}
+                              >
+                                {usage.utilization.toFixed(0)}%
+                              </span>
+                            )}
+                            {selected && (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="account-picker-item-meta">
+                            {a.loggedIn
+                              ? [a.email, a.plan].filter(Boolean).join(' · ') || 'Logged in'
+                              : 'Not logged in'}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  )
+                })
+              })()}
+              <button
+                className="account-picker-manage"
+                onClick={() => {
+                  setAccountMenuOpen(false)
+                  onManageAccounts()
+                }}
+              >
+                Manage accounts…
+              </button>
+            </div>,
+            document.body
+          )}
       </div>
 
       <div className="sidebar-tabs">
@@ -344,8 +501,8 @@ export default function Sidebar({
               <button
                 className="icon-btn"
                 onClick={onNewQuickChat}
-                title="Quick chat (Haiku — cheapest model)"
-                aria-label="Quick chat with Haiku"
+                title="Quick chat (cheapest model)"
+                aria-label="Quick chat with the cheapest model"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -475,6 +632,13 @@ export default function Sidebar({
                 )
               })}
             </div>
+            <button className="sidebar-explore" onClick={onExploreProjects}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              Explore all chats
+            </button>
           </>
         ) : (
           <>

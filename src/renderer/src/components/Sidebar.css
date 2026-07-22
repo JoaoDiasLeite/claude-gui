@@ -91,6 +91,12 @@
   color: var(--text-0);
 }
 
+/* Small monochrome provider glyph before an account name (Claude/Codex/Gemini). */
+.provider-icon {
+  flex-shrink: 0;
+  color: var(--text-2);
+}
+
 .auth-cta {
   font-weight: 600;
   flex-shrink: 0;
@@ -337,6 +343,32 @@
   max-width: 80px;
 }
 
+/* ── Explore all chats ────────────────────────────────────── */
+/* Sits under the (account-scoped) session list and jumps to the Projects view,
+   where every chat across all accounts and sources is browsable. */
+.sidebar-explore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  margin: 4px 10px 12px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-light);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+.sidebar-explore:hover {
+  background: var(--bg-hover);
+  color: var(--text-0);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+.sidebar-explore svg { color: var(--text-2); flex-shrink: 0; }
+
 /* ── Empty state ──────────────────────────────────────────── */
 .empty-state {
   display: flex;
@@ -368,4 +400,19 @@
   background: var(--bg-hover);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   transform: translateY(-1px);
+}
+
+/* Provider section header inside the grouped (Claude / Codex / Gemini) account picker
+   dropdown — see Sidebar.tsx's account menu. */
+.account-picker-group-label {
+  padding: 6px 10px 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.account-picker-group-label.not-first {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-light);
 }

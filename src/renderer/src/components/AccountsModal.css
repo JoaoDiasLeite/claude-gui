@@ -4,14 +4,17 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin: 14px 0;
+  margin: 6px 0;
 }
+
+/* Tighten the modal's stacked spacing — titles, hints and row groups were too airy. */
+.accounts-modal .field-hint { margin: 3px 0 0; }
 
 .account-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 12px;
+  padding: 9px 12px;
   background: var(--bg-2);
   border: 1px solid var(--border-light);
   border-radius: var(--radius);
@@ -94,12 +97,12 @@
 
 .login-hint-actions { display: flex; align-items: center; gap: 8px; }
 
+/* No own divider — the "New account" input is clearly part of its section, and the
+   next section title already draws a separator. Avoids two stacked dividers + a gap. */
 .add-account {
   display: flex;
   gap: 8px;
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border-light);
+  margin-top: 8px;
 }
 .add-account-input {
   flex: 1;
@@ -113,10 +116,17 @@
 .add-account-input:focus { border-color: var(--accent); outline: none; }
 
 .accounts-section-title {
-  margin: 18px 0 2px;
-  padding-top: 14px;
+  margin: 10px 0 0;
+  padding-top: 10px;
   border-top: 1px solid var(--border-light);
   font-size: 13px;
   font-weight: 600;
   color: var(--text-0);
+}
+/* The first section title ("Claude accounts") leads the modal body — drop the
+   separator border/spacing so it doesn't render a stray divider + gap at the top. */
+.accounts-modal .modal-body > .accounts-section-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }

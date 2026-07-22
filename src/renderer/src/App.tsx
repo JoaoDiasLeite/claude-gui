@@ -13,6 +13,8 @@ import {
   AgentDef,
   ApprovalRequest,
   CCAccountStatus,
+  ProviderAccountStatus,
+  ProviderId,
   PlannerTask,
   UsageLimits,
   PlanUsageReport,
@@ -112,6 +114,10 @@ export default function App() {
   const [approvalQueue, setApprovalQueue] = useState<ApprovalRequest[]>([])
   const [accounts, setAccounts] = useState<CCAccountStatus[]>([])
   const [defaultAccountId, setDefaultAccountId] = useState('default')
+  const [codexAccounts, setCodexAccounts] = useState<ProviderAccountStatus[]>([])
+  const [codexDefaultAccountId, setCodexDefaultAccountId] = useState('default')
+  const [geminiAccounts, setGeminiAccounts] = useState<ProviderAccountStatus[]>([])
+  const [geminiDefaultAccountId, setGeminiDefaultAccountId] = useState('default')
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [maximized, setMaximized] = useState(false)
   const [limits, setLimits] = useState<UsageLimits>({ hourUsd: 0, sessionUsd: 0, weekUsd: 0 })
@@ -205,6 +211,17 @@ export default function App() {
     return list
   }, [])
 
+  const refreshProviderAccounts = useCallback(async () => {
+    const [codex, gemini] = await Promise.all([
+      window.electronAPI.providerAccountsList('codex'),
+      window.electronAPI.providerAccountsList('gemini')
+    ])
+    setCodexAccounts(codex.accounts)
+    setCodexDefaultAccountId(codex.defaultAccountId)
+    setGeminiAccounts(gemini.accounts)
+    setGeminiDefaultAccountId(gemini.defaultAccountId)
+  }, [])
+
   // Mount: load sessions, auth, models, config
   useEffect(() => {
     const init = async () => {
@@ -215,6 +232,7 @@ export default function App() {
       ])
       await refreshAuth()
       await refreshAccounts()
+      await refreshProviderAccounts()
       setModels(models)
       setDefaultModel(config.defaultModel)
       setUi(config.ui)
@@ -458,7 +476,9 @@ export default function App() {
       files,
       remoteHostId: session.remoteHostId,
       wslDistro: session.wslDistro,
-      accountId: session.accountId ?? defaultAccountId
+      accountId: session.accountId ?? defaultAccountId,
+      codexAccountId: session.codexAccountId,
+      geminiAccountId: session.geminiAccountId
     }),
     [defaultModel, defaultAccountId]
   )
@@ -651,16 +671,20 @@ export default function App() {
     }
   }, [])
 
-  // The DEFAULT account's session (5h) window, surfaced ambiently in the sidebar chip.
-  // The sidebar row now displays the default account, so its badge must track the same
-  // account: prefer the report entry flagged isDefault, falling back to `primary`.
-  const planSession = useMemo(() => {
-    if (!planReport) return undefined
-    const acc =
-      planReport.accounts.find((a) => a.isDefault && a.windows.length > 0) ??
-      planReport.accounts.find((a) => a.accountKey === planReport.primary)
-    const w = acc?.windows.find((win) => win.key === 'five_hour')
-    return w ? { utilization: w.utilization, resetsAt: w.resetsAt } : undefined
+  // Per-account 5h-window usage, keyed by managed account id — the account picker
+  // shows each account's own number inside its dropdown row (instead of a single
+  // ambient badge on the always-visible account chip).
+  const accountUsage = useMemo(() => {
+    const map: Record<string, { utilization: number; resetsAt?: string }> = {}
+    if (!planReport) return map
+    for (const acc of planReport.accounts) {
+      const w = acc.windows.find((win) => win.key === 'five_hour')
+      if (!w) continue
+      const entry = { utilization: w.utilization, resetsAt: w.resetsAt }
+      for (const id of acc.accountIds ?? []) map[id] = entry
+      if (acc.isDefault) map['default'] = entry
+    }
+    return map
   }, [planReport])
 
   // Stop only the ACTIVE session's run. agent:stop takes the appSessionId and aborts
@@ -689,9 +713,10 @@ export default function App() {
   }
   createSessionRef.current = createSession
 
-  // Quick chat: forces the cheapest model (Haiku) for throwaway / trivial questions.
+  // Quick chat: forces the current provider's cheapest model for throwaway / trivial questions.
   const createQuickChat = () => {
-    const s = newSession(activeSession?.projectPath, 'claude-haiku-4-5', activeSession?.accountId ?? defaultAccountId)
+    const model = cheapestModelForProvider(defaultProvider) ?? defaultModel
+    const s = newSession(activeSession?.projectPath, model, activeSession?.accountId ?? defaultAccountId)
     setSessions((prev) => [s, ...prev])
     setActiveId(s.id)
     setView('chat')
@@ -737,6 +762,62 @@ export default function App() {
     // selected default account immediately, instead of showing the previous
     // account's number until the watcher's next (~5min) tick.
     window.electronAPI.ccPlanUsage(true).then(setPlanReport).catch(() => {})
+  }
+
+  // The provider the app-wide default model belongs to — drives which account store the
+  // sidebar's account picker is scoped to.
+  const defaultProvider: ProviderId = models.find((m) => defaultModel.startsWith(m.id))?.provider ?? 'claude'
+  // The active chat's provider and that provider's account — drives which CLI the embedded
+  // terminal launches and under which account.
+  const activeChatProvider: ProviderId =
+    models.find((m) => (activeSession?.model || defaultModel).startsWith(m.id))?.provider ?? 'claude'
+  const terminalAccountId =
+    activeChatProvider === 'codex'
+      ? (activeSession?.codexAccountId ?? codexDefaultAccountId)
+      : activeChatProvider === 'gemini'
+        ? (activeSession?.geminiAccountId ?? geminiDefaultAccountId)
+        : (activeSession?.accountId ?? defaultAccountId)
+  const firstModelForProvider = (provider: ProviderId): string | undefined =>
+    models.find((m) => m.provider === provider)?.id
+  // Cheapest released model of a provider (by input+output price), for Quick chat.
+  const cheapestModelForProvider = (provider: ProviderId): string | undefined => {
+    const inProvider = models.filter((m) => m.provider === provider)
+    const priced = inProvider.filter((m) => m.inputPrice > 0 || m.outputPrice > 0)
+    const pool = priced.length ? priced : inProvider
+    if (pool.length === 0) return undefined
+    return pool.reduce((a, b) => (a.inputPrice + a.outputPrice <= b.inputPrice + b.outputPrice ? a : b)).id
+  }
+
+  // Generalized version of switchDefaultAccount above, covering all three providers. Also
+  // switches the app's default model to that provider's top model when the pick crosses a
+  // provider boundary, so a newly-picked Codex/Gemini account is actually used by new chats.
+  const switchDefaultProviderAccount = async (provider: ProviderId, accountId: string) => {
+    if (provider === 'claude') {
+      await switchDefaultAccount(accountId)
+    } else {
+      const { accounts: next, defaultAccountId: nextDefault } =
+        await window.electronAPI.providerAccountsSetDefault(provider, accountId)
+      if (provider === 'codex') {
+        setCodexAccounts(next)
+        setCodexDefaultAccountId(nextDefault)
+      } else {
+        setGeminiAccounts(next)
+        setGeminiDefaultAccountId(nextDefault)
+      }
+      const name = next.find((a) => a.id === accountId)?.name
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== activeIdRef.current || s.messages.length !== 0) return s
+          return provider === 'codex'
+            ? { ...s, codexAccountId: accountId, codexAccountName: name }
+            : { ...s, geminiAccountId: accountId, geminiAccountName: name }
+        })
+      )
+    }
+    if (provider !== defaultProvider) {
+      const m = firstModelForProvider(provider)
+      if (m) await handleSetDefaultModel(m)
+    }
   }
 
   const toggleAutoApprove = () => {
@@ -1102,7 +1183,7 @@ export default function App() {
   const paletteItems: CommandItem[] = useMemo(() => {
     const items: CommandItem[] = []
     items.push({ id: 'new', title: 'New chat', group: 'Actions', subtitle: '⌘N', run: createSession })
-    items.push({ id: 'new-quick', title: 'Quick chat (Haiku · cheapest)', group: 'Actions', run: createQuickChat })
+    items.push({ id: 'new-quick', title: 'Quick chat (cheapest model)', group: 'Actions', run: createQuickChat })
     const views: { v: View; label: string }[] = [
       { v: 'chat', label: 'Chat' },
       { v: 'projects', label: 'Projects' },
@@ -1179,9 +1260,16 @@ export default function App() {
             onOpenSettings={() => setSettingsOpen(true)}
             auth={auth}
             accounts={accounts}
-            onAccountChange={switchDefaultAccount}
+            models={models}
+            defaultProvider={defaultProvider}
+            codexAccounts={codexAccounts}
+            geminiAccounts={geminiAccounts}
+            codexDefaultAccountId={codexDefaultAccountId}
+            geminiDefaultAccountId={geminiDefaultAccountId}
+            onPickAccount={switchDefaultProviderAccount}
             onManageAccounts={() => setAccountsOpen(true)}
-            planSession={planSession}
+            accountUsage={accountUsage}
+            onExploreProjects={() => setView('projects')}
             defaultModel={defaultModel}
             defaultAccountId={defaultAccountId}
           />
@@ -1198,7 +1286,7 @@ export default function App() {
                 <p>Start a new chat, or pick one from the sidebar.</p>
                 <div className="welcome-actions">
                   <button className="btn-primary" onClick={createSession}>New chat</button>
-                  <button className="welcome-quick" onClick={createQuickChat}>Quick chat (Haiku)</button>
+                  <button className="welcome-quick" onClick={createQuickChat}>Quick chat</button>
                 </div>
               </div>
             ) : (
@@ -1227,7 +1315,9 @@ export default function App() {
               models={models}
               currentModel={activeSession?.model || defaultModel}
               onModelChange={setSessionModel}
-              currentAccount={activeSession?.accountId ?? defaultAccountId}
+              terminalProvider={activeChatProvider}
+              terminalAccountId={terminalAccountId}
+              defaultChatView={ui?.defaultChatView ?? 'chat'}
               onOpenClaudeMd={() => setClaudeMdOpen(true)}
               autoApprove={activeSession?.autoApprove ?? false}
               onToggleAutoApprove={toggleAutoApprove}
@@ -1340,7 +1430,11 @@ export default function App() {
         />
       )}
       {claudeMdOpen && (
-        <ClaudeMdModal projectPath={activeSession?.projectPath} onClose={() => setClaudeMdOpen(false)} />
+        <ClaudeMdModal
+          projectPath={activeSession?.projectPath}
+          provider={activeChatProvider}
+          onClose={() => setClaudeMdOpen(false)}
+        />
       )}
       {view !== 'rooms' && approvalQueue.length > 0 && (
         <ApprovalModal request={approvalQueue[0]} onDecide={respondApproval} />
@@ -1359,7 +1453,13 @@ export default function App() {
       )}
       {paletteOpen && <CommandPalette items={paletteItems} onClose={() => setPaletteOpen(false)} />}
       {accountsOpen && (
-        <AccountsModal onClose={() => setAccountsOpen(false)} onChanged={refreshAccounts} />
+        <AccountsModal
+          onClose={() => setAccountsOpen(false)}
+          onChanged={() => {
+            refreshAccounts()
+            refreshProviderAccounts()
+          }}
+        />
       )}
       {changelogOpen && <ChangelogModal onClose={() => setChangelogOpen(false)} />}
       </div>

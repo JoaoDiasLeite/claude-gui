@@ -957,9 +957,17 @@ function AssistDrawer(props: {
           <div className="assist-runwith-field">
             <span className="assist-runwith-label">Account</span>
             <AccountPicker
-              accounts={props.accounts}
-              value={props.runAccountId}
-              onChange={props.onPickAccount}
+              items={props.accounts.map((a) => ({
+                provider: 'claude' as const,
+                id: a.id,
+                name: a.name,
+                loggedIn: a.loggedIn,
+                email: a.email,
+                plan: a.plan
+              }))}
+              selectedProvider="claude"
+              selectedId={props.runAccountId}
+              onPick={(_provider, id) => props.onPickAccount(id)}
               onManage={() => {}}
               disabled={props.busy}
             />
