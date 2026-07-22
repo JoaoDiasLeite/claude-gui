@@ -54,7 +54,19 @@
 }
 .model-picker-item.selected .model-picker-item-main { color: var(--accent); }
 
+.model-picker-item-name-group { display: flex; align-items: center; gap: 6px; }
 .model-picker-item-name { font-size: 13px; font-weight: 500; }
+
+.model-picker-item-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
 
 .model-picker-item-meta {
   font-size: 11px;

@@ -14,12 +14,16 @@ export interface ModelInfo {
   outputPrice: number
   context: string
   provider: ProviderId
+  /** True when this entry came from live catalog discovery, not our bundled/user data. */
+  discovered?: boolean
 }
 
 export const MODELS: ModelInfo[] = [
   { id: 'claude-opus-4-8', label: 'Opus 4.8', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
   { id: 'claude-opus-4-7', label: 'Opus 4.7', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
   { id: 'claude-opus-4-6', label: 'Opus 4.6', inputPrice: 5, outputPrice: 25, context: '1M', provider: 'claude' },
+  // Standard pricing; $2/$10 intro pricing applies through 2026-08-31.
+  { id: 'claude-sonnet-5', label: 'Sonnet 5', inputPrice: 3, outputPrice: 15, context: '1M', provider: 'claude' },
   { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', inputPrice: 3, outputPrice: 15, context: '1M', provider: 'claude' },
   { id: 'claude-haiku-4-5', label: 'Haiku 4.5', inputPrice: 1, outputPrice: 5, context: '200K', provider: 'claude' },
   { id: 'claude-fable-5', label: 'Fable 5', inputPrice: 10, outputPrice: 50, context: '1M', provider: 'claude' },

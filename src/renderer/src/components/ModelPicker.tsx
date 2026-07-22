@@ -108,7 +108,14 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
                 }}
               >
                 <div className="model-picker-item-main">
-                  <span className="model-picker-item-name">{m.label}</span>
+                  <span className="model-picker-item-name-group">
+                    <span className="model-picker-item-name">{m.label}</span>
+                    {m.discovered && (
+                      <span className="model-picker-item-badge" title="Detected via live discovery — not yet in the bundled catalog">
+                        new
+                      </span>
+                    )}
+                  </span>
                   {m.id === current?.id && (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <polyline points="20 6 9 17 4 12" />
@@ -116,9 +123,11 @@ export default function ModelPicker({ models, value, onChange, compact, disabled
                   )}
                 </div>
                 <div className="model-picker-item-meta">
-                  {m.inputPrice === 0 && m.outputPrice === 0
-                    ? 'Coming soon'
-                    : `${m.context} · $${m.inputPrice}/$${m.outputPrice} per Mtok`}
+                  {m.discovered
+                    ? 'Update available — pricing not yet catalogued'
+                    : m.inputPrice === 0 && m.outputPrice === 0
+                      ? 'Coming soon'
+                      : `${m.context} · $${m.inputPrice}/$${m.outputPrice} per Mtok`}
                 </div>
               </button>
             ))}
