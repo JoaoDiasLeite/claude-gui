@@ -20,8 +20,31 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Multiple Codex accounts — add, name, rename and remove separate Codex logins just like Claude ones. Each account gets its own isolated CODEX_HOME, so switching accounts switches the login used by chats, the embedded terminal, and MCP-enabled runs.',
+          'The sidebar account picker now spans all three providers — Claude, Codex and Gemini accounts are grouped in one menu, and picking a non-Claude account also switches the default model to that provider so new chats actually use it.',
+          'The chat list is scoped to the selected provider and account, so each login gets its own history. "Explore all chats" jumps to Projects to browse everything across accounts.',
+          'Per-account plan usage — the usage badge tracks the account you have selected, and every Claude account shows its own 5h-window percentage inside the picker.',
+          'Gemini runs through Antigravity, managed from its own section in the accounts modal.',
+          'Model catalog is now built at launch: bundled defaults, a user-writable models.json override, and best-effort discovery from the installed Codex CLI. Models found by discovery show a "new" badge instead of invented pricing. Sonnet 5 is now in the catalog.',
+          'New chats can open straight into the terminal panel — Settings → Appearance → "Open new chats in".',
+          'The project instructions editor follows the chat\'s provider, opening AGENTS.md for Codex and GEMINI.md for Gemini instead of always CLAUDE.md.',
+        ],
+      },
+      {
+        title: 'Improvements',
+        items: [
+          'The embedded terminal has inline font-size controls, and the resume/launch-command UI is gone — the provider CLI still auto-starts, just without the surfaced button and command text.',
+          'Quick chat now picks the cheapest model of whichever provider you are on, rather than always Haiku.',
+          'The account menu is rendered in a portal, so the sidebar\'s overflow and the nav rail can no longer clip it.',
+          'Tightened spacing throughout the accounts modal and removed its stray leading divider.',
+        ],
+      },
+      {
         title: 'Fixes',
         items: [
+          'Command text in the approval popup was nearly invisible on light palettes — it hardcoded a pale green on a near-white background. It now uses theme tokens, has proper padding, and wraps long commands instead of overflowing.',
           'Chat terminal no longer flashes a spurious "process exited" line and a bare shell on open — a duplicate pty spawned by React\'s dev double-mount is now reused instead of being killed and recreated.',
           'The embedded terminal now opens the shell that matches the chat\'s environment — local, WSL, or an interactive SSH session for remote chats — and launches the right provider CLI inside it, with a clear message if a CLI can\'t be found instead of a bare shell.',
         ],
