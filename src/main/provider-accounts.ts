@@ -145,6 +145,9 @@ function genId(): string {
   return 'pacc_' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36)
 }
 
+/** Only meaningful for Codex. Gemini's single Antigravity login can't be isolated per
+ *  account, so `listProviderAccountStatus` never surfaces extra Gemini accounts and any
+ *  created here would be inert. */
 export function addProviderAccount(provider: AgentProvider, name: string): ProviderAccount {
   const id = genId()
   const configDir = path.join(accountsRoot(provider), id)
@@ -199,14 +202,14 @@ export function loginProviderAccount(provider: AgentProvider, id: string): { lau
   // Gemini logs in through Antigravity (Google's latest agentic CLI), launched via its
   // `agy` command, rather than the older `gemini` CLI.
   const bareCommand = provider === 'codex' ? 'codex login' : 'agy'
-  if (!account || !dir) {
-    // The default account logs in through the CLI's normal machine-wide login.
+  // Gemini/Antigravity has exactly one machine-wide login (OS keyring, not a config
+  // dir), so it always uses the bare command — never a per-account env override, which
+  // would only relocate config while the credentials stayed in the keyring anyway.
+  if (!account || !dir || provider === 'gemini') {
     return launchLoginTerminal(`${provider}-default`, bareCommand, {})
   }
   fs.mkdirSync(dir, { recursive: true })
-  const envOverride: Record<string, string> =
-    provider === 'codex' ? { CODEX_HOME: dir } : { HOME: dir, USERPROFILE: dir }
-  return launchLoginTerminal(`${provider}-${id}`, bareCommand, envOverride)
+  return launchLoginTerminal(`${provider}-${id}`, bareCommand, { CODEX_HOME: dir })
 }
 
 /**

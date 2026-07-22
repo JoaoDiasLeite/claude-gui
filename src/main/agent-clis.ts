@@ -143,18 +143,12 @@ export async function checkCodexStatus(codexHome?: string): Promise<AgentCliStat
  * settings schema is best-effort/unconfirmed against a primary source; treat a
  * missing or unrecognized file as "not logged in" rather than guessing.
  *
- * `homeDir`, when set, checks a specific account's isolated fake-home directory
- * instead of the machine's real home (see provider-accounts.ts — Gemini has no
- * config-dir env var, so per-account isolation works by overriding HOME/
- * USERPROFILE, and status here has to look in the same place).
+ * There is no per-account variant: Gemini runs through Antigravity, whose login is
+ * machine-wide and lives in the OS keyring rather than under a config dir, so there
+ * is only ever one Gemini identity to check (see provider-accounts.ts).
  */
-export async function checkGeminiStatus(homeDir?: string): Promise<AgentCliStatus> {
-  const { code } = await execCli(
-    'gemini',
-    ['--version'],
-    8000,
-    homeDir ? { HOME: homeDir, USERPROFILE: homeDir } : undefined
-  )
+export async function checkGeminiStatus(): Promise<AgentCliStatus> {
+  const { code } = await execCli('gemini', ['--version'], 8000)
   if (code === -1) {
     return {
       id: 'gemini',
@@ -163,7 +157,7 @@ export async function checkGeminiStatus(homeDir?: string): Promise<AgentCliStatu
       detail: 'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
     }
   }
-  const base = homeDir ?? os.homedir()
+  const base = os.homedir()
   const settingsPath = path.join(base, '.gemini', 'settings.json')
   let loggedIn = false
   try {
