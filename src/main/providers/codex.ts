@@ -70,8 +70,16 @@ function toCodexMcpToml(servers: Record<string, unknown>): string {
  * CLAUDE_CONFIG_DIR-per-account trick) plus a config.toml containing only the
  * requested servers. Avoids both mutating the user's real config and passing
  * secrets (server env vars) through argv, which any local process could read.
+ *
+ * `sourceCodexHome` is the CODEX_HOME the caller would otherwise have used —
+ * the selected account's own dir, or undefined for the machine default — so a
+ * non-default Codex account's login still applies even when MCP servers force
+ * this temp-home path.
  */
-function prepareCodexHome(mcpServers: Record<string, unknown> | undefined): {
+function prepareCodexHome(
+  mcpServers: Record<string, unknown> | undefined,
+  sourceCodexHome: string | undefined
+): {
   codexHome?: string
   cleanup: () => void
 } {
@@ -84,7 +92,7 @@ function prepareCodexHome(mcpServers: Record<string, unknown> | undefined): {
   let tempHome: string
   try {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'))
-    const authSrc = path.join(os.homedir(), '.codex', 'auth.json')
+    const authSrc = path.join(sourceCodexHome ?? path.join(os.homedir(), '.codex'), 'auth.json')
     if (fs.existsSync(authSrc)) {
       fs.copyFileSync(authSrc, path.join(tempHome, 'auth.json'))
     }
@@ -262,7 +270,7 @@ export const codexEngine: AiEngine = {
       yield { type: 'error', message: 'Codex engine only supports plain-text prompts right now.' }
       return
     }
-    const { codexHome, cleanup } = prepareCodexHome(req.mcpServers)
+    const { codexHome, cleanup } = prepareCodexHome(req.mcpServers, req.env.CODEX_HOME)
     try {
       // Per-tool approval (interactive 'ask' mode) needs codex's JSON-RPC
       // app-server protocol — the simple `exec --json` mode has no approval

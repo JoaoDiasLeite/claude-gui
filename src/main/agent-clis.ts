@@ -33,19 +33,25 @@ export interface AgentCliStatus {
 function execCli(
   id: AgentCliId,
   args: string[],
-  timeoutMs: number
+  timeoutMs: number,
+  envOverride?: Record<string, string>
 ): Promise<{ code: number; output: string }> {
   const { command, prefixArgs } = id === 'codex' ? resolveCodex() : resolveGemini()
   return new Promise((resolve) => {
-    execFile(command, [...prefixArgs, ...args], { timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
-      const output = `${stdout ?? ''}${stderr ?? ''}`
-      if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
-        resolve({ code: -1, output })
-        return
+    execFile(
+      command,
+      [...prefixArgs, ...args],
+      { timeout: timeoutMs, windowsHide: true, env: envOverride ? { ...process.env, ...envOverride } : process.env },
+      (err, stdout, stderr) => {
+        const output = `${stdout ?? ''}${stderr ?? ''}`
+        if (err && (err as NodeJS.ErrnoException).code === 'ENOENT') {
+          resolve({ code: -1, output })
+          return
+        }
+        // A non-zero exit still yields useful stdout/stderr (e.g. "not logged in").
+        resolve({ code: err ? 1 : 0, output })
       }
-      // A non-zero exit still yields useful stdout/stderr (e.g. "not logged in").
-      resolve({ code: err ? 1 : 0, output })
-    })
+    )
   })
 }
 
@@ -57,12 +63,13 @@ function execCli(
  * (verified live: returned a real email/plan while this exact login's
  * refresh token was broken elsewhere in the app).
  */
-async function readCodexAccount(): Promise<{ email?: string; plan?: string } | null> {
+async function readCodexAccount(codexHome?: string): Promise<{ email?: string; plan?: string } | null> {
   return new Promise((resolve) => {
     const { command, prefixArgs } = resolveCodex()
     const child = spawn(command, [...prefixArgs, 'app-server'], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true
+      windowsHide: true,
+      env: codexHome ? { ...process.env, CODEX_HOME: codexHome } : process.env
     })
     const rpc = new JsonRpcConnection(child)
     const timer = setTimeout(() => {
@@ -99,9 +106,16 @@ async function readCodexAccount(): Promise<{ email?: string; plan?: string } | n
   })
 }
 
-/** `codex login status` is a fast, purely local check — no network call needed. */
-export async function checkCodexStatus(): Promise<AgentCliStatus> {
-  const { code, output } = await execCli('codex', ['login', 'status'], 8000)
+/** `codex login status` is a fast, purely local check — no network call needed.
+ *  `codexHome`, when set, checks a specific account's isolated CODEX_HOME instead
+ *  of the machine default (see provider-accounts.ts). */
+export async function checkCodexStatus(codexHome?: string): Promise<AgentCliStatus> {
+  const { code, output } = await execCli(
+    'codex',
+    ['login', 'status'],
+    8000,
+    codexHome ? { CODEX_HOME: codexHome } : undefined
+  )
   if (code === -1) {
     return {
       id: 'codex',
@@ -111,7 +125,7 @@ export async function checkCodexStatus(): Promise<AgentCliStatus> {
     }
   }
   const loggedIn = /logged in/i.test(output)
-  const account = loggedIn ? await readCodexAccount() : null
+  const account = loggedIn ? await readCodexAccount(codexHome) : null
   return {
     id: 'codex',
     installed: true,
@@ -128,9 +142,19 @@ export async function checkCodexStatus(): Promise<AgentCliStatus> {
  * live API call (avoids spending quota just to check login state). The exact
  * settings schema is best-effort/unconfirmed against a primary source; treat a
  * missing or unrecognized file as "not logged in" rather than guessing.
+ *
+ * `homeDir`, when set, checks a specific account's isolated fake-home directory
+ * instead of the machine's real home (see provider-accounts.ts — Gemini has no
+ * config-dir env var, so per-account isolation works by overriding HOME/
+ * USERPROFILE, and status here has to look in the same place).
  */
-export async function checkGeminiStatus(): Promise<AgentCliStatus> {
-  const { code } = await execCli('gemini', ['--version'], 8000)
+export async function checkGeminiStatus(homeDir?: string): Promise<AgentCliStatus> {
+  const { code } = await execCli(
+    'gemini',
+    ['--version'],
+    8000,
+    homeDir ? { HOME: homeDir, USERPROFILE: homeDir } : undefined
+  )
   if (code === -1) {
     return {
       id: 'gemini',
@@ -139,7 +163,8 @@ export async function checkGeminiStatus(): Promise<AgentCliStatus> {
       detail: 'Gemini CLI not found. Install with: npm install -g @google/gemini-cli'
     }
   }
-  const settingsPath = path.join(os.homedir(), '.gemini', 'settings.json')
+  const base = homeDir ?? os.homedir()
+  const settingsPath = path.join(base, '.gemini', 'settings.json')
   let loggedIn = false
   try {
     const raw = fs.readFileSync(settingsPath, 'utf-8')
@@ -155,7 +180,7 @@ export async function checkGeminiStatus(): Promise<AgentCliStatus> {
   let email: string | undefined
   if (loggedIn) {
     try {
-      const raw = fs.readFileSync(path.join(os.homedir(), '.gemini', 'google_accounts.json'), 'utf-8')
+      const raw = fs.readFileSync(path.join(base, '.gemini', 'google_accounts.json'), 'utf-8')
       const parsed = JSON.parse(raw)
       email = typeof parsed?.active === 'string' ? parsed.active : undefined
     } catch {
