@@ -1,14 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
-import { ClaudeMdFile } from '../types'
+import { ClaudeMdFile, ProviderId } from '../types'
 import { useModalA11y } from '../hooks/useModalA11y'
 import './ClaudeMdModal.css'
 
+const CONTEXT_FILE: Record<ProviderId, string> = {
+  claude: 'CLAUDE.md',
+  codex: 'AGENTS.md',
+  gemini: 'GEMINI.md'
+}
+const CONTEXT_GLOBAL_DIR: Record<ProviderId, string> = {
+  claude: '.claude',
+  codex: '.codex',
+  gemini: '.gemini'
+}
+
 interface Props {
   projectPath?: string
+  provider: ProviderId
   onClose: () => void
 }
 
-export default function ClaudeMdModal({ projectPath, onClose }: Props) {
+export default function ClaudeMdModal({ projectPath, provider, onClose }: Props) {
   const [files, setFiles] = useState<ClaudeMdFile[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
   const [content, setContent] = useState('')
@@ -17,12 +29,15 @@ export default function ClaudeMdModal({ projectPath, onClose }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null)
   useModalA11y(dialogRef, onClose)
 
+  const fileName = CONTEXT_FILE[provider]
+
   useEffect(() => {
-    window.electronAPI.claudeMdRead(projectPath).then((fs) => {
+    window.electronAPI.claudeMdRead(projectPath, provider).then((fs) => {
       setFiles(fs)
+      setActiveIdx(0)
       if (fs.length) setContent(fs[0].content)
     })
-  }, [projectPath])
+  }, [projectPath, provider])
 
   const active = files[activeIdx]
 
@@ -55,7 +70,7 @@ export default function ClaudeMdModal({ projectPath, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h3 id="claudemd-modal-title">CLAUDE.md</h3>
+          <h3 id="claudemd-modal-title">{fileName}</h3>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
@@ -71,7 +86,7 @@ export default function ClaudeMdModal({ projectPath, onClose }: Props) {
               onClick={() => selectFile(i)}
               title={f.path}
             >
-              {f.scope === 'project' ? 'Project' : 'Global (~/.claude)'}
+              {f.scope === 'project' ? 'Project' : `Global (~/${CONTEXT_GLOBAL_DIR[provider]})`}
               {!f.exists && <span className="claudemd-new">new</span>}
             </button>
           ))}
@@ -83,7 +98,7 @@ export default function ClaudeMdModal({ projectPath, onClose }: Props) {
           className="claudemd-editor"
           value={content}
           onChange={(e) => { setContent(e.target.value); setDirty(true) }}
-          placeholder="# Project instructions for Claude…&#10;&#10;Describe conventions, architecture, and anything Claude should always know."
+          placeholder="# Project instructions for the agent…&#10;&#10;Describe conventions, architecture, and anything the agent should always know."
           spellCheck={false}
         />
 
