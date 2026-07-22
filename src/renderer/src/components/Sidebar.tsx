@@ -320,13 +320,17 @@ export default function Sidebar({
   // reachable via "Explore all chats" → Projects.
   const provOf = (modelId?: string): ProviderId =>
     models.find((m) => (modelId ?? '').startsWith(m.id))?.provider ?? 'claude'
+  // Fallbacks mirror how an unbound chat actually RUNS (see App.tsx's session payload),
+  // so a chat is never filed under an account it wouldn't run on. A legacy Claude chat
+  // with no accountId runs on the current default account; Codex/Gemini instead pass
+  // through undefined, which resolves to the machine-default login ('default').
   const acctOf = (s: Session): string => {
     const p = provOf(s.model)
     return p === 'codex'
       ? (s.codexAccountId ?? 'default')
       : p === 'gemini'
         ? (s.geminiAccountId ?? 'default')
-        : (s.accountId ?? 'default')
+        : (s.accountId ?? defaultAccountId ?? 'default')
   }
   const currentAccountId =
     selectedProvider === 'codex' ? currentCodexId : selectedProvider === 'gemini' ? currentGeminiId : currentClaudeId
