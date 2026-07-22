@@ -42,6 +42,10 @@ export interface AccountPlanUsage {
   envs?: string[]
   /** True when this identity includes the machine-default login. */
   isDefault?: boolean
+  /** Managed account ids (accounts.ts `CCAccount.id`) sharing this identity — the
+   *  same ids sessions store as `Session.accountId`, so the renderer can match a
+   *  chat's account to its usage entry. */
+  accountIds?: string[]
   status: PlanStatus
   error?: string
   /** True when `windows` is carried over from an older successful fetch. */
@@ -116,6 +120,7 @@ interface Source {
   email?: string
   envs: string[]
   isDefault: boolean
+  accountIds: string[]
   credsPaths: string[]
 }
 
@@ -156,6 +161,8 @@ interface Candidate {
   claudeJsonPath: string
   /** Managed-account display name, when this candidate comes from accounts.ts. */
   name?: string
+  /** Managed account id (accounts.ts `CCAccount.id`), when this candidate comes from accounts.ts. */
+  accountId?: string
   emailHint?: string
   isDefault?: boolean
   /** Lower = preferred within an identity group (local logins before WSL copies). */
@@ -182,6 +189,7 @@ async function enumerateSources(): Promise<Source[]> {
         : path.join(os.homedir(), '.claude', '.credentials.json'),
       claudeJsonPath: dir ? path.join(dir, '.claude.json') : path.join(os.homedir(), '.claude.json'),
       name: acc.name,
+      accountId: acc.id,
       emailHint: acc.email,
       isDefault: acc.isDefault,
       priority: 0
@@ -243,6 +251,7 @@ async function enumerateSources(): Promise<Source[]> {
       email,
       envs: [...new Set(group.map((c) => c.env))],
       isDefault: group.some((c) => c.isDefault),
+      accountIds: [...new Set(group.map((c) => c.accountId).filter((id): id is string => !!id))],
       credsPaths: group.map((c) => c.credsPath)
     })
   }
@@ -264,6 +273,7 @@ function failure(
     email: src.email,
     envs: src.envs,
     isDefault: src.isDefault,
+    accountIds: src.accountIds,
     status: partial.status,
     error: partial.error,
     fetchedAt: Date.now(),
@@ -382,6 +392,7 @@ async function fetchAccount(
       email: src.email,
       envs: src.envs,
       isDefault: src.isDefault,
+      accountIds: src.accountIds,
       status: 'ok',
       fetchedAt: Date.now(),
       windows: extractWindows(body),
