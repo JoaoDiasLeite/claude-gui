@@ -3,6 +3,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
+import Anthropic from '@anthropic-ai/sdk'
 import { MODELS, ModelInfo } from './config'
 import { resolveCodex } from './providers/cli-resolve'
 import { readJsonFile } from './json-file'
@@ -48,6 +49,32 @@ async function discoverCodexModelIds(): Promise<string[]> {
   }
 }
 
+// Best-effort: ask the Anthropic API for its own live model catalog (GET
+// /v1/models, via the SDK's `client.models.list()`) so a Claude model that's
+// been released but that we haven't added to config.ts yet still shows up
+// (flagged `discovered: true`) instead of silently missing — mirrors the
+// Codex discovery above. Requires an API key in the environment; without one
+// there's no way to call the endpoint, so we skip discovery rather than
+// guess at a static id list (pricing for a discovered id is never known, so
+// callers must treat it as "pricing not yet catalogued" — see below). Never
+// throws — a missing/invalid key, a network failure, or a timeout all just
+// skip discovery. A short client-side timeout (matching the 4s used for the
+// Codex CLI call) keeps a hung request from stalling catalog build.
+async function discoverClaudeModelIds(): Promise<string[]> {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) return []
+    const client = new Anthropic({ apiKey, timeout: 4000, maxRetries: 0 })
+    const ids: string[] = []
+    for await (const model of client.models.list()) {
+      if (model?.id) ids.push(model.id)
+    }
+    return ids
+  } catch {
+    return []
+  }
+}
+
 /**
  * Effective model catalog at launch: bundled defaults from config.ts, overridden
  * or extended by a user-writable models.json under userData, then cross-checked
@@ -59,7 +86,11 @@ export async function buildModelsCatalog(): Promise<ModelInfo[]> {
   for (const m of MODELS) byId.set(m.id, { ...m })
   for (const m of loadOverrides()) byId.set(m.id, { ...m })
 
-  for (const id of await discoverCodexModelIds()) {
+  // Run both discovery calls concurrently — one CLI/API being slow (or
+  // hanging up to its own timeout) shouldn't serialize with the other.
+  const [codexIds, claudeIds] = await Promise.all([discoverCodexModelIds(), discoverClaudeModelIds()])
+
+  for (const id of codexIds) {
     if (!byId.has(id)) {
       byId.set(id, {
         id,
@@ -68,6 +99,20 @@ export async function buildModelsCatalog(): Promise<ModelInfo[]> {
         outputPrice: 0,
         context: '?',
         provider: 'codex',
+        discovered: true
+      })
+    }
+  }
+
+  for (const id of claudeIds) {
+    if (!byId.has(id)) {
+      byId.set(id, {
+        id,
+        label: id,
+        inputPrice: 0,
+        outputPrice: 0,
+        context: '?',
+        provider: 'claude',
         discovered: true
       })
     }
