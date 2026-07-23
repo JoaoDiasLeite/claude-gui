@@ -754,7 +754,9 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
   // Drop a resume token that belongs to a different provider than this run targets.
   const providerId = providerFor(policy.model)
   // Non-Claude accounts have no CLAUDE_CONFIG_DIR equivalent to fall back on — inject
-  // their own env override (CODEX_HOME / fake HOME) when the active model needs one.
+  // CODEX_HOME when the active model is Codex and needs one. Gemini's login lives in the
+  // OS keyring as a single machine-wide account, so providerAccountEnv('gemini', ...)
+  // always returns {} and no env override is injected for it.
   if (providerId === 'codex') Object.assign(env, providerAccountEnv('codex', payload.codexAccountId))
   else if (providerId === 'gemini') Object.assign(env, providerAccountEnv('gemini', payload.geminiAccountId))
   const prevProvider = sessionProvider.get(appSessionId)

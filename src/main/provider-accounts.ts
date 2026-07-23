@@ -78,9 +78,16 @@ let state: ProviderAccountsState = freshState()
 
 function loadGroup(provider: AgentProvider, loaded: unknown): AccountGroup {
   const raw = (loaded as Partial<AccountGroup>) ?? {}
-  const accounts = Array.isArray(raw.accounts) ? raw.accounts : []
+  let accounts = Array.isArray(raw.accounts) ? raw.accounts : []
   if (!accounts.some((a) => a.id === DEFAULT_ID)) {
     accounts.unshift({ id: DEFAULT_ID, name: 'Default', provider, configDir: null, isDefault: true })
+  }
+  if (provider === 'gemini') {
+    // Antigravity's single machine-wide keyring login can't be isolated per account, so
+    // any non-default gemini account on disk is a leftover from a previous build that
+    // still let addProviderAccount() create inert entries — drop them on load instead of
+    // carrying them forward forever.
+    accounts = accounts.filter((a) => a.id === DEFAULT_ID)
   }
   return {
     accounts: accounts.map((a) => ({ ...a, provider, isDefault: a.id === DEFAULT_ID })),
@@ -147,8 +154,11 @@ function genId(): string {
 
 /** Only meaningful for Codex. Gemini's single Antigravity login can't be isolated per
  *  account, so `listProviderAccountStatus` never surfaces extra Gemini accounts and any
- *  created here would be inert. */
+ *  created here would be inert — refuse outright rather than silently doing nothing. */
 export function addProviderAccount(provider: AgentProvider, name: string): ProviderAccount {
+  if (provider === 'gemini') {
+    throw new Error('Gemini accounts cannot be created — Antigravity uses a single machine-wide login')
+  }
   const id = genId()
   const configDir = path.join(accountsRoot(provider), id)
   fs.mkdirSync(configDir, { recursive: true })
@@ -159,6 +169,9 @@ export function addProviderAccount(provider: AgentProvider, name: string): Provi
 }
 
 export function renameProviderAccount(provider: AgentProvider, id: string, name: string): void {
+  // Gemini has no per-account identity to rename — its one account is always
+  // 'default'/'Antigravity'; renaming would only relabel an entry nothing reads.
+  if (provider === 'gemini') return
   const account = group(provider).accounts.find((a) => a.id === id)
   if (account) {
     account.name = name.trim() || account.name
@@ -167,6 +180,9 @@ export function renameProviderAccount(provider: AgentProvider, id: string, name:
 }
 
 export function removeProviderAccount(provider: AgentProvider, id: string): void {
+  // Gemini only ever has the default account (see loadGroup); there is nothing
+  // isolated to remove and no other account can exist to pass in as `id`.
+  if (provider === 'gemini') return
   if (id === DEFAULT_ID) return
   const g = group(provider)
   const account = g.accounts.find((a) => a.id === id)
@@ -183,6 +199,8 @@ export function removeProviderAccount(provider: AgentProvider, id: string): void
 }
 
 export function setDefaultProviderAccount(provider: AgentProvider, id: string): void {
+  // Gemini has exactly one account and it is always the default — nothing to switch.
+  if (provider === 'gemini') return
   const g = group(provider)
   if (g.accounts.some((a) => a.id === id)) {
     g.defaultAccountId = id
