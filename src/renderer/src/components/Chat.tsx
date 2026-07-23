@@ -1,10 +1,14 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Session, ModelInfo, Attachment, SlashCommand, ProviderId } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
-import ChatTerminal from './ChatTerminal'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import './Chat.css'
+
+// ChatTerminal pulls in @xterm/xterm + its addons (~300 kB) but is only ever
+// rendered once the user opens the embedded terminal (`termOpen`, default
+// false) — so it's loaded lazily instead of bundled into the initial chunk.
+const ChatTerminal = lazy(() => import('./ChatTerminal'))
 
 // ── Text-file attachment limits & heuristics ─────────────────────────────────
 const MAX_FILE_ATTACHMENTS = 5
@@ -631,17 +635,19 @@ export default function Chat({
       </div>
 
       {session && termOpen && (
-        <ChatTerminal
-          key={session.id}
-          terminalId={`chatterm_${session.id}`}
-          cwd={session.projectPath}
-          accountId={terminalAccountId}
-          provider={terminalProvider}
-          wslDistro={session.wslDistro}
-          remoteHostId={session.remoteHostId}
-          resumeSessionId={session.claudeSessionId}
-          onClose={toggleTerminal}
-        />
+        <Suspense fallback={null}>
+          <ChatTerminal
+            key={session.id}
+            terminalId={`chatterm_${session.id}`}
+            cwd={session.projectPath}
+            accountId={terminalAccountId}
+            provider={terminalProvider}
+            wslDistro={session.wslDistro}
+            remoteHostId={session.remoteHostId}
+            resumeSessionId={session.claudeSessionId}
+            onClose={toggleTerminal}
+          />
+        </Suspense>
       )}
 
       <div className="chat-input-area" style={termOpen ? { display: 'none' } : undefined}>

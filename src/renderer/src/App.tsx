@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import {
   Session,
   Message,
@@ -37,16 +37,35 @@ import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
-import ProjectsView from './views/ProjectsView'
-import AgentsView from './views/AgentsView'
-import RoomsView from './views/RoomsView'
-import UsageView from './views/UsageView'
-import McpView from './views/McpView'
-import PlannerView from './views/PlannerView'
-import RemoteView from './views/RemoteView'
-import ScheduledView from './views/ScheduledView'
+// The secondary views below are only ever mounted once the user navigates away
+// from the default 'chat' view, so they're loaded lazily (React.lazy) instead
+// of statically imported. That keeps their code — and the vendor libraries
+// they alone pull in — out of the initial renderer chunk. See the Suspense
+// fallback (`ViewLoading`) rendered while each view's chunk is fetched.
 import { SshHostPublic } from './types'
 import './styles/App.css'
+// Pulled in directly (rather than left to each lazy view) so the `.view-loading`
+// spinner below is styled even before any view chunk has finished loading.
+import './views/views.css'
+
+const ProjectsView = lazy(() => import('./views/ProjectsView'))
+const AgentsView = lazy(() => import('./views/AgentsView'))
+const RoomsView = lazy(() => import('./views/RoomsView'))
+const UsageView = lazy(() => import('./views/UsageView'))
+const McpView = lazy(() => import('./views/McpView'))
+const PlannerView = lazy(() => import('./views/PlannerView'))
+const RemoteView = lazy(() => import('./views/RemoteView'))
+const ScheduledView = lazy(() => import('./views/ScheduledView'))
+
+/** Minimal, style-consistent fallback shown while a lazy view's chunk loads. */
+function ViewLoading() {
+  return (
+    <div className="view-loading">
+      <div className="view-spinner" />
+      <div className="view-loading-text">Loading…</div>
+    </div>
+  )
+}
 
 function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -1353,8 +1372,16 @@ export default function App() {
         </>
       )}
 
-      {view === 'projects' && <ProjectsView onResume={resumeCCSession} />}
-      {view === 'usage' && <UsageView />}
+      {view === 'projects' && (
+        <Suspense fallback={<ViewLoading />}>
+          <ProjectsView onResume={resumeCCSession} />
+        </Suspense>
+      )}
+      {view === 'usage' && (
+        <Suspense fallback={<ViewLoading />}>
+          <UsageView />
+        </Suspense>
+      )}
 
       {activeGroup && (
         <div className="view-with-subnav">
@@ -1371,43 +1398,45 @@ export default function App() {
               ))}
             </div>
           </div>
-          {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
-          {view === 'rooms' && (
-            <RoomsView
-              sessions={sessions}
-              runningIds={runningIds}
-              attentionIds={attentionIds}
-              approvals={approvalQueue}
-              onRespondApproval={respondApprovalById}
-              onOpenSession={(id) => {
-                setActiveId(id)
-                setView('chat')
-              }}
-              onOpenAgentsView={() => setView('agents')}
-              onDeploy={deployAgent}
-            />
-          )}
-          {view === 'planner' && (
-            <PlannerView
-              accounts={accounts}
-              models={models}
-              defaultModel={defaultModel}
-              defaultAccountId={defaultAccountId}
-              onRunTask={runPlannerTask}
-              onStandupChat={startStandupChat}
-              onScheduleStandup={createStandupRoutine}
-            />
-          )}
-          {view === 'scheduled' && (
-            <ScheduledView
-              models={models}
-              defaultModel={defaultModel}
-              accounts={accounts}
-              defaultAccountId={defaultAccountId}
-            />
-          )}
-          {view === 'mcp' && <McpView />}
-          {view === 'remote' && <RemoteView onConnect={connectRemote} onConnectWsl={connectWsl} />}
+          <Suspense fallback={<ViewLoading />}>
+            {view === 'agents' && <AgentsView models={models} defaultModel={defaultModel} onRun={runAgent} />}
+            {view === 'rooms' && (
+              <RoomsView
+                sessions={sessions}
+                runningIds={runningIds}
+                attentionIds={attentionIds}
+                approvals={approvalQueue}
+                onRespondApproval={respondApprovalById}
+                onOpenSession={(id) => {
+                  setActiveId(id)
+                  setView('chat')
+                }}
+                onOpenAgentsView={() => setView('agents')}
+                onDeploy={deployAgent}
+              />
+            )}
+            {view === 'planner' && (
+              <PlannerView
+                accounts={accounts}
+                models={models}
+                defaultModel={defaultModel}
+                defaultAccountId={defaultAccountId}
+                onRunTask={runPlannerTask}
+                onStandupChat={startStandupChat}
+                onScheduleStandup={createStandupRoutine}
+              />
+            )}
+            {view === 'scheduled' && (
+              <ScheduledView
+                models={models}
+                defaultModel={defaultModel}
+                accounts={accounts}
+                defaultAccountId={defaultAccountId}
+              />
+            )}
+            {view === 'mcp' && <McpView />}
+            {view === 'remote' && <RemoteView onConnect={connectRemote} onConnectWsl={connectWsl} />}
+          </Suspense>
         </div>
       )}
 
