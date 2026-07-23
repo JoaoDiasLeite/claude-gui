@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "icon": "node scripts/gen-icon.mjs",
+    "test": "vitest run",
     "package": "node scripts/gen-icon.mjs && electron-vite build && electron-builder",
     "release": "node scripts/gen-icon.mjs && electron-vite build && electron-builder --publish always"
   },
@@ -89,6 +90,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "typescript": "^5.3.3",
-    "vite": "^5.0.12"
+    "vite": "^5.0.12",
+    "vitest": "^4.1.10"
   }
 }

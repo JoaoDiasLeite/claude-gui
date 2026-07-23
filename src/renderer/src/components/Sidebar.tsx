@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Session, AuthStatus, CCAccountStatus, ProviderAccountStatus, ProviderId, ModelInfo } from '../types'
+import { idFor as idForAccount, visibleSessions as visibleSessionsFor, AccountDefaults } from '../lib/account-scope'
 import FileTree from './FileTree'
 import './Sidebar.css'
 import './AccountPicker.css'
@@ -233,7 +234,7 @@ export default function Sidebar({
   // other accounts are ready only once logged in (or already flagged as the machine
   // default).
   const idFor = (provider: ProviderId, fallback?: string): string =>
-    (provider === selectedProvider ? selectedAccountId : undefined) ?? fallback ?? 'default'
+    idForAccount(provider, selectedProvider, selectedAccountId, fallback)
   const currentClaudeId = idFor('claude', defaultAccountId)
   const currentCodexId = idFor('codex', codexDefaultAccountId)
   const currentGeminiId = idFor('gemini', geminiDefaultAccountId)
@@ -309,37 +310,18 @@ export default function Sidebar({
     }
   }, [accountMenuOpen])
 
-  // Blank "New chat" drafts (no messages yet) stay out of the list — the Sessions
-  // section only appears once at least one chat has real content. The active draft
-  // is already on screen in the main area, so listing it adds nothing.
-  //
-  // Chats are also scoped to the selected provider + account: a chat is permanently
-  // bound to the provider/account that created it, so switching either swaps the
-  // visible history. Older chats without an accountId fall under that provider's
-  // machine-default account ('default'). Everything (across accounts) remains
-  // reachable via "Explore all chats" → Projects.
-  const provOf = (modelId?: string): ProviderId =>
-    models.find((m) => (modelId ?? '').startsWith(m.id))?.provider ?? 'claude'
-  // Fallbacks mirror how an unbound chat actually RUNS (see App.tsx's session payload),
-  // so a chat is never filed under an account it wouldn't run on. A legacy Claude chat
-  // with no accountId runs on the current default account; Codex/Gemini instead pass
-  // through undefined, which resolves to the machine-default login ('default').
-  const acctOf = (s: Session): string => {
-    const p = provOf(s.model)
-    return p === 'codex'
-      ? (s.codexAccountId ?? 'default')
-      : p === 'gemini'
-        ? (s.geminiAccountId ?? 'default')
-        : (s.accountId ?? defaultAccountId ?? 'default')
-  }
+  // Blank "New chat" drafts (no messages yet) stay out of the list, and chats are
+  // scoped to the selected provider + account. See src/renderer/src/lib/account-scope.ts
+  // for provOf/acctOf/visibleSessions — the logic (including the "fallbacks mirror how
+  // an unbound chat actually RUNS" comment) lives there now, so it can be unit-tested
+  // outside of React.
+  const accountDefaults: AccountDefaults = { defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId }
   const currentAccountId =
     selectedProvider === 'codex' ? currentCodexId : selectedProvider === 'gemini' ? currentGeminiId : currentClaudeId
   // The in-effect account's own 5h-window usage, shown as a badge on the collapsed row.
   // Only Claude accounts have real plan-usage data.
   const currentUsage = selectedProvider === 'claude' ? accountUsage?.[currentAccountId] : undefined
-  const visibleSessions = sessions.filter(
-    (s) => s.messages.length > 0 && provOf(s.model) === selectedProvider && acctOf(s) === currentAccountId
-  )
+  const visibleSessions = visibleSessionsFor(sessions, models, selectedProvider, currentAccountId, accountDefaults)
 
   // ── Session search ──────────────────────────────────────────────────────
   const [searchInput, setSearchInput] = useState('')

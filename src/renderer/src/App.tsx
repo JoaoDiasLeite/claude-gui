@@ -477,10 +477,13 @@ export default function App() {
       remoteHostId: session.remoteHostId,
       wslDistro: session.wslDistro,
       accountId: session.accountId ?? defaultAccountId,
-      codexAccountId: session.codexAccountId,
+      // Falls back to the current Codex default account, mirroring the sidebar's
+      // acctOf (src/renderer/src/lib/account-scope.ts) — an unbound Codex chat must
+      // run on the same account it's filed/scoped under, not the literal 'default'.
+      codexAccountId: session.codexAccountId ?? codexDefaultAccountId,
       geminiAccountId: session.geminiAccountId
     }),
-    [defaultModel, defaultAccountId]
+    [defaultModel, defaultAccountId, codexDefaultAccountId]
   )
 
   const sendMessage = useCallback(
