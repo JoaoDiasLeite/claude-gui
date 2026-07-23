@@ -187,12 +187,16 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     const backstopTimer = setTimeout(reveal, STARTING_BACKSTOP_MS)
 
     // Reveal the terminal, clearing both timers — called either by the quiet timer once
-    // launched output settles, or by the backstop above as an absolute fallback.
+    // launched output settles, or by the backstop above as an absolute fallback. Focus is
+    // deferred to here (rather than right after create) on purpose: focusing xterm activates
+    // its hidden input textarea, whose NATIVE blinking caret is drawn by the compositor
+    // above our overlay (ignoring z-index), showing a stray caret at 0,0 while loading.
     function reveal(): void {
       setStarting(false)
       clearTimeout(backstopTimer)
       clearTimeout(quietTimerRef.current)
       awaitingRevealRef.current = false
+      term.focus()
     }
 
     const offData = window.electronAPI.onTerminalData((e) => {
@@ -239,7 +243,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           setStarting(false)
           return
         }
-        term.focus()
+        // Note: focus is NOT taken here — it's deferred to reveal() so the loader isn't
+        // marred by xterm's native input caret (see reveal). The one exception is the
+        // bare-shell case below, which shows no loader and so should focus immediately.
         if (res.cliLaunched) {
           // Local shell: main already spawned the provider CLI directly (non-interactive,
           // no banner/echo) as part of createTerminal — there's nothing left to type in, so
@@ -258,6 +264,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
             awaitingRevealRef.current = true
             window.electronAPI.terminalStartCli(terminalId, provider, resumeRef.current)
           }, 600)
+        } else {
+          // Bare shell (an explicit Restart on wsl/ssh): no loader is shown, so focus now
+          // instead of waiting for a reveal that only the 8s backstop would ever trigger.
+          term.focus()
         }
         autoStartRef.current = true
       })
