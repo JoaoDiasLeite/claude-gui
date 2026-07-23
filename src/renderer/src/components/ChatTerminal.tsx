@@ -222,25 +222,45 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     })
 
     let autoStartTimer: ReturnType<typeof setTimeout> | undefined
-    window.electronAPI.terminalCreate(terminalId, { cwd, accountId, wslDistro, remoteHostId, provider, cols, rows }).then((res) => {
-      if (!res.ok) {
-        term.write('\r\n\x1b[31mFailed to start terminal.\x1b[0m\r\n')
-        setStarting(false)
-        return
-      }
-      term.focus()
-      // On open (not on an explicit Restart), auto-launch the CLI, resuming this chat's
-      // session (claude only). A short delay lets the shell finish printing its prompt first.
-      if (autoStartRef.current) {
-        autoStartTimer = setTimeout(() => {
-          // Arm the reveal gate right as we launch — the very next data chunk (the
-          // launch command's own shell echo) starts the quiet timer above.
+    window.electronAPI
+      .terminalCreate(terminalId, {
+        cwd,
+        accountId,
+        wslDistro,
+        remoteHostId,
+        provider,
+        resumeSessionId: resumeRef.current,
+        cols,
+        rows
+      })
+      .then((res) => {
+        if (!res.ok) {
+          term.write('\r\n\x1b[31mFailed to start terminal.\x1b[0m\r\n')
+          setStarting(false)
+          return
+        }
+        term.focus()
+        if (res.cliLaunched) {
+          // Local shell: main already spawned the provider CLI directly (non-interactive,
+          // no banner/echo) as part of createTerminal — there's nothing left to type in, so
+          // just arm the reveal gate. The CLI's own first output starts the quiet timer above.
+          // Restart also goes through this path (autoStartRef doesn't gate it), so make sure
+          // the loader is up for it too — it was only pre-armed for the auto-start case.
+          setStarting(true)
           awaitingRevealRef.current = true
-          window.electronAPI.terminalStartCli(terminalId, provider, resumeRef.current)
-        }, 600)
-      }
-      autoStartRef.current = true
-    })
+        } else if (autoStartRef.current) {
+          // wsl/ssh (or anything else that didn't already launch the CLI): auto-launch by
+          // typing the launch command into the interactive remote shell, resuming this
+          // chat's session (claude only). A short delay lets the shell print its prompt first.
+          autoStartTimer = setTimeout(() => {
+            // Arm the reveal gate right as we launch — the very next data chunk (the
+            // launch command's own shell echo) starts the quiet timer above.
+            awaitingRevealRef.current = true
+            window.electronAPI.terminalStartCli(terminalId, provider, resumeRef.current)
+          }, 600)
+        }
+        autoStartRef.current = true
+      })
 
     return () => {
       if (autoStartTimer) clearTimeout(autoStartTimer)

@@ -743,6 +743,8 @@ export interface TerminalCreateOptions {
   remoteHostId?: string
   /** Which CLI this terminal is for. Defaults to 'claude'. */
   provider?: ProviderId
+  /** The chat's Claude Code session id — resumed when launching claude (local shells only). */
+  resumeSessionId?: string
   cols: number
   rows: number
 }
@@ -750,6 +752,11 @@ export interface TerminalCreateOptions {
 export interface TerminalCreateResult {
   ok: boolean
   shell?: string
+  /** True when a LOCAL shell already spawned the provider CLI directly (non-interactive
+   *  invocation) — the renderer should skip its own auto-start timer/terminalStartCli call
+   *  and just arm the reveal-on-settle logic. Omitted/false for wsl/ssh, which still rely
+   *  on terminalStartCli typing the launch command into an interactive remote shell. */
+  cliLaunched?: boolean
 }
 
 export interface TerminalDataEvent {

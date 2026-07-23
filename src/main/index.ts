@@ -1026,6 +1026,7 @@ ipcMain.handle(
       wslDistro?: string
       remoteHostId?: string
       provider?: 'claude' | 'codex' | 'gemini'
+      resumeSessionId?: string
       cols: number
       rows: number
     }

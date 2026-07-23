@@ -48,6 +48,8 @@ export interface CreateTerminalOptions {
   remoteHostId?: string
   /** Which CLI this terminal is for. Defaults to 'claude'. */
   provider?: 'claude' | 'codex' | 'gemini'
+  /** The chat's Claude Code session id — resumed when launching claude (local shells only). */
+  resumeSessionId?: string
   cols: number
   rows: number
 }
@@ -101,7 +103,7 @@ export function createTerminal(
   opts: CreateTerminalOptions,
   onData: (id: string, data: string) => void,
   onExit: (id: string, exitCode: number) => void
-): { ok: boolean; shell?: string } {
+): { ok: boolean; shell?: string; cliLaunched?: boolean } {
   if (!isSafeId(id)) return { ok: false }
 
   const pendingKill = pendingKills.get(id)
@@ -113,7 +115,7 @@ export function createTerminal(
   if (existing) {
     // Benign re-create for an id that already has a live pty (StrictMode remount, or a
     // redundant renderer create call). Reuse it rather than spawning a duplicate.
-    return { ok: true, shell: shellKinds.get(id) }
+    return { ok: true, shell: shellKinds.get(id), cliLaunched: launched.has(id) }
   }
   launched.delete(id)
 
@@ -183,7 +185,30 @@ export function createTerminal(
       } else {
         Object.assign(env, providerAccountEnv(provider, opts.accountId))
       }
+
+      // Local shell → run the provider CLI directly as the pty's own process, via the
+      // shell's non-interactive mode, instead of spawning an interactive shell and typing
+      // the launch command into it afterwards. Non-interactive mode prints no banner (no
+      // "Windows PowerShell / Copyright…") and no command echo, so the very first pty
+      // output is the CLI itself — nothing for the loading overlay to have to hide.
+      const resumeId = safeResumeId(opts.resumeSessionId) || ''
+      const cliCmd = buildCliInvocation(kind, provider, resumeId, id)
+      if (cliCmd) {
+        if (kind === 'pwsh' || kind === 'powershell') {
+          shellArgs = ['-NoLogo', '-NoProfile', '-Command', cliCmd]
+        } else if (kind === 'cmd') {
+          shell = 'cmd.exe'
+          shellArgs = ['/d', '/q', '/c', cliCmd]
+        } else {
+          shellArgs = ['-c', cliCmd]
+        }
+        // The CLI is launched as part of this very spawn — a subsequent startCliInTerminal
+        // call for this id (e.g. a stray renderer call, or a StrictMode remount) is a no-op.
+        launched.add(id)
+      }
     }
+
+    const cliLaunched = launched.has(id)
 
     const p = pty.spawn(shell, shellArgs, {
       name: 'xterm-color',
@@ -210,7 +235,7 @@ export function createTerminal(
     terminals.set(id, p)
     shellKinds.set(id, kind)
 
-    return { ok: true, shell: kind }
+    return { ok: true, shell: kind, cliLaunched }
   } catch {
     return { ok: false }
   }
@@ -296,6 +321,57 @@ function quoteCmd(token: string): string {
 // Quote a single token for inclusion in a POSIX shell command line.
 function quoteUnix(token: string): string {
   return `'${token.replace(/'/g, `'\\''`)}'`
+}
+
+// Build the command line to run the provider CLI directly as the pty's own process (local
+// shell kinds only — pwsh/powershell/cmd/unix). Unlike claudeLaunchCommand below, there's no
+// interactive shell session to clear first: the shell never gets to print a banner or echo a
+// command, because it's invoked non-interactively (-Command / /c / -c) purely to exec the CLI.
+// Returns null for a kind this isn't meant for (wsl/ssh use the interactive startCliInTerminal
+// path instead).
+function buildCliInvocation(
+  kind: ShellKind,
+  provider: 'claude' | 'codex' | 'gemini',
+  resumeId: string,
+  id: string
+): string | null {
+  if (kind !== 'pwsh' && kind !== 'powershell' && kind !== 'cmd' && kind !== 'unix') return null
+
+  if (provider === 'claude') {
+    if (kind === 'pwsh' || kind === 'powershell') {
+      return resumeId
+        ? `& $env:CLAUDE_BIN --resume ${resumeId}; if ($LASTEXITCODE -ne 0) { & $env:CLAUDE_BIN }`
+        : `& $env:CLAUDE_BIN`
+    }
+    if (kind === 'cmd') {
+      return resumeId ? `"%CLAUDE_BIN%" --resume ${resumeId} || "%CLAUDE_BIN%"` : `"%CLAUDE_BIN%"`
+    }
+    return resumeId ? `"$CLAUDE_BIN" --resume ${resumeId} || "$CLAUDE_BIN"` : `"$CLAUDE_BIN"`
+  }
+
+  if (provider === 'gemini') {
+    // Gemini chats open Antigravity (Google's latest agentic CLI) instead of the older
+    // `gemini` CLI. Its launch command is `agy` — a bare command resolved from the shell's
+    // own PATH (including a Windows .cmd shim), so no node-entry resolution is needed.
+    return 'agy'
+  }
+
+  // codex
+  const { command, prefixArgs } = resolveCodex()
+  // A bare `codex` (no resolved node entry) depends on it being on this process's PATH —
+  // silently unlike the npm-entry path. We can't inject a diagnostic into the CLI's own
+  // stdout with a direct spawn (there's no interactive shell to type into first), so just
+  // proceed: the shell itself will print its own "not recognized"/"command not found" error,
+  // which is visible and good enough. `id` is unused here but kept for signature symmetry
+  // with the interactive path (sshMeta-style per-terminal lookups would key off it).
+  void id
+  if (kind === 'pwsh' || kind === 'powershell') {
+    return `& ${[command, ...prefixArgs].map(quotePwsh).join(' ')}`
+  }
+  if (kind === 'cmd') {
+    return [command, ...prefixArgs].map(quoteCmd).join(' ')
+  }
+  return [command, ...prefixArgs].map(quoteUnix).join(' ')
 }
 
 // Build the shell-specific command line that launches claude, clearing the shell's
