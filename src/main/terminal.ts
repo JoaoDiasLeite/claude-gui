@@ -298,6 +298,35 @@ function quoteUnix(token: string): string {
   return `'${token.replace(/'/g, `'\\''`)}'`
 }
 
+// Build the shell-specific command line that launches claude, optionally resuming a
+// session. Shared by the initial launch and the resume-failure fallback below so both
+// stay in sync with how each shell kind invokes the CLI.
+function claudeLaunchCommand(kind: ShellKind, id: string, resumeArg: string): string {
+  if (kind === 'pwsh' || kind === 'powershell') return `& $env:CLAUDE_BIN${resumeArg}\r`
+  if (kind === 'cmd') return `"%CLAUDE_BIN%"${resumeArg}\r`
+  if (kind === 'wsl') return `claude${resumeArg}\n`
+  if (kind === 'ssh') {
+    // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
+    // `claude` on its PATH), from the working directory the host was set up for.
+    const meta = sshMeta.get(id)
+    const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
+    return `${cd}${meta?.claudePath || 'claude'}${resumeArg}\n`
+  }
+  return `"$CLAUDE_BIN"${resumeArg}\n`
+}
+
+// How long we wait, after typing a `claude --resume <id>` launch command, for the CLI to
+// enter the terminal's alternate screen (its "I took over the terminal" signal) before
+// assuming the resume failed and relaunching fresh. A successful resume enters the alt
+// screen within ~1s; a resume that errors (missing/incompatible session) prints an error
+// and drops back to the shell prompt almost immediately. ~3s cleanly separates the two
+// while still tolerating a slow CLI startup.
+const RESUME_TAKEOVER_TIMEOUT_MS = 3000
+
+// Matches the alt-screen-enter escape sequence (DECSET 1049/1047/47) that every one of
+// these full-screen TUIs writes right after it takes over the terminal.
+const ALT_SCREEN_ENTER_RE = /\x1b\[\?(?:1049|1047|47)h/
+
 export function startCliInTerminal(
   id: string,
   provider: 'claude' | 'codex' | 'gemini',
@@ -314,21 +343,51 @@ export function startCliInTerminal(
       // Resume the chat's own Claude Code session when we have its id, else start fresh.
       const resume = safeResumeId(resumeSessionId)
       const arg = resume ? ` --resume ${resume}` : ''
-      if (kind === 'pwsh' || kind === 'powershell') {
-        p.write(`& $env:CLAUDE_BIN${arg}\r`)
-      } else if (kind === 'cmd') {
-        p.write(`"%CLAUDE_BIN%"${arg}\r`)
-      } else if (kind === 'wsl') {
-        // Inside WSL: use the distro's own claude on PATH (Windows CLAUDE_BIN doesn't apply).
-        p.write(`claude${arg}\n`)
-      } else if (kind === 'ssh') {
-        // Remote box has no CLAUDE_BIN — use the host's configured claude path (or bare
-        // `claude` on its PATH), from the working directory the host was set up for.
-        const meta = sshMeta.get(id)
-        const cd = meta?.remotePath ? `cd ${quoteUnix(meta.remotePath)} && ` : ''
-        p.write(`${cd}${meta?.claudePath || 'claude'}${arg}\n`)
-      } else {
-        p.write(`"$CLAUDE_BIN"${arg}\n`)
+      p.write(claudeLaunchCommand(kind, id, arg))
+
+      // Only a resume attempt needs the takeover watch — a fresh launch has nothing to
+      // fall back to. Watch the same pty's output for the alt-screen-enter sequence: if it
+      // shows up, claude took over and resumed successfully; if the timeout fires first, the
+      // resume failed (errored back to the shell prompt) and we relaunch without it.
+      if (resume) {
+        let buffer = ''
+        let settled = false
+        let disp: pty.IDisposable | undefined
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          try {
+            disp?.dispose()
+          } catch {
+            // no-op
+          }
+          try {
+            p.write(claudeLaunchCommand(kind, id, ''))
+          } catch {
+            // no-op — pty may already be gone
+          }
+        }, RESUME_TAKEOVER_TIMEOUT_MS)
+        try {
+          disp = p.onData((d) => {
+            if (settled) return
+            buffer += d
+            // Cap the buffer so a chatty/failed CLI can't grow it unbounded while we wait.
+            if (buffer.length > 8192) buffer = buffer.slice(-8192)
+            if (ALT_SCREEN_ENTER_RE.test(buffer)) {
+              settled = true
+              clearTimeout(timer)
+              try {
+                disp?.dispose()
+              } catch {
+                // no-op
+              }
+            }
+          })
+        } catch {
+          // node-pty's onData failed to register a second listener — nothing more we can
+          // do defensively here; the timeout above still fires and relaunches regardless.
+          clearTimeout(timer)
+        }
       }
       return { ok: true }
     }

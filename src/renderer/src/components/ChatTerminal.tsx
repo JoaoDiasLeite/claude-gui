@@ -35,6 +35,15 @@ const FONT_SIZE_KEY = 'chatterm-font-size'
 const MIN_FONT_SIZE = 10
 const MAX_FONT_SIZE = 22
 
+// Matches the alt-screen-enter escape sequence (DECSET 1049/1047/47) that claude, codex,
+// and Antigravity all write once their full-screen TUI takes over the terminal — the
+// signal we use to reveal the terminal from behind the loading overlay.
+const ALT_SCREEN_ENTER_RE = /\x1b\[\?(?:1049|1047|47)h/
+
+// How long the loading overlay is shown at most, regardless of what the CLI does — a
+// backstop so a non-TUI CLI or unexpected output never leaves the loader stuck forever.
+const STARTING_BACKSTOP_MS = 8000
+
 function loadFontSize(): number {
   const saved = Number(localStorage.getItem(FONT_SIZE_KEY))
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
@@ -53,6 +62,10 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   const [exited, setExited] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [fontSize, setFontSize] = useState(loadFontSize)
+  // Hides the raw shell (banner + echoed launch command + a failed --resume bouncing back
+  // to the prompt) until the CLI's full-screen TUI actually takes over. Revealed by the
+  // alt-screen-enter escape sequence detected in onTerminalData below.
+  const [starting, setStarting] = useState(true)
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -142,6 +155,11 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
     idRef.current = terminalId
     setExited(false)
+    // Only cover the terminal with the loader when we're about to auto-launch the CLI. An
+    // explicit Restart (autoStartRef false) intentionally drops to a bare shell, which
+    // never enters the alt screen — showing the loader over it would just stall on the
+    // backstop timeout.
+    setStarting(autoStartRef.current)
     term.reset()
 
     let cols = term.cols
@@ -154,8 +172,20 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // ignore
     }
 
+    // Backstop: reveal unconditionally after a while, even if we never see an alt-screen
+    // (a CLI that isn't a full-screen TUI, or one whose banner escape sequence we didn't
+    // anticipate) so the loader can never get stuck hiding a perfectly usable terminal.
+    const backstopTimer = setTimeout(() => setStarting(false), STARTING_BACKSTOP_MS)
+
     const offData = window.electronAPI.onTerminalData((e) => {
-      if (e.id === terminalId) term.write(e.data)
+      if (e.id !== terminalId) return
+      term.write(e.data)
+      // The CLI just took over the terminal — reveal it. Data written above is already
+      // painted underneath the overlay, so there's no flash of stale/empty content.
+      if (ALT_SCREEN_ENTER_RE.test(e.data)) {
+        setStarting(false)
+        clearTimeout(backstopTimer)
+      }
     })
     const offExit = window.electronAPI.onTerminalExit((e) => {
       if (e.id !== terminalId) return
@@ -171,6 +201,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     window.electronAPI.terminalCreate(terminalId, { cwd, accountId, wslDistro, remoteHostId, provider, cols, rows }).then((res) => {
       if (!res.ok) {
         term.write('\r\n\x1b[31mFailed to start terminal.\x1b[0m\r\n')
+        setStarting(false)
         return
       }
       term.focus()
@@ -186,6 +217,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
 
     return () => {
       if (autoStartTimer) clearTimeout(autoStartTimer)
+      clearTimeout(backstopTimer)
       offData()
       offExit()
       // Deferred, not immediate: a React StrictMode dev remount runs this cleanup and
@@ -195,6 +227,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       window.electronAPI.terminalKillDeferred(terminalId)
     }
   }, [terminalId, cwd, accountId, wslDistro, remoteHostId, provider, reloadKey])
+
+  const providerLabel = provider === 'codex' ? 'Codex' : provider === 'gemini' ? 'Antigravity' : 'Claude'
 
   return (
     <div className="chat-terminal">
@@ -247,6 +281,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       </div>
       <div className="chat-terminal-host-wrap">
         <div ref={hostRef} className="chat-terminal-host" />
+        {starting && !exited && (
+          <div className="chat-terminal-loading">
+            <div className="chat-terminal-spinner" />
+            <div className="chat-terminal-loading-text">Starting {providerLabel}…</div>
+          </div>
+        )}
         {exited && (
           <button
             className="chat-terminal-restart"

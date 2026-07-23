@@ -92,6 +92,43 @@
   height: 100%;
 }
 
+/* Loader overlay shown while the shell banner/echoed launch command/failed-resume bounce
+   is happening underneath — hides all that noise until the CLI's TUI takes over (see
+   ChatTerminal.tsx's alt-screen-enter detection). Opaque so nothing behind it shows through. */
+.chat-terminal-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--bg-elev, var(--bg));
+}
+
+@keyframes chat-terminal-spin {
+  to { transform: rotate(360deg); }
+}
+
+.chat-terminal-spinner {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: chat-terminal-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+.chat-terminal-loading-text {
+  font-size: 13px;
+  color: var(--text-dim, var(--text-2));
+}
+
 .chat-terminal-restart {
   position: absolute;
   top: 50%;
