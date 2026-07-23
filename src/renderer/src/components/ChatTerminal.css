@@ -90,18 +90,24 @@
 .chat-terminal-host {
   width: 100%;
   height: 100%;
+  /* Confine xterm's internal canvas/DOM layers (which carry their own, higher z-indexes)
+     to their own stacking context, so the host participates in .chat-terminal-host-wrap's
+     stacking as a single layer. Without this, those inner layers paint through the loading
+     overlay below regardless of the overlay's own z-index. */
+  isolation: isolate;
 }
 
 /* Loader overlay shown while the shell banner/echoed launch command/failed-resume bounce
-   is happening underneath — hides all that noise until the CLI's TUI takes over (see
-   ChatTerminal.tsx's alt-screen-enter detection). Opaque so nothing behind it shows through. */
+   is happening underneath — hides all that noise until the CLI's output settles after we
+   launch it (see ChatTerminal.tsx's quiet-timer reveal logic). Opaque so nothing behind it
+   shows through; z-index is comfortably above the isolated .chat-terminal-host layer. */
 .chat-terminal-loading {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 2;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;

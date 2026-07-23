@@ -35,14 +35,16 @@ const FONT_SIZE_KEY = 'chatterm-font-size'
 const MIN_FONT_SIZE = 10
 const MAX_FONT_SIZE = 22
 
-// Matches the alt-screen-enter escape sequence (DECSET 1049/1047/47) that claude, codex,
-// and Antigravity all write once their full-screen TUI takes over the terminal — the
-// signal we use to reveal the terminal from behind the loading overlay.
-const ALT_SCREEN_ENTER_RE = /\x1b\[\?(?:1049|1047|47)h/
-
 // How long the loading overlay is shown at most, regardless of what the CLI does — a
 // backstop so a non-TUI CLI or unexpected output never leaves the loader stuck forever.
 const STARTING_BACKSTOP_MS = 8000
+
+// claude, codex, and Antigravity all render inline (no alt screen), so there's no single
+// escape sequence that means "the CLI took over". Instead we reveal once the pty's output
+// goes quiet after we launch it — the shell banner, screen clear, resume attempt/fallback,
+// and CLI banner all stream out first, and once that settles the CLI is idle waiting for
+// input. This is how long a gap in output has to be, after launch, before we call it settled.
+const REVEAL_QUIET_MS = 600
 
 function loadFontSize(): number {
   const saved = Number(localStorage.getItem(FONT_SIZE_KEY))
@@ -63,9 +65,16 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
   const [reloadKey, setReloadKey] = useState(0)
   const [fontSize, setFontSize] = useState(loadFontSize)
   // Hides the raw shell (banner + echoed launch command + a failed --resume bouncing back
-  // to the prompt) until the CLI's full-screen TUI actually takes over. Revealed by the
-  // alt-screen-enter escape sequence detected in onTerminalData below.
+  // to the prompt) until the CLI settles in and is idle waiting for input. Revealed by the
+  // quiet-timer logic in onTerminalData below, once launched output stops streaming.
   const [starting, setStarting] = useState(true)
+  // True from the moment we've typed the launch command until the terminal is revealed —
+  // gates the quiet timer so it only arms for output produced by that launch, not for
+  // whatever the shell happened to print beforehand.
+  const awaitingRevealRef = useRef(false)
+  // Debounced "output went quiet" timer, (re)armed by every data chunk while awaiting
+  // reveal; fires setStarting(false) once REVEAL_QUIET_MS passes with no further output.
+  const quietTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -172,19 +181,34 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // ignore
     }
 
-    // Backstop: reveal unconditionally after a while, even if we never see an alt-screen
-    // (a CLI that isn't a full-screen TUI, or one whose banner escape sequence we didn't
-    // anticipate) so the loader can never get stuck hiding a perfectly usable terminal.
-    const backstopTimer = setTimeout(() => setStarting(false), STARTING_BACKSTOP_MS)
+    // Backstop: reveal unconditionally after a while, even if output never goes quiet (a
+    // chatty CLI, or one that never starts producing output at all) so the loader can
+    // never get stuck hiding a perfectly usable terminal.
+    const backstopTimer = setTimeout(reveal, STARTING_BACKSTOP_MS)
+
+    // Reveal the terminal, clearing both timers — called either by the quiet timer once
+    // launched output settles, or by the backstop above as an absolute fallback.
+    function reveal(): void {
+      setStarting(false)
+      clearTimeout(backstopTimer)
+      clearTimeout(quietTimerRef.current)
+      awaitingRevealRef.current = false
+    }
 
     const offData = window.electronAPI.onTerminalData((e) => {
       if (e.id !== terminalId) return
       term.write(e.data)
-      // The CLI just took over the terminal — reveal it. Data written above is already
-      // painted underneath the overlay, so there's no flash of stale/empty content.
-      if (ALT_SCREEN_ENTER_RE.test(e.data)) {
-        setStarting(false)
-        clearTimeout(backstopTimer)
+      // Data written above is already painted underneath the overlay, so there's no flash
+      // of stale/empty content once it's revealed. Only arm the quiet timer once we've
+      // actually launched the CLI (awaitingRevealRef stays true until reveal() flips it
+      // back off) — every further chunk pushes the deadline back out, so the loader stays
+      // up for as long as the shell/CLI keep streaming output and only reveals once that
+      // goes quiet. (Checking the `starting` state itself here would read a stale closure
+      // value from whenever this effect ran, not the current one — the ref is the
+      // authoritative, always-current gate.)
+      if (awaitingRevealRef.current) {
+        clearTimeout(quietTimerRef.current)
+        quietTimerRef.current = setTimeout(reveal, REVEAL_QUIET_MS)
       }
     })
     const offExit = window.electronAPI.onTerminalExit((e) => {
@@ -209,6 +233,9 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // session (claude only). A short delay lets the shell finish printing its prompt first.
       if (autoStartRef.current) {
         autoStartTimer = setTimeout(() => {
+          // Arm the reveal gate right as we launch — the very next data chunk (the
+          // launch command's own shell echo) starts the quiet timer above.
+          awaitingRevealRef.current = true
           window.electronAPI.terminalStartCli(terminalId, provider, resumeRef.current)
         }, 600)
       }
@@ -218,6 +245,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     return () => {
       if (autoStartTimer) clearTimeout(autoStartTimer)
       clearTimeout(backstopTimer)
+      clearTimeout(quietTimerRef.current)
+      awaitingRevealRef.current = false
       offData()
       offExit()
       // Deferred, not immediate: a React StrictMode dev remount runs this cleanup and
