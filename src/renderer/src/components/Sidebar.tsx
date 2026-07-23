@@ -88,6 +88,10 @@ interface Props {
   onManageAccounts: () => void
   /** Per-account 5h-window usage, keyed by managed account id — shown inside the picker dropdown. */
   accountUsage?: Record<string, { utilization: number; resetsAt?: string }>
+  /** Per-account Codex usage (rateLimits.primary), keyed by Codex account id — the Codex
+   *  analog of `accountUsage` above. No Gemini equivalent: Antigravity's single
+   *  machine-wide login has no per-account usage to report. */
+  codexAccountUsage?: Record<string, { utilization: number; resetsAt?: string; windowMinutes?: number }>
   /** Jump to the Projects view (all historical chats, across accounts). */
   onExploreProjects: () => void
   /** App-wide default model/account — session badges only render when a session diverges from these. */
@@ -137,6 +141,7 @@ export default function Sidebar({
   onPickAccount,
   onManageAccounts,
   accountUsage,
+  codexAccountUsage,
   onExploreProjects,
   defaultModel,
   defaultAccountId
@@ -318,9 +323,14 @@ export default function Sidebar({
   const accountDefaults: AccountDefaults = { defaultAccountId, codexDefaultAccountId, geminiDefaultAccountId }
   const currentAccountId =
     selectedProvider === 'codex' ? currentCodexId : selectedProvider === 'gemini' ? currentGeminiId : currentClaudeId
-  // The in-effect account's own 5h-window usage, shown as a badge on the collapsed row.
-  // Only Claude accounts have real plan-usage data.
-  const currentUsage = selectedProvider === 'claude' ? accountUsage?.[currentAccountId] : undefined
+  // The in-effect account's own usage, shown as a badge on the collapsed row. Claude and
+  // Codex each have their own usage source; Gemini (Antigravity) has none to show.
+  const currentUsage =
+    selectedProvider === 'claude'
+      ? accountUsage?.[currentAccountId]
+      : selectedProvider === 'codex'
+        ? codexAccountUsage?.[currentAccountId]
+        : undefined
   const visibleSessions = visibleSessionsFor(sessions, models, selectedProvider, currentAccountId, accountDefaults)
 
   // ── Session search ──────────────────────────────────────────────────────
@@ -380,7 +390,7 @@ export default function Sidebar({
           {currentUsage && (
             <span
               className={`plan-badge ${currentUsage.utilization >= 90 ? 'danger' : currentUsage.utilization >= 70 ? 'warn' : 'ok'}`}
-              title={`${statusLabel} — plan session window: ${currentUsage.utilization.toFixed(0)}% used${currentUsage.resetsAt ? ` · ${fmtReset(currentUsage.resetsAt)}` : ''}`}
+              title={`${statusLabel} — ${currentUsage.utilization.toFixed(0)}% used${currentUsage.resetsAt ? ` · ${fmtReset(currentUsage.resetsAt)}` : ''}`}
             >
               {currentUsage.utilization.toFixed(0)}%
             </span>
@@ -423,7 +433,12 @@ export default function Sidebar({
                   <div key={provider}>
                     <div className={`account-picker-group-label ${isFirstGroup ? '' : 'not-first'}`}>{label}</div>
                     {list.map((a) => {
-                      const usage = provider === 'claude' ? accountUsage?.[a.id] : undefined
+                      const usage =
+                        provider === 'claude'
+                          ? accountUsage?.[a.id]
+                          : provider === 'codex'
+                            ? codexAccountUsage?.[a.id]
+                            : undefined
                       const selected = provider === selectedProvider && a.id === currentId
                       return (
                         <button
@@ -443,7 +458,7 @@ export default function Sidebar({
                             {usage && (
                               <span
                                 className={`plan-badge ${usage.utilization >= 90 ? 'danger' : usage.utilization >= 70 ? 'warn' : 'ok'}`}
-                                title={`Plan session window: ${usage.utilization.toFixed(0)}% used${usage.resetsAt ? ` · ${fmtReset(usage.resetsAt)}` : ''}`}
+                                title={`${usage.utilization.toFixed(0)}% used${usage.resetsAt ? ` · ${fmtReset(usage.resetsAt)}` : ''}`}
                               >
                                 {usage.utilization.toFixed(0)}%
                               </span>

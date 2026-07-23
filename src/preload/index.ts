@@ -91,6 +91,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   providerAccountsLogin: (provider: string, id: string) =>
     ipcRenderer.invoke('provider-accounts:login', provider, id),
 
+  // Codex plan-usage badge (the Codex analog of ccPlanUsage below)
+  codexUsage: (force?: boolean) => ipcRenderer.invoke('codex-usage:get', force),
+
   // Agent
   sendAgent: (payload: unknown) => ipcRenderer.send('agent:send', payload),
   stopAgent: (appSessionId: string) => ipcRenderer.invoke('agent:stop', appSessionId),

@@ -147,6 +147,12 @@ export default function App() {
   const [budgetBanners, setBudgetBanners] = useState<string[]>([])
   // Live plan usage pushed by the main-process watcher — feeds the sidebar badge.
   const [planReport, setPlanReport] = useState<PlanUsageReport | null>(null)
+  // Codex plan-usage badge data, keyed by Codex account id — the Codex analog of
+  // accountUsage below, but there's no watcher pushing this one (no persistent
+  // main-process process to piggyback on), so it's fetched directly.
+  const [codexAccountUsage, setCodexAccountUsage] = useState<
+    Record<string, { utilization: number; resetsAt?: string; windowMinutes?: number }>
+  >({})
 
   const activeIdRef = useRef(activeId)
   activeIdRef.current = activeId
@@ -685,6 +691,9 @@ export default function App() {
     })
     // Prime the badge without waiting for the watcher's first (~30s) tick.
     window.electronAPI.ccPlanUsage(false).then(setPlanReport).catch(() => {})
+    // Codex has no watcher — always safe to call even with zero Codex accounts
+    // logged in, it just resolves {} quickly.
+    window.electronAPI.codexUsage(false).then(setCodexAccountUsage).catch(() => {})
     return () => {
       offNewChat()
       offPrompt()
@@ -825,6 +834,9 @@ export default function App() {
       if (provider === 'codex') {
         setCodexAccounts(next)
         setCodexDefaultAccountId(nextDefault)
+        // Force-refresh past the cache — mirrors ccPlanUsage(true) in switchDefaultAccount
+        // above, so the badge reflects the newly-picked account immediately.
+        window.electronAPI.codexUsage(true).then(setCodexAccountUsage).catch(() => {})
       } else {
         setGeminiAccounts(next)
         setGeminiDefaultAccountId(nextDefault)
@@ -1357,6 +1369,7 @@ export default function App() {
             onPickAccount={pickAccount}
             onManageAccounts={() => setAccountsOpen(true)}
             accountUsage={accountUsage}
+            codexAccountUsage={codexAccountUsage}
             onExploreProjects={() => setView('projects')}
             defaultModel={defaultModel}
             defaultAccountId={defaultAccountId}

@@ -99,6 +99,7 @@ import { successBadge, errorBadge, approvalBadge } from './badges'
 import { createTray, updateTrayShortcutLabel } from './tray'
 import { initUpdater, getUpdaterState, checkNow, quitAndInstall } from './updater'
 import { getPlanUsageForIpc, startPlanUsageWatcher } from './plan-usage'
+import { getCodexAccountsUsage } from './codex-usage'
 import { setExplorerContextMenu, extractLaunchAction, LaunchAction } from './shell-integration'
 import { refreshJumpList } from './jumplist'
 import { readJsonFile } from './json-file'
@@ -543,6 +544,10 @@ ipcMain.handle('provider-accounts:set-default', (_, provider: AgentProvider, id:
   return listProviderAccountStatus(provider)
 })
 ipcMain.handle('provider-accounts:login', (_, provider: AgentProvider, id: string) => loginProviderAccount(provider, id))
+
+// Codex plan-usage badge — the Codex analog of 'cc:plan-usage' above, one entry
+// per Codex account keyed by account id (see codex-usage.ts).
+ipcMain.handle('codex-usage:get', (_, force?: boolean) => getCodexAccountsUsage(!!force))
 
 // ─── Agent run ─────────────────────────────────────────────────────────────
 

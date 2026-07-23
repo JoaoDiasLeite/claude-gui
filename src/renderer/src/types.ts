@@ -290,6 +290,17 @@ export interface AccountPlanUsage {
   windows: PlanWindow[]
 }
 
+/** Codex plan-usage badge data for one account (see src/main/codex-usage.ts) — the
+ *  Codex analog of AccountPlanUsage/PlanWindow above, but a single window (Codex's
+ *  `account/rateLimits/read` reports one primary window, not several named ones). */
+export interface CodexAccountUsage {
+  /** 0–100. */
+  utilization: number
+  resetsAt?: string
+  windowMinutes?: number
+  planType?: string
+}
+
 export interface PlanUsageReport {
   accounts: AccountPlanUsage[]
   /** accountKey of the entry ambient UI should feature. */
@@ -833,6 +844,9 @@ declare global {
         provider: AgentProvider,
         id: string
       ) => Promise<{ launched: boolean; command: string }>
+
+      // Codex plan-usage badge (the Codex analog of ccPlanUsage below), keyed by account id
+      codexUsage: (force?: boolean) => Promise<Record<string, CodexAccountUsage>>
 
       // Agent
       sendAgent: (payload: {
