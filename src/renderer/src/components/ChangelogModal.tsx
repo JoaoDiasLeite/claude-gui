@@ -16,18 +16,18 @@ interface Entry {
 const CHANGELOG: Entry[] = [
   {
     version: '0.6.0',
-    date: '2026-07-22',
+    date: '2026-07-23',
     tag: 'new',
     sections: [
       {
         title: 'Features',
         items: [
           'Multiple Codex accounts — add, name, rename and remove separate Codex logins just like Claude ones. Each account gets its own isolated CODEX_HOME, so switching accounts switches the login used by chats, the embedded terminal, and MCP-enabled runs.',
-          'The sidebar account picker now spans all three providers — Claude, Codex and Gemini accounts are grouped in one menu, and picking a non-Claude account also switches the default model to that provider so new chats actually use it.',
+          'The sidebar account picker now spans all three providers — Claude, Codex and Gemini accounts are grouped in one menu. Picking an account switches the whole sidebar onto it — its chat history and usage — and opens your most recent chat there (or a fresh one), also switching the default model to that provider so new chats use it.',
           'The chat list is scoped to the selected provider and account, so each login gets its own history. "Explore all chats" jumps to Projects to browse everything across accounts.',
-          'Per-account plan usage — the usage badge tracks the account you have selected, and every Claude account shows its own 5h-window percentage inside the picker.',
+          'Per-account plan usage — the usage badge tracks the account you have selected. Every Claude account shows its own 5h-window percentage inside the picker, and Codex accounts now show theirs too, read live from the Codex CLI.',
           'Gemini runs through Antigravity, managed from its own section in the accounts modal.',
-          'Model catalog is now built at launch: bundled defaults, a user-writable models.json override, and best-effort discovery from the installed Codex CLI. Models found by discovery show a "new" badge instead of invented pricing. Sonnet 5 is now in the catalog.',
+          'Model catalog is now built at launch: bundled defaults, a user-writable models.json override, and best-effort discovery from the installed Codex CLI (and, when an API key is present, the Anthropic models API). Models found by discovery show a "new" badge instead of invented pricing. Sonnet 5 is now in the catalog.',
           'New chats can open straight into the terminal panel — Settings → Appearance → "Open new chats in".',
           'The project instructions editor follows the chat\'s provider, opening AGENTS.md for Codex and GEMINI.md for Gemini instead of always CLAUDE.md.',
         ],
@@ -35,10 +35,11 @@ const CHANGELOG: Entry[] = [
       {
         title: 'Improvements',
         items: [
-          'The embedded terminal has inline font-size controls, and the resume/launch-command UI is gone — the provider CLI still auto-starts, just without the surfaced button and command text.',
+          'The embedded terminal shows a loader while the CLI starts up, with the shell banner, launch command, and any resume handling kept hidden — so you only ever see the CLI itself. Local chats launch the CLI directly (no shell in between); inline font-size controls remain.',
           'Quick chat now picks the cheapest model of whichever provider you are on, rather than always Haiku.',
           'The account menu is rendered in a portal, so the sidebar\'s overflow and the nav rail can no longer clip it.',
           'Tightened spacing throughout the accounts modal and removed its stray leading divider.',
+          'Faster cold start — the renderer bundle is split so the initial load is much lighter, with heavier views fetched on demand.',
         ],
       },
       {
@@ -47,6 +48,8 @@ const CHANGELOG: Entry[] = [
           'Command text in the approval popup was nearly invisible on light palettes — it hardcoded a pale green on a near-white background. It now uses theme tokens, has proper padding, and wraps long commands instead of overflowing.',
           'Chat terminal no longer flashes a spurious "process exited" line and a bare shell on open — a duplicate pty spawned by React\'s dev double-mount is now reused instead of being killed and recreated.',
           'The embedded terminal now opens the shell that matches the chat\'s environment — local, WSL, or an interactive SSH session for remote chats — and launches the right provider CLI inside it, with a clear message if a CLI can\'t be found instead of a bare shell.',
+          'Codex chats that never had an account set now run on — and are listed under — the Codex account you have selected, instead of silently falling back to the machine default.',
+          'When a Claude session can\'t be resumed, the terminal quietly starts a fresh session in the same folder instead of erroring out.',
         ],
       },
     ],
