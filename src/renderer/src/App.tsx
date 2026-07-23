@@ -37,6 +37,7 @@ import AccountsModal from './components/AccountsModal'
 import ChangelogModal from './components/ChangelogModal'
 import { UiPrefs } from './types'
 import { sessionToReplaySeed } from './lib/markdown-export'
+import { provOf, acctOf, AccountDefaults } from './lib/account-scope'
 // The secondary views below are only ever mounted once the user navigates away
 // from the default 'chat' view, so they're loaded lazily (React.lazy) instead
 // of statically imported. That keeps their code — and the vendor libraries
@@ -844,6 +845,68 @@ export default function App() {
     }
   }
 
+  // Picking an account in the sidebar picker switches the whole view onto it, not just
+  // the default for new chats: the row/list are scoped to the ACTIVE chat's account
+  // (see selectedProvider below), so without this a pick on a different account looked
+  // like it did nothing. So after setting the default (above) we move to a chat on that
+  // account — the most recent one already there, else the active empty draft repurposed
+  // onto it, else a fresh chat bound to it.
+  const pickAccount = async (provider: ProviderId, accountId: string) => {
+    await switchDefaultProviderAccount(provider, accountId)
+
+    // Resolve chats with the just-picked account as this provider's default — state from
+    // switchDefaultProviderAccount hasn't flushed yet, and an unbound legacy chat must
+    // resolve the same way its run will (see account-scope.ts / buildAgentPayload).
+    const effectiveDefaults: AccountDefaults = {
+      defaultAccountId: provider === 'claude' ? accountId : defaultAccountId,
+      codexDefaultAccountId: provider === 'codex' ? accountId : codexDefaultAccountId,
+      geminiDefaultAccountId: provider === 'gemini' ? accountId : geminiDefaultAccountId
+    }
+    // The model a fresh chat here should use: keep the current default within the default
+    // provider, else that provider's top model (matching the default-model switch above).
+    const providerModel =
+      provider === defaultProvider ? defaultModel : firstModelForProvider(provider) ?? defaultModel
+    const list = provider === 'codex' ? codexAccounts : provider === 'gemini' ? geminiAccounts : accounts
+    const name = list.find((a) => a.id === accountId)?.name
+    const acctFields =
+      provider === 'codex'
+        ? { codexAccountId: accountId, codexAccountName: name }
+        : provider === 'gemini'
+          ? { geminiAccountId: accountId, geminiAccountName: name }
+          : { accountId, accountName: name }
+
+    // Already on this account (the switch may have rebound an empty draft) — nothing to move.
+    const active = sessions.find((s) => s.id === activeIdRef.current)
+    if (active && provOf(models, active.model) === provider && acctOf(active, models, effectiveDefaults) === accountId) {
+      setView('chat')
+      return
+    }
+    // Jump to the most recent real chat already on this provider + account.
+    const existing = sessions
+      .filter(
+        (s) =>
+          s.messages.length > 0 &&
+          provOf(models, s.model) === provider &&
+          acctOf(s, models, effectiveDefaults) === accountId
+      )
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    if (existing) {
+      setActiveId(existing.id)
+      setView('chat')
+      return
+    }
+    // None yet: repurpose the active empty draft onto this account, else start a fresh chat.
+    if (active && active.messages.length === 0) {
+      setSessions((prev) => prev.map((s) => (s.id === active.id ? { ...s, model: providerModel, ...acctFields } : s)))
+    } else {
+      const s = newSession(activeSession?.projectPath, providerModel, provider === 'claude' ? accountId : defaultAccountId)
+      Object.assign(s, acctFields)
+      setSessions((prev) => [s, ...prev])
+      setActiveId(s.id)
+    }
+    setView('chat')
+  }
+
   const toggleAutoApprove = () => {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, autoApprove: !s.autoApprove } : s)))
   }
@@ -1291,7 +1354,7 @@ export default function App() {
             geminiAccounts={geminiAccounts}
             codexDefaultAccountId={codexDefaultAccountId}
             geminiDefaultAccountId={geminiDefaultAccountId}
-            onPickAccount={switchDefaultProviderAccount}
+            onPickAccount={pickAccount}
             onManageAccounts={() => setAccountsOpen(true)}
             accountUsage={accountUsage}
             onExploreProjects={() => setView('projects')}
