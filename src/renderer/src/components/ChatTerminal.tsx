@@ -24,11 +24,13 @@ interface Props {
 }
 
 // xterm's canvas needs a concrete opaque color, not a CSS var — read the live theme.
+// Uses the real theme tokens (--bg-0/--text-0); the loading overlay reads the same --bg-0
+// so it stays opaque and colour-matched to the terminal in every palette/theme.
 function themeColors(): { background: string; foreground: string } {
   const cs = getComputedStyle(document.documentElement)
-  const bg = (cs.getPropertyValue('--bg-elev') || cs.getPropertyValue('--bg') || '').trim()
-  const fg = (cs.getPropertyValue('--text') || cs.getPropertyValue('--fg') || '').trim()
-  return { background: bg || '#17140f', foreground: fg || '#e8e2d6' }
+  const bg = (cs.getPropertyValue('--bg-0') || '').trim()
+  const fg = (cs.getPropertyValue('--text-0') || '').trim()
+  return { background: bg || '#141312', foreground: fg || '#efece8' }
 }
 
 const FONT_SIZE_KEY = 'chatterm-font-size'

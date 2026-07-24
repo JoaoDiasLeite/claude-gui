@@ -97,10 +97,12 @@
   isolation: isolate;
 }
 
-/* Loader overlay shown while the shell banner/echoed launch command/failed-resume bounce
-   is happening underneath — hides all that noise until the CLI's output settles after we
-   launch it (see ChatTerminal.tsx's quiet-timer reveal logic). Opaque so nothing behind it
-   shows through; z-index is comfortably above the isolated .chat-terminal-host layer. */
+/* Loader overlay shown until the CLI has actually painted (see ChatTerminal.tsx's
+   reveal-on-content logic). MUST be fully opaque so the CLI drawing underneath doesn't
+   show through it — --bg-0 is the same token the terminal itself is painted with, so the
+   overlay matches it exactly. (The old --bg-elev/--bg tokens don't exist, so the property
+   resolved to transparent and the CLI bled through the loader.) z-index sits above the
+   isolated .chat-terminal-host layer. */
 .chat-terminal-loading {
   position: absolute;
   top: 0;
@@ -113,7 +115,7 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  background: var(--bg-elev, var(--bg));
+  background: var(--bg-0, #141312);
 }
 
 @keyframes chat-terminal-spin {
@@ -132,7 +134,7 @@
 
 .chat-terminal-loading-text {
   font-size: 13px;
-  color: var(--text-dim, var(--text-2));
+  color: var(--text-2);
 }
 
 .chat-terminal-restart {
