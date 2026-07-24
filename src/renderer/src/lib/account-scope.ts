@@ -49,8 +49,9 @@ export function idFor(
   return (provider === selectedProvider ? selectedAccountId : undefined) ?? fallback ?? 'default'
 }
 
-// Blank "New chat" drafts (no messages yet) stay out of the list — the Sessions section
-// only appears once at least one chat has real content. Chats are also scoped to the
+// Blank "New chat" drafts (no messages yet, and never used via the embedded terminal
+// either) stay out of the list — the Sessions section only appears once at least one
+// chat has real content. Chats are also scoped to the
 // selected provider + account: a chat is permanently bound to the provider/account that
 // created it, so switching either swaps the visible history. Older chats without an
 // accountId fall under that provider's machine-default account ('default'), same as
@@ -65,7 +66,7 @@ export function visibleSessions(
 ): Session[] {
   return sessions.filter(
     (s) =>
-      s.messages.length > 0 &&
+      (s.messages.length > 0 || s.hasTerminalActivity) &&
       provOf(models, s.model) === selectedProvider &&
       acctOf(s, models, defaults) === currentAccountId
   )

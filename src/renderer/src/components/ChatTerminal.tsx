@@ -21,6 +21,9 @@ interface Props {
   /** The chat's Claude Code session id — resumed when launching claude. */
   resumeSessionId?: string
   onClose: () => void
+  /** Fired once the PTY has actually launched, so the host can mark this chat as having
+   *  real activity (see Session.hasTerminalActivity) even though no `messages` exist. */
+  onActive?: () => void
 }
 
 // The embedded terminal is intentionally ALWAYS dark and does NOT follow the app's
@@ -69,7 +72,7 @@ function loadFontSize(): number {
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
 }
 
-export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, onClose }: Props) {
+export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, remoteHostId, provider, resumeSessionId, onClose, onActive }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -261,6 +264,7 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
           setStarting(false)
           return
         }
+        onActive?.()
         // Note: focus is NOT taken here — it's deferred to reveal() so the loader isn't
         // marred by xterm's native input caret (see reveal). The one exception is the
         // bare-shell case below, which shows no loader and so should focus immediately.
