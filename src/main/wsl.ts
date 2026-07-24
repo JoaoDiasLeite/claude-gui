@@ -66,17 +66,35 @@ function isWindowsHomeMount(p: string): boolean {
 
 const SKIP_DISTROS = new Set(['docker-desktop', 'docker-desktop-data'])
 
-/** Resolve a distro's $HOME (starts the distro; times out fast if unreachable). */
+/**
+ * Resolve a distro's $HOME (starts the distro; times out fast if unreachable).
+ *
+ * Deliberately does NOT use a login shell (`bash -lc`) to read the variable. A login
+ * shell sources the user's init files (~/.profile, ~/.bashrc), and on at least one real
+ * distro that init runs `sudo` to start background services (postgres/redis) plus prints
+ * assorted startup noise. With no tty attached, `sudo` blocks on a password prompt that
+ * never resolves, so the probe hangs/fails, `wslHome` returns null, and the caller drops
+ * the ENTIRE distro (its projects/sessions vanish, or its credentials path is skipped).
+ * `printenv` is coreutils (always present) and runs with no shell at all — no rc files,
+ * no sudo, no noise — so this stays fast and reliable regardless of what a given distro's
+ * shell init does.
+ */
 function wslHome(distro: string): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
       'wsl.exe',
-      ['-d', distro, '--', 'bash', '-lc', 'echo $HOME'],
+      ['-d', distro, '--', 'printenv', 'HOME'],
       { encoding: 'utf8', windowsHide: true, timeout: 8000 },
       (err, stdout) => {
         if (err) return resolve(null)
-        const home = (stdout || '').trim().split('\n').pop()?.trim()
-        resolve(home && home.startsWith('/') ? home : null)
+        // printenv emits just the value, but stay defensive in case anything precedes it
+        // (e.g. distro-level MOTD written to stdout) — take the first absolute-path line.
+        const home = (stdout || '')
+          .trim()
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l.startsWith('/'))
+        resolve(home ?? null)
       }
     )
   })
