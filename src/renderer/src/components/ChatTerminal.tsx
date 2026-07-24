@@ -23,14 +23,15 @@ interface Props {
   onClose: () => void
 }
 
-// xterm's canvas needs a concrete opaque color, not a CSS var — read the live theme.
-// Uses the real theme tokens (--bg-0/--text-0); the loading overlay reads the same --bg-0
-// so it stays opaque and colour-matched to the terminal in every palette/theme.
+// The embedded terminal is intentionally ALWAYS dark and does NOT follow the app's
+// light/dark theme: the CLIs it hosts (claude/codex) emit ANSI colors tuned for a dark
+// background, so a light bg would wash them out. These fixed colors must stay in sync
+// with .chat-terminal-loading's background in ChatTerminal.css (the loader overlay) so the
+// loader matches the terminal underneath it.
+const TERMINAL_BG = '#17140f'
+const TERMINAL_FG = '#e8e2d6'
 function themeColors(): { background: string; foreground: string } {
-  const cs = getComputedStyle(document.documentElement)
-  const bg = (cs.getPropertyValue('--bg-0') || '').trim()
-  const fg = (cs.getPropertyValue('--text-0') || '').trim()
-  return { background: bg || '#141312', foreground: fg || '#efece8' }
+  return { background: TERMINAL_BG, foreground: TERMINAL_FG }
 }
 
 const FONT_SIZE_KEY = 'chatterm-font-size'
