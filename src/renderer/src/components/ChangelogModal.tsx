@@ -15,6 +15,30 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '0.7.0',
+    date: '2026-07-24',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Features',
+        items: [
+          'Set up a new chat before you send — a config row above the composer lets you pick the environment (Local, a WSL distro, or an SSH host), choose the project folder, see the git branch, and add extra working directories, all in one place.',
+          'Run a chat in a throwaway git worktree — flip "Worktree" on a local repo and the chat works inside a fresh `claude/…` branch checked out beside your repo, so its edits never touch your current branch.',
+          'Extra working directories — add folders beyond the project root and the engine can read and write across all of them (Claude Code `--add-dir`).',
+          'Pick a folder for WSL and remote chats too — WSL opens the native picker straight into the distro\'s filesystem, and SSH hosts take a typed working directory that overrides the host default.',
+        ],
+      },
+      {
+        title: 'Fixes',
+        items: [
+          'Chats run under a non-default account now show up in Projects and Resume — their transcripts live under the account\'s own config dir and were previously invisible even though they were on disk.',
+          'A chat driven entirely from the embedded terminal (no messages sent through the composer) now stays in the sidebar and is saved to disk, instead of being treated as a blank draft and dropped.',
+          'WSL chats now start in the folder you picked — the `\\\\wsl.localhost\\…` path from the picker is translated to the distro\'s Linux path before the run, instead of silently falling back to your home directory.',
+        ],
+      },
+    ],
+  },
+  {
     version: '0.6.1',
     date: '2026-07-24',
     tag: 'latest',
