@@ -5,6 +5,7 @@ import { priceFor } from './config'
 import { getWslClaudeRoots } from './wsl'
 import { storeGet, storeSet } from './store'
 import { readJsonFile } from './json-file'
+import { getAccounts } from './accounts'
 
 // ─── Sources (local + WSL distros) ──────────────────────────────────────────
 
@@ -62,6 +63,22 @@ export async function getSources(force = false): Promise<ClaudeSource[]> {
   const now = Date.now()
   if (!force && sourceCache && now - sourceCache.at < 30000) return sourceCache.sources
   const sources: ClaudeSource[] = [localSource()]
+  // Each non-default account runs with CLAUDE_CONFIG_DIR pointed at its own configDir
+  // (see accounts.ts), so its transcripts land under <configDir>/projects rather than
+  // ~/.claude/projects — without this, chats run under those accounts are invisible to
+  // Projects/Resume even though they're on disk.
+  for (const account of getAccounts()) {
+    if (!account.configDir) continue
+    const claudeJsonPath = path.join(account.configDir, '.claude.json')
+    sources.push({
+      id: `account:${account.id}`,
+      label: account.name,
+      kind: 'local',
+      projectsDir: path.join(account.configDir, 'projects'),
+      claudeJsonPath,
+      account: readAccount(claudeJsonPath)
+    })
+  }
   try {
     for (const root of await getWslClaudeRoots()) {
       sources.push({
