@@ -52,6 +52,16 @@ export interface Session {
   remoteHostName?: string
   /** If set, this chat runs inside this WSL distro. */
   wslDistro?: string
+  /** Extra working directories exposed to the engine (Claude Code --add-dir). */
+  additionalDirs?: string[]
+  /** Run this chat inside a fresh git worktree of projectPath. */
+  useWorktree?: boolean
+  /** Resolved worktree cwd, created on first send so later turns reuse it. */
+  worktreePath?: string
+  /** Set once the embedded terminal has actually launched a CLI for this chat. Keeps a
+   *  chat driven entirely from the terminal (no `messages`) visible in the sidebar and
+   *  persisted to disk — see visibleSessions() in lib/account-scope.ts. */
+  hasTerminalActivity?: boolean
   /** Which Claude Code account (login) this chat runs under. Undefined = default account. */
   accountId?: string
   accountName?: string
@@ -871,6 +881,9 @@ declare global {
         files?: { name: string; content: string }[]
         remoteHostId?: string
         wslDistro?: string
+        additionalDirs?: string[]
+        useWorktree?: boolean
+        worktreePath?: string
         accountId?: string
         codexAccountId?: string
         geminiAccountId?: string
@@ -880,6 +893,9 @@ declare global {
       onAgentDone: (cb: (data: AgentDone) => void) => () => void
       onAgentError: (cb: (data: AgentError) => void) => () => void
       onApprovalRequest: (cb: (data: ApprovalRequest) => void) => () => void
+      onAgentWorktree: (
+        cb: (data: { appSessionId: string; path: string; branch?: string }) => void
+      ) => () => void
       respondApproval: (payload: {
         approvalId: string
         allow: boolean
@@ -1057,7 +1073,7 @@ declare global {
       // File system
       readDir: (dirPath: string) => Promise<FileNode[] | { error: string }>
       readFile: (filePath: string) => Promise<{ content?: string; error?: string }>
-      openFolder: () => Promise<string | null>
+      openFolder: (defaultPath?: string) => Promise<string | null>
 
       // Sessions
       listSessions: () => Promise<Session[]>

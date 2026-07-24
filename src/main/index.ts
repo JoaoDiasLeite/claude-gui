@@ -38,7 +38,7 @@ import {
   compareCheckpoints,
   exportPatch
 } from './checkpoints'
-import { getStatus, getDiff, stageFile, unstageFile, stageAll, commit, getLog } from './git'
+import { getStatus, getDiff, stageFile, unstageFile, stageAll, commit, getLog, createWorktree } from './git'
 import { listCommands } from './commands'
 import {
   listHosts,
@@ -577,6 +577,12 @@ interface SendPayload {
   remoteHostId?: string
   /** If set, run inside this WSL distro instead of locally. */
   wslDistro?: string
+  /** Extra working directories exposed to the engine (Claude --add-dir). */
+  additionalDirs?: string[]
+  /** Run this local chat inside a fresh git worktree of projectPath. */
+  useWorktree?: boolean
+  /** Previously-created worktree cwd for this chat — reused across turns. */
+  worktreePath?: string
   /** Which Claude Code account (config dir) to run under. Undefined = machine default. */
   accountId?: string
   /** Which Codex account to run under, when the active model is a Codex model. */
@@ -669,7 +675,7 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
 
   // Remote host: drive the remote machine's Claude Code over SSH instead of the local SDK.
   if (payload.remoteHostId) {
-    runRemote(appSessionId, payload.remoteHostId, promptWithFiles, payload.model, claudeSessionId, {
+    runRemote(appSessionId, payload.remoteHostId, promptWithFiles, payload.model, claudeSessionId, projectPath, {
       onEvent: (e) => send('agent:event', e),
       onDone: (d) => send('agent:done', { appSessionId, ...d }),
       onError: (msg) => send('agent:error', { appSessionId, error: msg })
@@ -706,7 +712,24 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
     /* pill is decorative — ignore any failure */
   }
 
-  const cwd = projectPath && fs.existsSync(projectPath) ? projectPath : os.homedir()
+  // Worktree: a `useWorktree` chat runs inside a fresh git worktree of projectPath. Create
+  // it lazily on the first send, reuse it on later turns (worktreePath), and notify the
+  // renderer so it persists the path onto the session. Best-effort — fall back to the repo
+  // root if creation fails, so a run never dies over a worktree hiccup.
+  let effectiveCwd = projectPath
+  if (payload.useWorktree && projectPath && fs.existsSync(projectPath)) {
+    if (payload.worktreePath && fs.existsSync(payload.worktreePath)) {
+      effectiveCwd = payload.worktreePath
+    } else {
+      const wt = await createWorktree(projectPath, appSessionId)
+      if (wt.ok && wt.path) {
+        effectiveCwd = wt.path
+        send('agent:worktree', { appSessionId, path: wt.path, branch: wt.branch })
+      }
+    }
+  }
+
+  const cwd = effectiveCwd && fs.existsSync(effectiveCwd) ? effectiveCwd : os.homedir()
   const policy = resolvePolicy({
     profile: payload.lightMode ? 'interactive-light' : 'interactive-chat',
     requestedModel: payload.model
@@ -785,6 +808,9 @@ ipcMain.on('agent:send', async (_event, payload: SendPayload) => {
       ...(canUseTool ? { canUseTool } : {}),
       ...(payload.systemPrompt ? { systemPrompt: payload.systemPrompt } : {}),
       ...(payload.allowedTools ? { allowedTools: payload.allowedTools } : {}),
+      ...(payload.additionalDirs && payload.additionalDirs.length
+        ? { additionalDirectories: payload.additionalDirs.filter((d) => fs.existsSync(d)) }
+        : {}),
       ...(mcpServers && Object.keys(mcpServers).length
         ? { mcpServers: mcpServers as Record<string, never> }
         : {}),
@@ -1787,9 +1813,12 @@ ipcMain.handle('fs:read-file', (_, filePath: string) => {
   }
 })
 
-ipcMain.handle('fs:open-folder', async () => {
+ipcMain.handle('fs:open-folder', async (_, defaultPath?: string) => {
   if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    ...(defaultPath ? { defaultPath } : {})
+  })
   if (result.canceled) return null
   return result.filePaths[0]
 })

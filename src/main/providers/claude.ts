@@ -128,6 +128,9 @@ export const claudeEngine: AiEngine = {
       settingSources: req.settingSources,
       permissionMode: req.permissionMode,
       ...(req.allowedTools ? { allowedTools: req.allowedTools } : {}),
+      ...(req.additionalDirectories && req.additionalDirectories.length
+        ? { additionalDirectories: req.additionalDirectories }
+        : {}),
       ...(req.disallowedTools ? { disallowedTools: req.disallowedTools } : {}),
       ...(req.maxTurns !== undefined ? { maxTurns: req.maxTurns } : {}),
       ...(req.mcpServers ? { mcpServers: req.mcpServers as Record<string, never> } : {}),

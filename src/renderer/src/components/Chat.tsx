@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { Session, ModelInfo, Attachment, SlashCommand, ProviderId } from '../types'
 import MessageBubble from './MessageBubble'
 import ModelPicker from './ModelPicker'
+import ChatConfigBar from './ChatConfigBar'
 import { sessionToMarkdown } from '../lib/markdown-export'
 import './Chat.css'
 
@@ -85,6 +86,8 @@ interface Props {
   onEditResend: (messageId: string, newText: string) => void
   onBranch: (messageId: string) => void
   onExportSession: (format: 'md' | 'html') => void
+  /** Patch the active draft session (folder / environment / extra dirs) from the new-chat bar. */
+  onPatchSession: (patch: Partial<Session>) => void
 }
 
 export default function Chat({
@@ -113,7 +116,8 @@ export default function Chat({
   onRetry,
   onEditResend,
   onBranch,
-  onExportSession
+  onExportSession,
+  onPatchSession
 }: Props) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const [markdownCopied, setMarkdownCopied] = useState(false)
@@ -603,8 +607,8 @@ export default function Chat({
                 <path d="M8 12h8M12 8v8" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </div>
-            <h2>How can I help?</h2>
-            <p>Start a conversation with Claude. You can also open a project folder in the sidebar for context.</p>
+            <h2>What&rsquo;s up next?</h2>
+            <p>Set the folder, environment, and any extra directories below, then describe a task to get started.</p>
           </div>
         ) : (
           <>
@@ -646,6 +650,9 @@ export default function Chat({
             remoteHostId={session.remoteHostId}
             resumeSessionId={session.claudeSessionId}
             onClose={toggleTerminal}
+            onActive={() => {
+              if (!session.hasTerminalActivity) onPatchSession({ hasTerminalActivity: true })
+            }}
           />
         </Suspense>
       )}
@@ -707,6 +714,9 @@ export default function Chat({
               )
             )}
           </div>
+        )}
+        {isEmpty && session && (
+          <ChatConfigBar session={session} onPatch={onPatchSession} disabled={!ready} />
         )}
         <div className="input-wrapper">
           {pickerOpen && (

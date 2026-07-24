@@ -185,6 +185,7 @@ export function runRemote(
   prompt: string,
   model: string | undefined,
   claudeSessionId: string | undefined,
+  cwd: string | undefined,
   h: RemoteRunHandlers
 ): void {
   const host = getHost(hostId)
@@ -202,7 +203,9 @@ export function runRemote(
     const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits']
     if (model) flags.push('--model', model)
     if (claudeSessionId) flags.push('--resume', claudeSessionId)
-    const cd = host.remotePath ? `cd ${shQuote(host.remotePath)} && ` : ''
+    // Per-chat folder (from the config bar) overrides the host's default remote path.
+    const dir = cwd || host.remotePath
+    const cd = dir ? `cd ${shQuote(dir)} && ` : ''
     const cmd = `${cd}${claude} ${flags.join(' ')}`
 
     conn.exec(cmd, (err, stream) => {

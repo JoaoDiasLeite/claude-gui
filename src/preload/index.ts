@@ -117,6 +117,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('agent:approval-request', fn)
     return () => ipcRenderer.removeListener('agent:approval-request', fn)
   },
+  // A git worktree was created for a `useWorktree` chat — carries the resolved cwd so the
+  // renderer can persist it on the session and reuse it on later turns.
+  onAgentWorktree: (cb: (data: { appSessionId: string; path: string; branch?: string }) => void) => {
+    const fn = (_: unknown, data: { appSessionId: string; path: string; branch?: string }) => cb(data)
+    ipcRenderer.on('agent:worktree', fn)
+    return () => ipcRenderer.removeListener('agent:worktree', fn)
+  },
   respondApproval: (payload: unknown) => ipcRenderer.invoke('agent:approval-response', payload),
   // An approval was answered (by the toast or the main modal): drop it in the other UI.
   onApprovalResolved: (cb: (approvalId: string) => void) => {
@@ -258,7 +265,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File system
   readDir: (dirPath: string) => ipcRenderer.invoke('fs:read-dir', dirPath),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:read-file', filePath),
-  openFolder: () => ipcRenderer.invoke('fs:open-folder'),
+  openFolder: (defaultPath?: string) => ipcRenderer.invoke('fs:open-folder', defaultPath),
 
   // Sessions
   listSessions: () => ipcRenderer.invoke('session:list'),

@@ -113,6 +113,33 @@ export async function commit(cwd: string, message: string): Promise<CommitResult
   return { ok: res.code === 0, message: (res.stdout || res.stderr).trim() }
 }
 
+/**
+ * Create a fresh git worktree of `repoPath` on a new branch `claude/<id>`, checked out
+ * under a sibling `<repo>.worktrees/<id>` directory. Best-effort: returns `{ ok: false }`
+ * for a non-repo or on any git failure so callers can fall back to the repo root.
+ */
+export async function createWorktree(
+  repoPath: string,
+  id: string
+): Promise<{ ok: boolean; path?: string; branch?: string; error?: string }> {
+  if (!repoPath || !fs.existsSync(repoPath)) return { ok: false, error: 'no folder' }
+  const inside = await git(repoPath, ['rev-parse', '--is-inside-work-tree'])
+  if (inside.stdout.trim() !== 'true') return { ok: false, error: 'not a git repo' }
+
+  const short = id.slice(0, 8)
+  const branch = `claude/${short}`
+  const base = path.basename(repoPath.replace(/[\\/]+$/, ''))
+  const wtPath = path.join(path.dirname(repoPath), `${base}.worktrees`, short)
+  try {
+    fs.mkdirSync(path.dirname(wtPath), { recursive: true })
+  } catch {
+    /* mkdir failure surfaces as the git error below */
+  }
+  const res = await git(repoPath, ['worktree', 'add', '-b', branch, wtPath, 'HEAD'])
+  if (res.code !== 0) return { ok: false, error: res.stderr.trim() || 'git worktree add failed' }
+  return { ok: true, path: wtPath, branch }
+}
+
 export interface GitCommit {
   hash: string
   /** ISO date "YYYY-MM-DD". */

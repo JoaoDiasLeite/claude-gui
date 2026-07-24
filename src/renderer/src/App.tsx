@@ -443,6 +443,14 @@ export default function App() {
       setApprovalQueue((prev) => [...prev, data])
     })
 
+    // A git worktree was created for a `useWorktree` chat — persist its path so later
+    // turns (and the embedded terminal) reuse it instead of re-creating one each send.
+    const offWorktree = window.electronAPI.onAgentWorktree((data) => {
+      setSessions((prev) =>
+        prev.map((s) => (s.id === data.appSessionId ? { ...s, worktreePath: data.path } : s))
+      )
+    })
+
     // An approval answered elsewhere (e.g. the always-on-top toast while this
     // window was hidden) — drop it here so the modal doesn't linger unanswered.
     const offResolved = window.electronAPI.onApprovalResolved((approvalId: string) => {
@@ -454,6 +462,7 @@ export default function App() {
       offDone()
       offErr()
       offApproval()
+      offWorktree()
       offResolved()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -502,6 +511,9 @@ export default function App() {
       files,
       remoteHostId: session.remoteHostId,
       wslDistro: session.wslDistro,
+      additionalDirs: session.additionalDirs,
+      useWorktree: session.useWorktree,
+      worktreePath: session.worktreePath,
       accountId: session.accountId ?? defaultAccountId,
       // Falls back to the current Codex default account, mirroring the sidebar's
       // acctOf (src/renderer/src/lib/account-scope.ts) — an unbound Codex chat must
@@ -766,6 +778,23 @@ export default function App() {
 
   const setSessionProject = (path: string) => {
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, projectPath: path } : s)))
+  }
+
+  // Patch the active draft session from the new-chat config bar (folder, environment,
+  // extra dirs, worktree toggle). Only meaningful before the first message is sent.
+  const patchActiveSession = (patch: Partial<Session>) => {
+    let patched: Session | undefined
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== activeIdRef.current) return s
+        patched = { ...s, ...patch }
+        return patched
+      })
+    )
+    // A chat driven purely from the embedded terminal never goes through the normal
+    // agent:send → saveSession path, so without this it'd vanish on restart even after
+    // hasTerminalActivity makes it visible in the sidebar for the rest of this run.
+    if (patch.hasTerminalActivity && patched) window.electronAPI.saveSession(patched)
   }
 
   const setSessionModel = (modelId: string) => {
@@ -1046,6 +1075,13 @@ export default function App() {
     // is a legacy artifact — don't reuse it; let it default to the distro's $HOME.
     const isWinMount = /^\/mnt\/[a-z]\//i.test(cc.realPath) || /^\/[a-z]\/(Users|Windows)\//i.test(cc.realPath)
     const projectPath = isWsl && isWinMount ? undefined : cc.realPath
+    // A session from a non-default account's source (id `account:<id>`, see
+    // claude-data.ts getSources) must resume under THAT account's CLAUDE_CONFIG_DIR —
+    // its transcript lives there, so resuming under defaultAccountId would look for the
+    // session id in the wrong config dir and fail.
+    const accountId = cc.sourceId.startsWith('account:')
+      ? cc.sourceId.slice('account:'.length)
+      : defaultAccountId
     const s: Session = {
       id: generateId(),
       name: cc.title,
@@ -1053,7 +1089,7 @@ export default function App() {
       projectPath,
       claudeSessionId: cc.sessionId,
       model: cc.model || defaultModel,
-      accountId: defaultAccountId,
+      accountId,
       useMcp: false,
       wslDistro: isWsl ? cc.distro : undefined,
       remoteHostName: isWsl ? `WSL · ${cc.distro}` : undefined,
@@ -1435,6 +1471,7 @@ export default function App() {
               onExportSession={(format) => {
                 if (activeSession) window.electronAPI.exportSession(activeSession, format)
               }}
+              onPatchSession={patchActiveSession}
             />
             <TerminalPanel
               lines={terminalLines}

@@ -173,11 +173,14 @@ function buildCommand(
   const flags = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'acceptEdits']
   if (model) flags.push('--model', model)
   if (resume) flags.push('--resume', resume)
+  // A folder chosen for a WSL chat comes back from the native picker as a Windows share
+  // path (\\wsl.localhost\<distro>\…); translate it to the distro's Linux path before cd.
+  const linuxCwd = uncToWslPath(cwd) ?? cwd
   // wsl.exe inherits the caller's Windows cwd (e.g. /mnt/c/Users/…). Default to the
   // distro's own $HOME so chats run inside the Linux filesystem, not the Windows mount —
   // and redirect any inherited Windows-home path to $HOME too.
-  const useHome = !cwd || isWindowsHomeMount(cwd)
-  const cd = useHome ? 'cd "$HOME" && ' : `cd ${shQuote(cwd)} && `
+  const useHome = !linuxCwd || isWindowsHomeMount(linuxCwd)
+  const cd = useHome ? 'cd "$HOME" && ' : `cd ${shQuote(linuxCwd)} && `
   return `${cd}${claudePath || 'claude'} ${flags.join(' ')}`
 }
 
@@ -269,7 +272,9 @@ export function runWsl(
     h.onError('WSL is only available on Windows')
     return
   }
-  const cmd = buildCommand(claudePath || 'claude', model, claudeSessionId, cwd)
+  // The folder picker hands back a \\wsl.localhost\<distro>\… UNC path; translate it to the
+  // distro's Linux path so `cd` inside bash resolves it.
+  const cmd = buildCommand(claudePath || 'claude', model, claudeSessionId, uncToWslPath(cwd) ?? cwd)
   const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', CLAUDE_SHELL_FLAG, cmd], {
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe']

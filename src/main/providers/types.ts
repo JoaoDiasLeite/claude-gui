@@ -78,6 +78,8 @@ export interface EngineRequest {
   permissionMode: NonNullable<SdkOptions['permissionMode']>
   /** Explicit tool allowlist. Omit to leave tools unrestricted for the profile. */
   allowedTools?: string[]
+  /** Extra working directories the engine may read/write beyond `cwd` (Claude --add-dir). */
+  additionalDirectories?: string[]
   /** Tools removed from context entirely (cannot be invoked even under bypass). */
   disallowedTools?: string[]
   /** Agentic-turn cap. Omit for uncapped (interactive chat). */
