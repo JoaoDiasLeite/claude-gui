@@ -40,11 +40,12 @@ const MAX_FONT_SIZE = 22
 const STARTING_BACKSTOP_MS = 8000
 
 // claude, codex, and Antigravity all render inline (no alt screen), so there's no single
-// escape sequence that means "the CLI took over". Instead we reveal once the pty's output
-// goes quiet after we launch it — the shell banner, screen clear, resume attempt/fallback,
-// and CLI banner all stream out first, and once that settles the CLI is idle waiting for
-// input. This is how long a gap in output has to be, after launch, before we call it settled.
-const REVEAL_QUIET_MS = 600
+// escape sequence that means "the CLI took over". Instead we reveal as soon as the terminal
+// has painted any real content — not when output goes quiet: codex streams continuously
+// while its model loads and never settles, so a quiet-based reveal would leave the loader up
+// for seconds over an already-usable CLI. A tiny grace after the first visible glyph lets
+// xterm paint that frame under the overlay so the reveal doesn't flash a blank frame first.
+const REVEAL_PAINT_GRACE_MS = 120
 
 // Whether the terminal's current viewport has any real (non-whitespace) glyphs painted.
 // Escape-only output — cursor hide/show, screen clear, colour resets — leaves every line's
@@ -200,8 +201,8 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
     // never get stuck hiding a perfectly usable terminal.
     const backstopTimer = setTimeout(reveal, STARTING_BACKSTOP_MS)
 
-    // Reveal the terminal, clearing both timers — called either by the quiet timer once
-    // launched output settles, or by the backstop above as an absolute fallback. Focus is
+    // Reveal the terminal, clearing both timers — called once the CLI has painted content
+    // (see onTerminalData), or by the backstop above as an absolute fallback. Focus is
     // deferred to here (rather than right after create) on purpose: focusing xterm activates
     // its hidden input textarea, whose NATIVE blinking caret is drawn by the compositor
     // above our overlay (ignoring z-index), showing a stray caret at 0,0 while loading.
@@ -213,30 +214,20 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       term.focus()
     }
 
-    // Quiet-timer target: reveal only if the CLI has actually painted visible content by
-    // now. During a CLI's cold start there can be a quiet gap BEFORE it draws its UI (e.g.
-    // it's off doing setup work) — settling on that gap and revealing unconditionally would
-    // flash a black/blank terminal for a moment before the CLI finally paints. If there's
-    // still nothing visible, do nothing and let further output re-arm the timer (or the
-    // backstop below fire eventually, so a genuinely blank CLI can never wedge the loader).
-    function maybeReveal(): void {
-      if (hasVisibleContent(term)) reveal()
-    }
-
     const offData = window.electronAPI.onTerminalData((e) => {
       if (e.id !== terminalId) return
       term.write(e.data)
-      // Data written above is already painted underneath the overlay, so there's no flash
-      // of stale/empty content once it's revealed. Only arm the quiet timer once we've
-      // actually launched the CLI (awaitingRevealRef stays true until reveal() flips it
-      // back off) — every further chunk pushes the deadline back out, so the loader stays
-      // up for as long as the shell/CLI keep streaming output and only reveals once that
-      // goes quiet AND something is actually visible. (Checking the `starting` state itself
-      // here would read a stale closure value from whenever this effect ran, not the
-      // current one — the ref is the authoritative, always-current gate.)
-      if (awaitingRevealRef.current) {
+      // Reveal as soon as the CLI has actually drawn something. `awaitingRevealRef` is a
+      // one-shot gate (flipped off here the moment content first appears) so a CLI that keeps
+      // streaming — codex spinning on "model: Loading" — reveals immediately instead of the
+      // loader lingering. Gating on visible content (not just "output arrived") avoids
+      // revealing a blank screen during a cold-start gap; the short grace lets xterm paint
+      // that first frame under the overlay so there's no blank flash on reveal. The backstop
+      // above still fires if a CLI never paints anything, so the loader can't wedge.
+      if (awaitingRevealRef.current && hasVisibleContent(term)) {
+        awaitingRevealRef.current = false
         clearTimeout(quietTimerRef.current)
-        quietTimerRef.current = setTimeout(maybeReveal, REVEAL_QUIET_MS)
+        quietTimerRef.current = setTimeout(reveal, REVEAL_PAINT_GRACE_MS)
       }
     })
     const offExit = window.electronAPI.onTerminalExit((e) => {
