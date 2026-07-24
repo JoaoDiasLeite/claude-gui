@@ -545,7 +545,22 @@
 }
 .standup-runwith .assist-runwith-field {
   flex: 0 0 auto;
-  width: 150px;
+  width: auto;
+}
+/* The drawer rules make each picker full-width with the chevron pinned to the far
+   right (margin-left: auto), which is right for the wide drawer bar but leaves a big
+   empty gap for a short value like "Work" in this compact header. Override both so the
+   pickers hug their own content instead. */
+.standup-runwith .assist-runwith-field > *,
+.standup-runwith .assist-runwith-field .account-picker-btn,
+.standup-runwith .assist-runwith-field .model-picker-btn {
+  width: auto;
+  min-width: 116px;
+  max-width: 190px;
+}
+.standup-runwith .assist-runwith-field .account-picker-btn > svg,
+.standup-runwith .assist-runwith-field .model-picker-btn > svg {
+  margin-left: 6px;
 }
 
 .standup-datenav {
