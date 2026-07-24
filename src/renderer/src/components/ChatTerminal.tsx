@@ -46,6 +46,20 @@ const STARTING_BACKSTOP_MS = 8000
 // input. This is how long a gap in output has to be, after launch, before we call it settled.
 const REVEAL_QUIET_MS = 600
 
+// Whether the terminal's current viewport has any real (non-whitespace) glyphs painted.
+// Escape-only output — cursor hide/show, screen clear, colour resets — leaves every line's
+// rendered text empty, so this stays false until the CLI has actually drawn something. Used
+// to gate reveal on real content, not just "output has gone quiet" (a quiet gap can land
+// before the CLI paints, e.g. during its cold start).
+function hasVisibleContent(term: Terminal): boolean {
+  const buf = term.buffer.active
+  for (let i = 0; i < term.rows; i++) {
+    const line = buf.getLine(buf.viewportY + i)
+    if (line && line.translateToString(true).trim().length > 0) return true
+  }
+  return false
+}
+
 function loadFontSize(): number {
   const saved = Number(localStorage.getItem(FONT_SIZE_KEY))
   return saved >= MIN_FONT_SIZE && saved <= MAX_FONT_SIZE ? saved : 13
@@ -199,6 +213,16 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       term.focus()
     }
 
+    // Quiet-timer target: reveal only if the CLI has actually painted visible content by
+    // now. During a CLI's cold start there can be a quiet gap BEFORE it draws its UI (e.g.
+    // it's off doing setup work) — settling on that gap and revealing unconditionally would
+    // flash a black/blank terminal for a moment before the CLI finally paints. If there's
+    // still nothing visible, do nothing and let further output re-arm the timer (or the
+    // backstop below fire eventually, so a genuinely blank CLI can never wedge the loader).
+    function maybeReveal(): void {
+      if (hasVisibleContent(term)) reveal()
+    }
+
     const offData = window.electronAPI.onTerminalData((e) => {
       if (e.id !== terminalId) return
       term.write(e.data)
@@ -207,12 +231,12 @@ export default function ChatTerminal({ terminalId, cwd, accountId, wslDistro, re
       // actually launched the CLI (awaitingRevealRef stays true until reveal() flips it
       // back off) — every further chunk pushes the deadline back out, so the loader stays
       // up for as long as the shell/CLI keep streaming output and only reveals once that
-      // goes quiet. (Checking the `starting` state itself here would read a stale closure
-      // value from whenever this effect ran, not the current one — the ref is the
-      // authoritative, always-current gate.)
+      // goes quiet AND something is actually visible. (Checking the `starting` state itself
+      // here would read a stale closure value from whenever this effect ran, not the
+      // current one — the ref is the authoritative, always-current gate.)
       if (awaitingRevealRef.current) {
         clearTimeout(quietTimerRef.current)
-        quietTimerRef.current = setTimeout(reveal, REVEAL_QUIET_MS)
+        quietTimerRef.current = setTimeout(maybeReveal, REVEAL_QUIET_MS)
       }
     })
     const offExit = window.electronAPI.onTerminalExit((e) => {
