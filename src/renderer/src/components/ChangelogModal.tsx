@@ -20,10 +20,18 @@ const CHANGELOG: Entry[] = [
     tag: 'new',
     sections: [
       {
+        title: 'Features',
+        items: [
+          'Choose the account and model for the sprint\'s AI actions — a "Run with" picker in the standup header spans Claude, Codex and Antigravity; Generate and the GitLab backfill now run under the account you pick (previously they were locked to the Claude default).',
+        ],
+      },
+      {
         title: 'Fixes',
         items: [
           'WSL distros no longer disappear from Projects and Usage — a distro\'s home is now resolved without running its login shell, which on some setups hung on a sudo password prompt from service-start scripts. All of a distro\'s Claude Code sessions are counted again, not just a handful.',
           'The terminal loader now stays up until the CLI has actually drawn its interface, instead of briefly flashing a black screen during the CLI\'s cold start.',
+          'Generated standups are now grounded in your git commits rather than the sprint board — on days with nothing in progress on the board they describe what you actually worked on instead of saying the board is empty.',
+          'The standup "Today" button sits to the left of the date arrows, so stepping through days no longer nudges the arrows around.',
         ],
       },
     ],
