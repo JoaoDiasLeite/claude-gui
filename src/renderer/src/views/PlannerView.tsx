@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAccountStatus, ModelInfo, SavedReview } from '../types'
+import { WeekPlan, PlannerTask, WeeklyPriority, Effort, PlannerAssistMode, CCAccountStatus, ModelInfo, SavedReview, ProviderAccountStatus } from '../types'
 import ModelPicker from '../components/ModelPicker'
 import AccountPicker from '../components/AccountPicker'
 import SprintBoard, { PlannerModeToggle, PlannerMode } from './SprintBoard'
@@ -12,6 +12,12 @@ interface PlannerProps {
   models: ModelInfo[]
   defaultModel: string
   defaultAccountId: string
+  /** Codex/Gemini accounts + their defaults — forwarded to the sprint board's cross-provider
+   *  "Run with" selector (the Week-mode AssistDrawer stays Claude-only). */
+  codexAccounts: ProviderAccountStatus[]
+  geminiAccounts: ProviderAccountStatus[]
+  codexDefaultAccountId: string
+  geminiDefaultAccountId: string
   onRunTask?: (task: PlannerTask) => void
   /** Open a light chat seeded with the given context (used by the sprint standup). */
   onStandupChat?: (context: string, opener: string, name: string) => void
@@ -81,7 +87,20 @@ const emptyWeek = (weekStart: string): WeekPlan => ({
   updatedAt: Date.now()
 })
 
-export default function PlannerView({ accounts, models, defaultModel, defaultAccountId, onRunTask, onStandupChat, onScheduleStandup, streaming }: PlannerProps) {
+export default function PlannerView({
+  accounts,
+  models,
+  defaultModel,
+  defaultAccountId,
+  codexAccounts,
+  geminiAccounts,
+  codexDefaultAccountId,
+  geminiDefaultAccountId,
+  onRunTask,
+  onStandupChat,
+  onScheduleStandup,
+  streaming
+}: PlannerProps) {
   // Week planner vs. sprint board — persisted so the Planner reopens where you left it.
   const [mode, setMode] = useState<PlannerMode>(
     () => (localStorage.getItem('planner.mode') === 'sprint' ? 'sprint' : 'week')
@@ -354,6 +373,10 @@ export default function PlannerView({ accounts, models, defaultModel, defaultAcc
         models={models}
         defaultModel={defaultModel}
         defaultAccountId={defaultAccountId}
+        codexAccounts={codexAccounts}
+        geminiAccounts={geminiAccounts}
+        codexDefaultAccountId={codexDefaultAccountId}
+        geminiDefaultAccountId={geminiDefaultAccountId}
         onStandupChat={onStandupChat}
         onScheduleStandup={onScheduleStandup}
       />

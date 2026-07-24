@@ -1497,6 +1497,10 @@ export default function App() {
                 models={models}
                 defaultModel={defaultModel}
                 defaultAccountId={defaultAccountId}
+                codexAccounts={codexAccounts}
+                geminiAccounts={geminiAccounts}
+                codexDefaultAccountId={codexDefaultAccountId}
+                geminiDefaultAccountId={geminiDefaultAccountId}
                 onRunTask={runPlannerTask}
                 onStandupChat={startStandupChat}
                 onScheduleStandup={createStandupRoutine}

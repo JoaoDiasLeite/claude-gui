@@ -1,7 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Sprint, SprintItem, SprintBackfillCache, DailyStandup, ItemStatus, SprintStatus, CCAccountStatus, ModelInfo } from '../types'
+import {
+  Sprint,
+  SprintItem,
+  SprintBackfillCache,
+  DailyStandup,
+  ItemStatus,
+  SprintStatus,
+  CCAccountStatus,
+  ModelInfo,
+  ProviderAccountStatus,
+  ProviderId
+} from '../types'
 import Menu, { MoreIcon, CaretDownIcon } from '../components/Menu'
+import ModelPicker from '../components/ModelPicker'
+import AccountPicker, { AccountPickerItem } from '../components/AccountPicker'
 import './views.css'
 import './PlannerView.css'
 import './SprintBoard.css'
@@ -16,10 +29,28 @@ interface SprintBoardProps {
   models: ModelInfo[]
   defaultModel: string
   defaultAccountId: string
+  /** Codex/Gemini accounts + their defaults — combined with `accounts`/`models` into a
+   *  cross-provider "Run with" selector for the standup Generate + backlog backfill. */
+  codexAccounts: ProviderAccountStatus[]
+  geminiAccounts: ProviderAccountStatus[]
+  codexDefaultAccountId: string
+  geminiDefaultAccountId: string
   /** Open a light chat seeded with the standup context (talk through the day). */
   onStandupChat?: (context: string, opener: string, name: string) => void
   /** Create a daily standup routine and jump to Routines. */
   onScheduleStandup?: (name: string, prompt: string, projectPath?: string) => void
+}
+
+// Which provider a model id belongs to, given the app's model catalog — used to seed the
+// "Run with" selector from the app-wide default model.
+function providerOf(models: ModelInfo[], modelId: string): ProviderId {
+  return models.find((m) => modelId.startsWith(m.id))?.provider ?? 'claude'
+}
+
+// The first catalog model for a given provider — used when switching providers in the
+// "Run with" selector (the previous model won't exist under the new provider).
+function firstModelForProvider(models: ModelInfo[], provider: ProviderId): string | undefined {
+  return models.find((m) => m.provider === provider)?.id
 }
 
 // ─── Date helpers (local time, never round-trip through UTC) ────────────────────
@@ -66,7 +97,20 @@ export function PlannerModeToggle({ mode, onMode }: { mode: PlannerMode; onMode:
   )
 }
 
-export default function SprintBoard({ mode, onMode, defaultModel, defaultAccountId, onStandupChat, onScheduleStandup }: SprintBoardProps) {
+export default function SprintBoard({
+  mode,
+  onMode,
+  accounts,
+  models,
+  defaultModel,
+  defaultAccountId,
+  codexAccounts,
+  geminiAccounts,
+  codexDefaultAccountId,
+  geminiDefaultAccountId,
+  onStandupChat,
+  onScheduleStandup
+}: SprintBoardProps) {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [activeId, setActiveId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -89,6 +133,36 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
   const [genBusy, setGenBusy] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ─── Cross-provider "Run with" selector (standup Generate + backlog backfill) ─────────
+  // Seeded from the app-wide default model/account, but switchable to any logged-in
+  // Claude/Codex/Gemini account+model right from the sprint board — these two AI actions
+  // don't otherwise have anywhere to pick a provider.
+  const [runProvider, setRunProvider] = useState<ProviderId>(() => providerOf(models, defaultModel))
+  const [runAccountId, setRunAccountId] = useState<string>(() => {
+    const p = providerOf(models, defaultModel)
+    return p === 'codex' ? codexDefaultAccountId : p === 'gemini' ? geminiDefaultAccountId : defaultAccountId
+  })
+  const [runModel, setRunModel] = useState<string>(defaultModel)
+
+  // Accounts across all providers, pre-ordered claude → codex → gemini, for the picker.
+  const runAccountItems: AccountPickerItem[] = useMemo(
+    () => [
+      ...accounts.map((a) => ({ provider: 'claude' as const, id: a.id, name: a.name, loggedIn: a.loggedIn, email: a.email, plan: a.plan })),
+      ...codexAccounts.map((a) => ({ provider: 'codex' as const, id: a.id, name: a.name, loggedIn: a.loggedIn, email: a.email, plan: a.plan })),
+      ...geminiAccounts.map((a) => ({ provider: 'gemini' as const, id: a.id, name: a.name, loggedIn: a.loggedIn, email: a.email, plan: a.plan }))
+    ],
+    [accounts, codexAccounts, geminiAccounts]
+  )
+  const runModels = useMemo(() => models.filter((m) => m.provider === runProvider), [models, runProvider])
+
+  const pickRunAccount = (provider: ProviderId, id: string) => {
+    setRunProvider(provider)
+    setRunAccountId(id)
+    // Switching provider invalidates the current model selection — jump to that
+    // provider's first catalog model (falling back to whatever was selected before).
+    setRunModel((prev) => (provider === runProvider ? prev : firstModelForProvider(models, provider) ?? prev))
+  }
 
   const active = sprints.find((s) => s.id === activeId) ?? null
 
@@ -268,8 +342,8 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
       projectPath: active.projectPath,
       date: standupDate,
       boardSummary,
-      model: defaultModel,
-      accountId: defaultAccountId
+      model: runModel,
+      accountId: runAccountId
     })
     setGenBusy(false)
     if (!res.ok || !res.data) {
@@ -513,6 +587,13 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
             hasProject={!!active.projectPath}
             onDiscuss={onStandupChat ? discussStandup : undefined}
             onSchedule={onScheduleStandup ? scheduleStandup : undefined}
+            runAccountItems={runAccountItems}
+            runProvider={runProvider}
+            runAccountId={runAccountId}
+            onPickRunAccount={pickRunAccount}
+            runModels={runModels}
+            runModel={runModel}
+            onPickRunModel={setRunModel}
           />
           )}
         </div>
@@ -544,8 +625,8 @@ export default function SprintBoard({ mode, onMode, defaultModel, defaultAccount
       {backfillOpen && active && (
         <BacklogBackfillModal
           sprint={active}
-          defaultModel={defaultModel}
-          defaultAccountId={defaultAccountId}
+          model={runModel}
+          accountId={runAccountId}
           onAdd={addBacklogItems}
           onCache={cacheBackfill}
           onClose={() => setBackfillOpen(false)}
@@ -966,6 +1047,14 @@ function StandupSection(props: {
   hasProject: boolean
   onDiscuss?: () => void
   onSchedule?: () => void
+  // Cross-provider "Run with" selector governing Generate (and the backfill modal).
+  runAccountItems: AccountPickerItem[]
+  runProvider: ProviderId
+  runAccountId: string
+  onPickRunAccount: (provider: ProviderId, id: string) => void
+  runModels: ModelInfo[]
+  runModel: string
+  onPickRunModel: (modelId: string) => void
 }) {
   const today = ymd(new Date())
   const s = props.standup
@@ -975,6 +1064,23 @@ function StandupSection(props: {
       <div className="standup-head">
         <span className="planner-label">Daily standup</span>
         <div className="standup-head-right">
+          <div className="assist-runwith standup-runwith">
+            <div className="assist-runwith-field">
+              <span className="assist-runwith-label">Account</span>
+              <AccountPicker
+                items={props.runAccountItems}
+                selectedProvider={props.runProvider}
+                selectedId={props.runAccountId}
+                onPick={props.onPickRunAccount}
+                onManage={() => {}}
+                disabled={props.genBusy}
+              />
+            </div>
+            <div className="assist-runwith-field">
+              <span className="assist-runwith-label">Model</span>
+              <ModelPicker models={props.runModels} value={props.runModel} onChange={props.onPickRunModel} disabled={props.genBusy} />
+            </div>
+          </div>
           <div className="sb-split">
             <button
               className="assist-btn primary sb-split-main"
@@ -1006,6 +1112,11 @@ function StandupSection(props: {
             )}
           </div>
           <div className="standup-datenav">
+            {!isToday && (
+              <button className="btn-ghost small" onClick={() => props.onDate(today)}>
+                Today
+              </button>
+            )}
             <button className="standup-nav-btn" title="Previous day" onClick={() => props.onDate(addDays(props.date, -1))}>
               <ChevronIcon dir="left" />
             </button>
@@ -1018,11 +1129,6 @@ function StandupSection(props: {
             <button className="standup-nav-btn" title="Next day" onClick={() => props.onDate(addDays(props.date, 1))}>
               <ChevronIcon dir="right" />
             </button>
-            {!isToday && (
-              <button className="btn-ghost small" onClick={() => props.onDate(today)}>
-                Today
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -1272,8 +1378,9 @@ const SOURCE_LABELS: Record<string, string> = {
 
 function BacklogBackfillModal(props: {
   sprint: Sprint
-  defaultModel: string
-  defaultAccountId: string
+  /** The "Run with" selection from the standup header — the same account+model runs both. */
+  model: string
+  accountId: string
   onAdd: (rows: { title: string; points?: number | null; notes?: string }[]) => void
   onCache: (cache: SprintBackfillCache) => void
   onClose: () => void
@@ -1312,8 +1419,8 @@ function BacklogBackfillModal(props: {
     const res = await window.electronAPI.sprintBackfill({
       projectPath: props.sprint.projectPath,
       probe: true,
-      model: props.defaultModel,
-      accountId: props.defaultAccountId
+      model: props.model,
+      accountId: props.accountId
     })
     setResolving(false)
     if (!res.ok || !res.data) {
@@ -1346,8 +1453,8 @@ function BacklogBackfillModal(props: {
     const res = await window.electronAPI.sprintBackfill({
       projectPath: props.sprint.projectPath,
       instructions: project.trim() || undefined,
-      model: props.defaultModel,
-      accountId: props.defaultAccountId
+      model: props.model,
+      accountId: props.accountId
     })
     setFetching(false)
     setHasFetched(true)

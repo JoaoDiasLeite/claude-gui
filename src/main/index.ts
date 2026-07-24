@@ -1253,12 +1253,19 @@ ipcMain.handle(
   ) => {
     const abort = new AbortController()
     const env = buildSubprocessEnv()
-    const configDir = accountConfigDir(payload.accountId)
-    if (configDir) {
-      env.CLAUDE_CONFIG_DIR = configDir
-      delete env.ANTHROPIC_API_KEY
-    }
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
+    // Account env depends on which provider the resolved model belongs to — `accountId` is
+    // interpreted as an account of THAT provider, not always Claude.
+    const providerId = providerFor(policy.model)
+    if (providerId === 'claude') {
+      const configDir = accountConfigDir(payload.accountId)
+      if (configDir) {
+        env.CLAUDE_CONFIG_DIR = configDir
+        delete env.ANTHROPIC_API_KEY
+      }
+    } else {
+      Object.assign(env, providerAccountEnv(providerId, payload.accountId))
+    }
     try {
       const stream = getEngine(providerFor(policy.model)).run({
         prompt: buildPrompt(buildAssistPrompt(payload.mode, payload.week, payload.notes), payload.images, undefined, '') as string,
@@ -1324,12 +1331,19 @@ ipcMain.handle(
   ) => {
     const abort = new AbortController()
     const env = buildSubprocessEnv()
-    const configDir = accountConfigDir(payload.accountId)
-    if (configDir) {
-      env.CLAUDE_CONFIG_DIR = configDir
-      delete env.ANTHROPIC_API_KEY
-    }
     const policy = resolvePolicy({ profile: 'headless-reasoning', requestedModel: payload.model })
+    // Account env depends on which provider the resolved model belongs to — `accountId` is
+    // interpreted as an account of THAT provider, not always Claude.
+    const providerId = providerFor(policy.model)
+    if (providerId === 'claude') {
+      const configDir = accountConfigDir(payload.accountId)
+      if (configDir) {
+        env.CLAUDE_CONFIG_DIR = configDir
+        delete env.ANTHROPIC_API_KEY
+      }
+    } else {
+      Object.assign(env, providerAccountEnv(providerId, payload.accountId))
+    }
     let commits: { date: string; subject: string }[] = []
     try {
       if (payload.projectPath) {
@@ -1460,16 +1474,23 @@ ipcMain.handle(
     const mcpServers = mcpServersForProject(payload.projectPath)
     const abort = new AbortController()
     const env = buildSubprocessEnv()
-    const configDir = accountConfigDir(payload.accountId)
-    if (configDir) {
-      env.CLAUDE_CONFIG_DIR = configDir
-      delete env.ANTHROPIC_API_KEY
-    }
     const policy = resolvePolicy({
       profile: 'mcp-ask',
       requestedModel: payload.model,
       mcpServerNames: Object.keys(mcpServers)
     })
+    // Account env depends on which provider the resolved model belongs to — `accountId` is
+    // interpreted as an account of THAT provider, not always Claude.
+    const providerId = providerFor(policy.model)
+    if (providerId === 'claude') {
+      const configDir = accountConfigDir(payload.accountId)
+      if (configDir) {
+        env.CLAUDE_CONFIG_DIR = configDir
+        delete env.ANTHROPIC_API_KEY
+      }
+    } else {
+      Object.assign(env, providerAccountEnv(providerId, payload.accountId))
+    }
     try {
       const stream = getEngine(providerFor(policy.model)).run({
         prompt: buildPrompt(promptText, undefined, undefined, '') as string,

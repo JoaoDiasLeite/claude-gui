@@ -535,6 +535,19 @@
   margin-bottom: 0;
   margin-top: 8px;
 }
+/* "Run with" account+model picker, reused from the assist drawer (.assist-runwith) but
+   sitting inline in the standup header's right-aligned column rather than as a full-width
+   drawer bar — strip the drawer padding/border and keep each field compact. */
+.standup-runwith {
+  padding: 0;
+  border-bottom: none;
+  gap: 8px;
+}
+.standup-runwith .assist-runwith-field {
+  flex: 0 0 auto;
+  width: 150px;
+}
+
 .standup-datenav {
   display: flex;
   align-items: center;
