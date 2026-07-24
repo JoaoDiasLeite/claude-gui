@@ -15,6 +15,20 @@ interface Entry {
 
 const CHANGELOG: Entry[] = [
   {
+    version: '0.6.1',
+    date: '2026-07-24',
+    tag: 'new',
+    sections: [
+      {
+        title: 'Fixes',
+        items: [
+          'WSL distros no longer disappear from Projects and Usage — a distro\'s home is now resolved without running its login shell, which on some setups hung on a sudo password prompt from service-start scripts. All of a distro\'s Claude Code sessions are counted again, not just a handful.',
+          'The terminal loader now stays up until the CLI has actually drawn its interface, instead of briefly flashing a black screen during the CLI\'s cold start.',
+        ],
+      },
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-07-23',
     tag: 'latest',
