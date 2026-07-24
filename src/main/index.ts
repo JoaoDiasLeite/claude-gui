@@ -1303,13 +1303,20 @@ function buildStandupPrompt(
     commits.length > 0
       ? commits.map((c) => `  - ${c.date}: ${c.subject}`).join('\n')
       : '  (no recent commits found)'
-  const board = boardSummary?.trim() ? `\n\nCurrent sprint board:\n${boardSummary.trim()}` : ''
-  return `You are helping a developer write their daily standup for ${date}. Base it on their recent git commits and current sprint board. Be concise, concrete, and write in first person, plain past/present tense — no fluff.
+  const board = boardSummary?.trim() ? `\n\nSprint board (supplementary context only):\n${boardSummary.trim()}` : ''
+  return `You are helping a developer write their daily standup for ${date}. Their git commits are the record of what they ACTUALLY worked on — use them as the PRIMARY source. The sprint board is only extra context, and is often empty; never let an empty board be the answer.
 
 Recent git commits (newest first, author-filtered):
 ${commitLines}${board}
 
-Treat commits dated on or just before ${date} as "yesterday" work, and in-progress board items as "today". Respond with ONLY a single JSON object, no markdown fences, no prose outside the JSON:
+Be concise, concrete, first person, plain past/present tense — no fluff. Derive the standup from the commits:
+- "yesterday": what actually got done, summarised from the commits dated on or just before ${date} — group related commits into outcomes, don't just echo commit subjects or hashes.
+- "today": infer what they'll continue from the direction of the most recent commits (and any in-progress board items). If the board has nothing in progress, infer from the commit momentum — do NOT write that the board is empty or that there are no items.
+- "blockers": only if clearly evident from the commits/board, otherwise an empty string.
+
+If there are genuinely no commits AND no board context, say so plainly in "yesterday" and leave "today"/"blockers" empty — but if there are commits, always ground the standup in them.
+
+Respond with ONLY a single JSON object, no markdown fences, no prose outside the JSON:
 {
   "yesterday": "<what got done — 1-4 short bullet-like sentences separated by newlines>",
   "today": "<what you plan to work on today>",
@@ -1347,7 +1354,9 @@ ipcMain.handle(
     let commits: { date: string; subject: string }[] = []
     try {
       if (payload.projectPath) {
-        commits = (await getLog(payload.projectPath, 3, true)).map((c) => ({ date: c.date, subject: c.subject }))
+        // 7-day window (not 3) so a standup still has commit context across weekends/gaps —
+        // the prompt scopes "yesterday" to commits on or just before the standup date itself.
+        commits = (await getLog(payload.projectPath, 7, true)).map((c) => ({ date: c.date, subject: c.subject }))
       }
     } catch {
       /* git is best-effort context — a failure just means no commits in the digest */
